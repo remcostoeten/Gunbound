@@ -1,6 +1,7 @@
 "use client";
 
 import { useGameState } from "@/features/game/hooks/use-game-state";
+import { selectHistory, selectRound, selectSuddenDeathActive } from "@/features/game/store/selectors/history-selectors";
 
 export function HistoryPanel(): React.JSX.Element {
   const history = useGameState(selectHistory);
@@ -29,16 +30,4 @@ function renderHistoryItem(entry: ReturnType<typeof selectHistory>[number]): Rea
       <span className="history-item-text">{entry.text}</span>
     </div>
   );
-}
-
-function selectHistory(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>) {
-  return state.history;
-}
-
-function selectRound(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>) {
-  return state.round;
-}
-
-function selectSuddenDeathActive(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>) {
-  return state.suddenDeathActive;
 }

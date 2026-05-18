@@ -2,6 +2,16 @@
 
 import { getWindLabel } from "@/features/game/engine/wind";
 import { useGameState } from "@/features/game/hooks/use-game-state";
+import {
+  selectBonusBoxes,
+  selectPhase,
+  selectPhaseDuration,
+  selectPhaseTimer,
+  selectPlayers,
+  selectTurn,
+  selectTurnCount,
+  selectWind
+} from "@/features/game/store/selectors/hud-selectors";
 
 export function Hud(): React.JSX.Element {
   const players = useGameState(selectPlayers);
@@ -20,6 +30,10 @@ export function Hud(): React.JSX.Element {
       <div className="hud-top">
         <div className="hud-card">
           <span className="player-name">{players[0].name}</span>
+          <div className="hud-player-identity">
+            <span className={"hud-accent-chip accent-" + players[0].accent} />
+            <span>{players[0].title}</span>
+          </div>
           <div className="hud-player-row">
             <div className="hud-meta">
               <span>{capitalize(players[0].mobile.type)}</span>
@@ -49,6 +63,10 @@ export function Hud(): React.JSX.Element {
         </div>
         <div className="hud-card right">
           <span className="player-name">{players[1].name}</span>
+          <div className="hud-player-identity">
+            <span className={"hud-accent-chip accent-" + players[1].accent} />
+            <span>{players[1].title}</span>
+          </div>
           <div className="hud-player-row">
             <div className="hud-meta">
               <span>{capitalize(players[1].mobile.type)}</span>
@@ -70,7 +88,7 @@ export function Hud(): React.JSX.Element {
         <div className="hud-card turn-card">
           <span className="turn-label">Current Turn</span>
           <span className="turn-value">
-            {currentPlayer.name} / {capitalize(currentPlayer.mobile.type)}
+            {currentPlayer.title} {currentPlayer.name} / {capitalize(currentPlayer.mobile.type)}
           </span>
           <div className="turn-meta-row">
             <span>Phase {capitalize(phase)}</span>
@@ -152,36 +170,4 @@ function countLandedBoxes(
 
 function capitalize(value: string): string {
   return value.slice(0, 1).toUpperCase() + value.slice(1);
-}
-
-function selectPlayers(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>) {
-  return state.players;
-}
-
-function selectTurn(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>): 1 | 2 {
-  return state.turn;
-}
-
-function selectWind(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>) {
-  return state.wind;
-}
-
-function selectPhase(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>) {
-  return state.phase;
-}
-
-function selectPhaseTimer(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>) {
-  return state.phaseTimer;
-}
-
-function selectPhaseDuration(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>) {
-  return state.phaseDuration;
-}
-
-function selectTurnCount(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>) {
-  return state.turnCount;
-}
-
-function selectBonusBoxes(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>) {
-  return state.bonusBoxes;
 }

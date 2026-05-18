@@ -1,17 +1,75 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { getTerrainPalette } from "@/features/game/engine/terrain";
 import { getMobileSpriteFrame, getMobileSpriteSource } from "@/features/game/engine/mobile-sprites";
 import { getLaunchRadians, getMuzzlePosition } from "@/features/game/engine/physics";
 import { useGameLoop } from "@/features/game/hooks/use-game-loop";
 import { useInput } from "@/features/game/hooks/use-input";
 import { useGameStore } from "@/features/game/store/game-store";
-import type { BonusBox, DamagePopup, ExplosionVisual, MobileType, Player, ProjectileState, TerrainState, Vec2 } from "@/features/game/types/game";
-import { worldHeight, worldWidth } from "@/features/game/types/game";
+import { worldHeight, worldWidth } from "@/features/game/constants/world";
+import type { ProjectileState } from "@/features/game/types/combat";
+import type { BonusBox, Player, TerrainState } from "@/features/game/types/entities";
+import type { DamagePopup, ExplosionVisual } from "@/features/game/types/effects";
+import type { MobileType, PlayerAccent, TerrainTheme, Vec2 } from "@/features/game/types/shared";
 
 type SpriteCache = {
   armor: HTMLImageElement | null;
   knight: HTMLImageElement | null;
+};
+
+type DebrisParticle = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  size: number;
+  color: string;
+};
+
+type WindLeaf = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  rotation: number;
+  rotSpeed: number;
+  size: number;
+  alpha: number;
+};
+
+type ChargeSpark = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  size: number;
+};
+
+type DustPuff = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  size: number;
+};
+
+type HitFlash = {
+  alpha: number;
+  timer: number;
+};
+
+type GrassTuft = {
+  x: number;
+  y: number;
+  height: number;
+  sway: number;
 };
 
 export function GameCanvas(): React.JSX.Element {
@@ -25,6 +83,17 @@ export function GameCanvas(): React.JSX.Element {
     armor: null,
     knight: null
   });
+  const debrisRef = useRef<DebrisParticle[]>([]);
+  const leavesRef = useRef<WindLeaf[]>([]);
+  const sparksRef = useRef<ChargeSpark[]>([]);
+  const dustRef = useRef<DustPuff[]>([]);
+  const hitFlashRef = useRef<HitFlash | null>(null);
+  const grassRef = useRef<GrassTuft[]>([]);
+  const previousExplosionRef = useRef<ExplosionVisual | null>(null);
+  const previousPhaseRef = useRef<string>("");
+  const leafSpawnTimerRef = useRef(0);
+  const windParticlesEnabledRef = useRef(false);
+
   useInput();
   useGameLoop(drawFrame);
   useEffect(setupCanvas, []);
@@ -33,10 +102,7 @@ export function GameCanvas(): React.JSX.Element {
 
   function setupCanvas(): void {
     const canvas = canvasRef.current;
-    if (canvas === null) {
-      return;
-    }
-
+    if (canvas === null) return;
     canvas.width = worldWidth;
     canvas.height = worldHeight;
     loadMobileSprites(spriteCacheRef.current);
@@ -44,26 +110,32 @@ export function GameCanvas(): React.JSX.Element {
 
   function drawFrame(): void {
     const canvas = canvasRef.current;
-    if (canvas === null) {
-      return;
-    }
-
+    if (canvas === null) return;
     const context = canvas.getContext("2d");
-    if (context === null) {
-      return;
-    }
+    if (context === null) return;
 
     context.imageSmoothingEnabled = false;
     advanceVisualClock();
+
     const state = useGameStore.getState();
     syncProjectileEffects(state.projectile);
+    syncExplosionDebris(state.explosionVisual);
+    syncWindLeaves(state.wind, state.scene);
+    syncChargeSparks(state.charging, state.players, state.turn);
+    syncDustOnMove(state.phase, state.players, state.turn);
+    syncHitFlash(state.damagePopups);
+    syncGrass(state.terrain);
+    updateParticles();
+    syncParticleData();
 
     context.save();
     applyCameraShake(context, state.explosionVisual);
-    drawBackground(context, visualTimeRef.current);
+
+    drawBackground(context, state.terrain?.theme || "meadow", visualTimeRef.current);
 
     if (state.terrain !== null) {
       drawTerrain(context, state.terrain);
+      drawGrass(context, state.terrain, visualTimeRef.current, state.wind);
     }
 
     drawBonusBoxes(context, state.bonusBoxes);
@@ -73,15 +145,20 @@ export function GameCanvas(): React.JSX.Element {
     }
 
     drawProjectileTrail(context, trailRef.current);
+    drawWindLeaves(context, visualTimeRef.current);
     drawPlayers(context, state.players, state.turn, visualTimeRef.current, spriteCacheRef.current);
 
     if (state.projectile !== null) {
       drawProjectile(context, state.projectile);
     }
 
+    drawChargeSparks(context);
+    drawDustPuffs(context);
+    drawDebris(context);
     drawMuzzleFlash(context, muzzleFlashRef.current);
     drawExplosionVisual(context, state.explosionVisual);
     drawDamagePopups(context, state.damagePopups);
+    drawHitFlash(context, hitFlashRef.current);
     context.restore();
   }
 
@@ -91,11 +168,11 @@ export function GameCanvas(): React.JSX.Element {
       previousFrameTimeRef.current = now;
       return;
     }
-
     const delta = Math.min(0.05, (now - previousFrameTimeRef.current) / 1000);
     previousFrameTimeRef.current = now;
     visualTimeRef.current += delta;
     tickMuzzleFlash(delta);
+    tickHitFlash(delta);
   }
 
   function syncProjectileEffects(projectile: ProjectileState | null): void {
@@ -109,27 +186,204 @@ export function GameCanvas(): React.JSX.Element {
         };
         trailRef.current = [];
       }
-
       pushTrailPoint(projectile.position);
     } else {
       decayTrail();
     }
-
     previousProjectileRef.current = projectile;
+  }
+
+  function syncExplosionDebris(explosion: ExplosionVisual | null): void {
+    if (explosion !== null && (previousExplosionRef.current === null || explosion.timer > previousExplosionRef.current.timer)) {
+      const count = 12 + Math.floor(Math.random() * 8);
+      const particles: DebrisParticle[] = [];
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 60 + Math.random() * 140;
+        particles.push({
+          x: explosion.point.x + (Math.random() - 0.5) * 8,
+          y: explosion.point.y + (Math.random() - 0.5) * 8,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - 80,
+          life: 0.6 + Math.random() * 0.6,
+          maxLife: 0.6 + Math.random() * 0.6,
+          size: 2 + Math.random() * 4,
+          color: Math.random() > 0.5 ? "#8a5433" : "#613923",
+        });
+      }
+      debrisRef.current = debrisRef.current.concat(particles);
+      if (debrisRef.current.length > 120) {
+        debrisRef.current = debrisRef.current.slice(-120);
+      }
+    }
+    previousExplosionRef.current = explosion;
+  }
+
+  function syncWindLeaves(wind: { x: number; y: number }, scene: string): void {
+    windParticlesEnabledRef.current = scene === "playing";
+
+    if (!windParticlesEnabledRef.current) return;
+
+    leafSpawnTimerRef.current += 1;
+    const windSpeed = Math.abs(wind.x);
+    const spawnRate = Math.max(8, Math.round(40 - windSpeed * 30));
+
+    if (leafSpawnTimerRef.current >= spawnRate) {
+      leafSpawnTimerRef.current = 0;
+      const fromLeft = wind.x >= 0;
+      const leaf: WindLeaf = {
+        x: fromLeft ? -30 : worldWidth + 30,
+        y: 40 + Math.random() * (worldHeight * 0.55),
+        vx: (fromLeft ? 1 : -1) * (20 + Math.abs(wind.x) * 60 + Math.random() * 20),
+        vy: (Math.random() - 0.5) * 15,
+        rotation: Math.random() * Math.PI * 2,
+        rotSpeed: (Math.random() - 0.5) * 4,
+        size: 4 + Math.random() * 4,
+        alpha: 0.3 + Math.random() * 0.3,
+      };
+      leavesRef.current.push(leaf);
+      if (leavesRef.current.length > 30) {
+        leavesRef.current.shift();
+      }
+    }
+  }
+
+  function syncChargeSparks(charging: boolean, players: [Player, Player], turn: 1 | 2): void {
+    if (!charging) {
+      if (sparksRef.current.length > 0) {
+        sparksRef.current = [];
+      }
+      return;
+    }
+
+    const mobile = players[turn - 1].mobile;
+    for (let i = 0; i < 2; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 14 + Math.random() * 20;
+      sparksRef.current.push({
+        x: mobile.position.x + Math.cos(angle) * dist,
+        y: mobile.position.y - mobile.height * 0.5 + Math.sin(angle) * dist,
+        vx: (Math.random() - 0.5) * 30,
+        vy: -20 - Math.random() * 30,
+        life: 0.2 + Math.random() * 0.3,
+        maxLife: 0.2 + Math.random() * 0.3,
+        size: 1.5 + Math.random() * 2,
+      });
+    }
+
+    if (sparksRef.current.length > 40) {
+      sparksRef.current = sparksRef.current.slice(-40);
+    }
+  }
+
+  function syncDustOnMove(phase: string, _players: [Player, Player], _turn: 1 | 2): void {
+    if (phase === "move" && previousPhaseRef.current !== "move") {
+      for (let i = 0; i < 4; i++) {
+        dustRef.current.push({
+          x: _players[_turn - 1].mobile.position.x + (Math.random() - 0.5) * 20,
+          y: _players[_turn - 1].mobile.position.y + (Math.random() - 0.5) * 4,
+          vx: (Math.random() - 0.5) * 20,
+          vy: -10 - Math.random() * 15,
+          life: 0.4 + Math.random() * 0.3,
+          maxLife: 0.4 + Math.random() * 0.3,
+          size: 3 + Math.random() * 4,
+        });
+      }
+    }
+    previousPhaseRef.current = phase;
+  }
+
+  function syncHitFlash(damagePopups: DamagePopup[]): void {
+    if (damagePopups.length > 0 && hitFlashRef.current === null) {
+      hitFlashRef.current = { alpha: 0.15, timer: 0.25 };
+    }
+  }
+
+  function syncGrass(terrain: TerrainState | null): void {
+    if (terrain === null) return;
+    if (grassRef.current.length > 0) {
+      setGrassData(grassRef.current);
+      return;
+    }
+
+    const tufts: GrassTuft[] = [];
+    let x = 0;
+    while (x < terrain.width) {
+      if (Math.random() < 0.12) {
+        tufts.push({
+          x: x + (Math.random() - 0.5) * 3,
+          y: terrain.heights[x],
+          height: 5 + Math.random() * 8,
+          sway: Math.random() * Math.PI * 2,
+        });
+      }
+      x += 1;
+    }
+    grassRef.current = tufts;
+    setGrassData(tufts);
+  }
+
+  function updateParticles(): void {
+    const dt = 1 / 60;
+
+    debrisRef.current = debrisRef.current
+      .map(p => ({
+        ...p,
+        x: p.x + p.vx * dt,
+        y: p.y + p.vy * dt,
+        vy: p.vy + 320 * dt,
+        life: p.life - dt,
+      }))
+      .filter(p => p.life > 0);
+
+    leavesRef.current = leavesRef.current
+      .map(l => ({
+        ...l,
+        x: l.x + l.vx * dt,
+        y: l.y + l.vy * dt + Math.sin(visualTimeRef.current * 2 + l.x * 0.01) * 0.3,
+        rotation: l.rotation + l.rotSpeed * dt,
+        vy: l.vy + 4 * dt,
+        alpha: l.alpha * 0.998,
+      }))
+      .filter(l => l.x > -60 && l.x < worldWidth + 60 && l.y < worldHeight + 20 && l.alpha > 0.01);
+
+    sparksRef.current = sparksRef.current
+      .map(s => ({
+        ...s,
+        x: s.x + s.vx * dt,
+        y: s.y + s.vy * dt,
+        vy: s.vy + 60 * dt,
+        life: s.life - dt,
+      }))
+      .filter(s => s.life > 0);
+
+    dustRef.current = dustRef.current
+      .map(d => ({
+        ...d,
+        x: d.x + d.vx * dt,
+        y: d.y + d.vy * dt,
+        vy: d.vy + 30 * dt,
+        life: d.life - dt,
+        size: d.size + 6 * dt,
+      }))
+      .filter(d => d.life > 0);
+  }
+
+  function syncParticleData(): void {
+    setDebrisData(debrisRef.current);
+    setLeafData(leavesRef.current);
+    setSparkData(sparksRef.current);
+    setDustData(dustRef.current);
   }
 
   function tickMuzzleFlash(delta: number): void {
     const muzzleFlash = muzzleFlashRef.current;
-    if (muzzleFlash === null) {
-      return;
-    }
-
+    if (muzzleFlash === null) return;
     const nextTimer = muzzleFlash.timer - delta;
     if (nextTimer <= 0) {
       muzzleFlashRef.current = null;
       return;
     }
-
     muzzleFlashRef.current = {
       point: muzzleFlash.point,
       radius: muzzleFlash.radius,
@@ -138,39 +392,44 @@ export function GameCanvas(): React.JSX.Element {
     };
   }
 
-  function pushTrailPoint(point: Vec2): void {
-    trailRef.current.push({
-      x: point.x,
-      y: point.y
-    });
-
-    if (trailRef.current.length > 18) {
-      trailRef.current.shift();
+  function tickHitFlash(delta: number): void {
+    const flash = hitFlashRef.current;
+    if (flash === null) return;
+    flash.timer -= delta;
+    flash.alpha *= 0.94;
+    if (flash.timer <= 0 || flash.alpha < 0.01) {
+      hitFlashRef.current = null;
     }
+  }
+
+  function pushTrailPoint(point: Vec2): void {
+    trailRef.current.push({ x: point.x, y: point.y });
+    if (trailRef.current.length > 18) trailRef.current.shift();
   }
 
   function decayTrail(): void {
-    if (trailRef.current.length > 0) {
-      trailRef.current.shift();
-    }
+    if (trailRef.current.length > 0) trailRef.current.shift();
   }
 }
 
-function drawBackground(context: CanvasRenderingContext2D, visualTime: number): void {
+// ---- Drawing helpers ----
+
+function drawBackground(context: CanvasRenderingContext2D, theme: TerrainTheme, visualTime: number): void {
+  const palette = getSkyPalette(theme);
   const gradient = context.createLinearGradient(0, 0, 0, worldHeight);
-  gradient.addColorStop(0, "#b4e1ff");
-  gradient.addColorStop(0.45, "#79c0f4");
-  gradient.addColorStop(1, "#4f93ca");
+  gradient.addColorStop(0, palette.skyTop);
+  gradient.addColorStop(0.45, palette.skyMid);
+  gradient.addColorStop(1, palette.skyBottom);
   context.fillStyle = gradient;
   context.fillRect(0, 0, worldWidth, worldHeight);
 
-  drawSun(context);
-  drawCloud(context, 175 + Math.sin(visualTime * 0.16) * 12, 135, 1.18, 0.84);
-  drawCloud(context, 418 + Math.sin(visualTime * 0.14 + 1.3) * 10, 110, 0.9, 0.7);
-  drawCloud(context, 985 + Math.sin(visualTime * 0.11 + 2.2) * 14, 100, 1.04, 0.76);
-  drawCloud(context, 1120 + Math.sin(visualTime * 0.19 + 0.7) * 8, 172, 0.82, 0.62);
-  drawBackMountains(context);
-  drawFrontMountains(context);
+  drawSun(context, theme);
+  drawCloud(context, 175 + Math.sin(visualTime * 0.16) * 12, 135, 1.18, palette.cloudAlpha);
+  drawCloud(context, 418 + Math.sin(visualTime * 0.14 + 1.3) * 10, 110, 0.9, palette.cloudAlpha * 0.84);
+  drawCloud(context, 985 + Math.sin(visualTime * 0.11 + 2.2) * 14, 100, 1.04, palette.cloudAlpha * 0.9);
+  drawCloud(context, 1120 + Math.sin(visualTime * 0.19 + 0.7) * 8, 172, 0.82, palette.cloudAlpha * 0.72);
+  drawBackMountains(context, theme);
+  drawFrontMountains(context, theme);
 }
 
 function drawTerrain(context: CanvasRenderingContext2D, terrain: TerrainState): void {
@@ -179,29 +438,59 @@ function drawTerrain(context: CanvasRenderingContext2D, terrain: TerrainState): 
   }
 
   context.strokeStyle = "#d8f5a0";
+  if (terrain.theme === "sunset") {
+    context.strokeStyle = "#ffd889";
+  }
+  if (terrain.theme === "midnight") {
+    context.strokeStyle = "#b7efcf";
+  }
   context.lineWidth = 3;
   context.beginPath();
   let x = 0;
-
   while (x < terrain.heights.length) {
     const y = terrain.heights[x];
-    if (x === 0) {
-      context.moveTo(x, y);
-    } else {
-      context.lineTo(x, y);
-    }
+    if (x === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
     x += 8;
   }
-
   context.stroke();
   context.strokeStyle = "rgba(57, 31, 18, 0.35)";
   context.lineWidth = 1;
   context.stroke();
 }
 
+function drawGrass(context: CanvasRenderingContext2D, terrain: TerrainState, visualTime: number, wind: { x: number; y: number }): void {
+  const palette = getTerrainPalette(terrain.theme);
+  const grassData = getGrassData();
+  for (let i = 0; i < grassData.length; i++) {
+    const g = grassData[i];
+    const sway = Math.sin(visualTime * 2.4 + g.sway) * 3 + wind.x * 4;
+    context.strokeStyle = "rgba(" + String(palette.grassMid[0]) + ", " + String(palette.grassMid[1]) + ", " + String(palette.grassMid[2]) + ", 0.7)";
+    context.lineWidth = 1.5;
+    context.beginPath();
+    context.moveTo(g.x, g.y);
+    context.quadraticCurveTo(g.x + sway * 0.5, g.y - g.height * 0.8, g.x + sway, g.y - g.height);
+    context.stroke();
+  }
+}
+
+let cachedGrass: GrassTuft[] | null = null;
+function getGrassData(): GrassTuft[] {
+  return cachedGrass || [];
+}
+
+export function invalidateGrassCache(): void {
+  cachedGrass = null;
+}
+
+export function setGrassData(grass: GrassTuft[]): void {
+  cachedGrass = grass;
+}
+
+// ---- Bonus boxes ----
+
 function drawBonusBoxes(context: CanvasRenderingContext2D, bonusBoxes: BonusBox[]): void {
   let index = 0;
-
   while (index < bonusBoxes.length) {
     const box = bonusBoxes[index];
     if (!box.landed) {
@@ -227,15 +516,10 @@ function drawBonusBoxes(context: CanvasRenderingContext2D, bonusBoxes: BonusBox[
   }
 }
 
-function drawPlayers(
-  context: CanvasRenderingContext2D,
-  players: [Player, Player],
-  turn: 1 | 2,
-  visualTime: number,
-  spriteCache: SpriteCache
-): void {
-  let index = 0;
+// ---- Players ----
 
+function drawPlayers(context: CanvasRenderingContext2D, players: [Player, Player], turn: 1 | 2, visualTime: number, spriteCache: SpriteCache): void {
+  let index = 0;
   while (index < players.length) {
     const player = players[index];
     const isTurn = player.id === turn;
@@ -244,22 +528,17 @@ function drawPlayers(
   }
 }
 
-function drawMobile(
-  context: CanvasRenderingContext2D,
-  player: Player,
-  isTurn: boolean,
-  visualTime: number,
-  spriteCache: SpriteCache
-): void {
-  const accent = player.id === 1 ? "#62c3ff" : "#ff9262";
+function drawMobile(context: CanvasRenderingContext2D, player: Player, isTurn: boolean, visualTime: number, spriteCache: SpriteCache): void {
+  const accent = getAccentColor(player.accent);
   const bob = Math.sin((player.mobile.position.x * 0.02 + visualTime * 4.2) * 0.9) * 1.6;
 
   if (isTurn) {
-    drawTurnGlow(context, player.mobile.position.x, player.mobile.position.y + bob);
+    drawTurnGlow(context, player.mobile.position.x, player.mobile.position.y + bob, accent);
   }
 
   context.save();
   context.translate(0, bob);
+  drawAccentAura(context, player, accent);
   drawMobileShadow(context, player);
   drawMobileSprite(context, player, spriteCache, visualTime);
   drawHpTickMarks(context, player);
@@ -283,29 +562,15 @@ function drawProjectile(context: CanvasRenderingContext2D, projectile: Projectil
 }
 
 function getBonusShortLabel(type: BonusBox["type"]): string {
-  if (type === "weapon") {
-    return "W";
-  }
-
-  if (type === "repair") {
-    return "HP";
-  }
-
+  if (type === "weapon") return "W";
+  if (type === "repair") return "HP";
   return "2X";
 }
 
 function loadMobileSprites(spriteCache: SpriteCache): void {
-  if (typeof Image === "undefined") {
-    return;
-  }
-
-  if (spriteCache.armor === null) {
-    spriteCache.armor = createMobileSpriteImage("armor");
-  }
-
-  if (spriteCache.knight === null) {
-    spriteCache.knight = createMobileSpriteImage("knight");
-  }
+  if (typeof Image === "undefined") return;
+  if (spriteCache.armor === null) spriteCache.armor = createMobileSpriteImage("armor");
+  if (spriteCache.knight === null) spriteCache.knight = createMobileSpriteImage("knight");
 }
 
 function createMobileSpriteImage(type: MobileType): HTMLImageElement {
@@ -340,41 +605,28 @@ function drawMobileSprite(context: CanvasRenderingContext2D, player: Player, spr
     context.translate(-player.mobile.position.x, 0);
   }
   context.drawImage(
-    sprite,
-    frame * spriteSource.width,
-    0,
-    spriteSource.width,
-    spriteSource.height,
-    destinationX,
-    destinationY,
-    spriteSource.width,
-    spriteSource.height
+    sprite, frame * spriteSource.width, 0, spriteSource.width, spriteSource.height,
+    destinationX, destinationY, spriteSource.width, spriteSource.height
   );
   context.restore();
 }
 
 function getCachedSprite(spriteCache: SpriteCache, type: MobileType): HTMLImageElement | null {
-  if (type === "armor") {
-    return spriteCache.armor;
-  }
-
-  return spriteCache.knight;
+  return type === "armor" ? spriteCache.armor : spriteCache.knight;
 }
 
 function drawFallbackMobile(context: CanvasRenderingContext2D, player: Player): void {
   if (player.mobile.type === "armor") {
     drawArmorMobile(context, player, "#62c3ff");
-    return;
+  } else {
+    drawKnightMobile(context, player, "#ff9262");
   }
-
-  drawKnightMobile(context, player, "#ff9262");
 }
 
 function drawHpTickMarks(context: CanvasRenderingContext2D, player: Player): void {
   const ratio = player.mobile.hp / player.mobile.maxHp;
   const filled = Math.max(0, Math.round(ratio * 5));
   let index = 0;
-
   while (index < 5) {
     context.fillStyle = index < filled ? "#ffe38d" : "rgba(16, 30, 48, 0.6)";
     context.fillRect(player.mobile.position.x - 14 + index * 6, player.mobile.position.y - player.mobile.height - 10, 4, 3);
@@ -383,10 +635,7 @@ function drawHpTickMarks(context: CanvasRenderingContext2D, player: Player): voi
 }
 
 function applyCameraShake(context: CanvasRenderingContext2D, explosionVisual: ExplosionVisual | null): void {
-  if (explosionVisual === null) {
-    return;
-  }
-
+  if (explosionVisual === null) return;
   const intensity = explosionVisual.timer / explosionVisual.duration;
   const offsetX = (Math.random() - 0.5) * 12 * intensity;
   const offsetY = (Math.random() - 0.5) * 10 * intensity;
@@ -394,10 +643,7 @@ function applyCameraShake(context: CanvasRenderingContext2D, explosionVisual: Ex
 }
 
 function drawProjectileTrail(context: CanvasRenderingContext2D, trail: Vec2[]): void {
-  if (trail.length < 2) {
-    return;
-  }
-
+  if (trail.length < 2) return;
   let index = 0;
   while (index < trail.length) {
     const point = trail[index];
@@ -412,10 +658,7 @@ function drawProjectileTrail(context: CanvasRenderingContext2D, trail: Vec2[]): 
 }
 
 function drawMuzzleFlash(context: CanvasRenderingContext2D, muzzleFlash: ExplosionVisual | null): void {
-  if (muzzleFlash === null) {
-    return;
-  }
-
+  if (muzzleFlash === null) return;
   const progress = muzzleFlash.timer / muzzleFlash.duration;
   const radius = (1 - progress) * muzzleFlash.radius;
   const gradient = context.createRadialGradient(muzzleFlash.point.x, muzzleFlash.point.y, 0, muzzleFlash.point.x, muzzleFlash.point.y, radius);
@@ -429,10 +672,7 @@ function drawMuzzleFlash(context: CanvasRenderingContext2D, muzzleFlash: Explosi
 }
 
 function drawExplosionVisual(context: CanvasRenderingContext2D, explosionVisual: ExplosionVisual | null): void {
-  if (explosionVisual === null) {
-    return;
-  }
-
+  if (explosionVisual === null) return;
   const progress = 1 - explosionVisual.timer / explosionVisual.duration;
   const ringRadius = explosionVisual.radius * (0.45 + progress * 0.95);
   const smokeRadius = explosionVisual.radius * (0.55 + progress * 0.7);
@@ -456,7 +696,6 @@ function drawExplosionVisual(context: CanvasRenderingContext2D, explosionVisual:
 
 function drawDamagePopups(context: CanvasRenderingContext2D, damagePopups: DamagePopup[]): void {
   let index = 0;
-
   while (index < damagePopups.length) {
     const popup = damagePopups[index];
     const progress = 1 - popup.timer / popup.duration;
@@ -474,14 +713,7 @@ function drawDamagePopups(context: CanvasRenderingContext2D, damagePopups: Damag
   }
 }
 
-function drawAimGuide(
-  context: CanvasRenderingContext2D,
-  player: Player,
-  wind: { x: number; y: number },
-  power: number,
-  charging: boolean,
-  terrain: TerrainState
-): void {
+function drawAimGuide(context: CanvasRenderingContext2D, player: Player, wind: { x: number; y: number }, power: number, charging: boolean, terrain: TerrainState): void {
   const launchRadians = getLaunchRadians(player.mobile);
   const muzzle = getMuzzlePosition(player.mobile, launchRadians);
   const guidePower = charging ? Math.max(0.14, power) : 0.56;
@@ -501,35 +733,128 @@ function drawAimGuide(
     x += velocityX * 0.08;
     y += velocityY * 0.08;
 
-    if (step === 0) {
-      context.moveTo(x, y);
-    } else {
-      context.lineTo(x, y);
-    }
+    if (step === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
 
-    if (x < 0 || x >= terrain.width || y >= terrain.height) {
-      break;
-    }
-
-    if (y >= terrain.heights[Math.floor(x)]) {
-      break;
-    }
-
+    if (x < 0 || x >= terrain.width || y >= terrain.height) break;
+    if (y >= terrain.heights[Math.floor(x)]) break;
     step += 1;
   }
-
   context.stroke();
+
   context.fillStyle = "rgba(255, 244, 201, 0.68)";
   context.beginPath();
   context.arc(muzzle.x, muzzle.y, 4, 0, Math.PI * 2);
   context.fill();
 }
 
-function drawSun(context: CanvasRenderingContext2D): void {
+// ---- Particle draw functions ----
+
+function drawDebris(context: CanvasRenderingContext2D): void {
+  const debris = getDebrisData();
+  for (let i = 0; i < debris.length; i++) {
+    const p = debris[i];
+    const alpha = p.life / p.maxLife;
+    context.globalAlpha = alpha;
+    context.fillStyle = p.color;
+    context.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  context.globalAlpha = 1;
+}
+
+function drawWindLeaves(context: CanvasRenderingContext2D, _visualTime: number): void {
+  const leaves = getLeafData();
+  for (let i = 0; i < leaves.length; i++) {
+    const l = leaves[i];
+    context.save();
+    context.translate(l.x, l.y);
+    context.rotate(l.rotation);
+    context.globalAlpha = l.alpha;
+    context.fillStyle = "#7bb757";
+    context.beginPath();
+    context.ellipse(0, 0, l.size, l.size * 0.5, 0, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = "#5a9a3a";
+    context.beginPath();
+    context.ellipse(1, -1, l.size * 0.3, l.size * 0.2, 0.3, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+  }
+  context.globalAlpha = 1;
+}
+
+function drawChargeSparks(context: CanvasRenderingContext2D): void {
+  const sparks = getSparkData();
+  for (let i = 0; i < sparks.length; i++) {
+    const s = sparks[i];
+    const alpha = s.life / s.maxLife;
+    context.globalAlpha = alpha;
+    context.fillStyle = "#ffeaa3";
+    context.shadowBlur = 6;
+    context.shadowColor = "rgba(255, 234, 163, 0.6)";
+    context.beginPath();
+    context.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    context.fill();
+  }
+  context.shadowBlur = 0;
+  context.globalAlpha = 1;
+}
+
+function drawDustPuffs(context: CanvasRenderingContext2D): void {
+  const dust = getDustData();
+  for (let i = 0; i < dust.length; i++) {
+    const d = dust[i];
+    const alpha = d.life / d.maxLife;
+    context.globalAlpha = alpha * 0.4;
+    context.fillStyle = "#c4a88a";
+    context.beginPath();
+    context.arc(d.x, d.y, d.size, 0, Math.PI * 2);
+    context.fill();
+  }
+  context.globalAlpha = 1;
+}
+
+function drawHitFlash(context: CanvasRenderingContext2D, flash: HitFlash | null): void {
+  if (flash === null || flash.alpha < 0.01) return;
+  context.fillStyle = "rgba(255, 255, 255, " + String(flash.alpha) + ")";
+  context.fillRect(0, 0, worldWidth, worldHeight);
+}
+
+// ---- Particle data accessors (bridged from refs) ----
+
+let debrisData: DebrisParticle[] = [];
+let leafData: WindLeaf[] = [];
+let sparkData: ChargeSpark[] = [];
+let dustData: DustPuff[] = [];
+
+export function setDebrisData(d: DebrisParticle[]): void { debrisData = d; }
+export function setLeafData(d: WindLeaf[]): void { leafData = d; }
+export function setSparkData(d: ChargeSpark[]): void { sparkData = d; }
+export function setDustData(d: DustPuff[]): void { dustData = d; }
+function getDebrisData(): DebrisParticle[] { return debrisData; }
+function getLeafData(): WindLeaf[] { return leafData; }
+function getSparkData(): ChargeSpark[] { return sparkData; }
+function getDustData(): DustPuff[] { return dustData; }
+
+// ---- Visual helpers (unchanged) ----
+
+function drawSun(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
+  if (theme === "midnight") {
+    const moonGradient = context.createRadialGradient(170, 120, 0, 170, 120, 72);
+    moonGradient.addColorStop(0, "rgba(246, 248, 255, 0.92)");
+    moonGradient.addColorStop(0.65, "rgba(194, 214, 255, 0.5)");
+    moonGradient.addColorStop(1, "rgba(194, 214, 255, 0)");
+    context.fillStyle = moonGradient;
+    context.beginPath();
+    context.arc(170, 120, 72, 0, Math.PI * 2);
+    context.fill();
+    return;
+  }
+
   const gradient = context.createRadialGradient(170, 120, 0, 170, 120, 92);
-  gradient.addColorStop(0, "rgba(255, 245, 180, 0.98)");
-  gradient.addColorStop(0.6, "rgba(255, 211, 111, 0.85)");
-  gradient.addColorStop(1, "rgba(255, 211, 111, 0)");
+  gradient.addColorStop(0, theme === "sunset" ? "rgba(255, 224, 167, 0.98)" : "rgba(255, 245, 180, 0.98)");
+  gradient.addColorStop(0.6, theme === "sunset" ? "rgba(255, 150, 94, 0.85)" : "rgba(255, 211, 111, 0.85)");
+  gradient.addColorStop(1, theme === "sunset" ? "rgba(255, 150, 94, 0)" : "rgba(255, 211, 111, 0)");
   context.fillStyle = gradient;
   context.beginPath();
   context.arc(170, 120, 92, 0, Math.PI * 2);
@@ -550,8 +875,8 @@ function drawCloudBubble(context: CanvasRenderingContext2D, x: number, y: number
   context.fill();
 }
 
-function drawBackMountains(context: CanvasRenderingContext2D): void {
-  context.fillStyle = "rgba(68, 133, 173, 0.78)";
+function drawBackMountains(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
+  context.fillStyle = theme === "sunset" ? "rgba(152, 103, 114, 0.72)" : theme === "midnight" ? "rgba(54, 78, 118, 0.78)" : "rgba(68, 133, 173, 0.78)";
   context.beginPath();
   context.moveTo(0, 465);
   context.lineTo(140, 355);
@@ -569,8 +894,8 @@ function drawBackMountains(context: CanvasRenderingContext2D): void {
   context.fill();
 }
 
-function drawFrontMountains(context: CanvasRenderingContext2D): void {
-  context.fillStyle = "rgba(83, 146, 117, 0.56)";
+function drawFrontMountains(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
+  context.fillStyle = theme === "sunset" ? "rgba(127, 109, 79, 0.58)" : theme === "midnight" ? "rgba(64, 99, 102, 0.56)" : "rgba(83, 146, 117, 0.56)";
   context.beginPath();
   context.moveTo(0, 520);
   context.lineTo(95, 438);
@@ -610,24 +935,35 @@ function drawParachute(context: CanvasRenderingContext2D, x: number, y: number, 
 }
 
 function getBonusParachuteColor(type: BonusBox["type"]): string {
-  if (type === "weapon") {
-    return "#77c6ff";
-  }
-
-  if (type === "repair") {
-    return "#98d96b";
-  }
-
+  if (type === "weapon") return "#77c6ff";
+  if (type === "repair") return "#98d96b";
   return "#ffb35d";
 }
 
-function drawTurnGlow(context: CanvasRenderingContext2D, x: number, y: number): void {
+function drawTurnGlow(context: CanvasRenderingContext2D, x: number, y: number, accent: string): void {
   const gradient = context.createRadialGradient(x, y - 12, 0, x, y - 12, 42);
-  gradient.addColorStop(0, "rgba(255, 236, 153, 0.42)");
-  gradient.addColorStop(1, "rgba(255, 236, 153, 0)");
+  gradient.addColorStop(0, toAlphaColor(accent, 0.42));
+  gradient.addColorStop(1, toAlphaColor(accent, 0));
   context.fillStyle = gradient;
   context.beginPath();
   context.arc(x, y - 12, 42, 0, Math.PI * 2);
+  context.fill();
+}
+
+function drawAccentAura(context: CanvasRenderingContext2D, player: Player, accent: string): void {
+  const gradient = context.createRadialGradient(
+    player.mobile.position.x,
+    player.mobile.position.y - 18,
+    0,
+    player.mobile.position.x,
+    player.mobile.position.y - 18,
+    24
+  );
+  gradient.addColorStop(0, toAlphaColor(accent, 0.22));
+  gradient.addColorStop(1, toAlphaColor(accent, 0));
+  context.fillStyle = gradient;
+  context.beginPath();
+  context.arc(player.mobile.position.x, player.mobile.position.y - 18, 24, 0, Math.PI * 2);
   context.fill();
 }
 
@@ -758,6 +1094,71 @@ function drawPennant(context: CanvasRenderingContext2D, player: Player, accent: 
   context.fill();
 }
 
+function getAccentColor(accent: PlayerAccent): string {
+  if (accent === "coral") {
+    return "#ff8f72";
+  }
+
+  if (accent === "mint") {
+    return "#71dfb0";
+  }
+
+  if (accent === "gold") {
+    return "#ffd36d";
+  }
+
+  return "#62c3ff";
+}
+
+function toAlphaColor(hex: string, alpha: number): string {
+  const parsed = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (parsed === null) {
+    return "rgba(255, 255, 255, " + String(alpha) + ")";
+  }
+
+  return "rgba(" +
+    String(Number.parseInt(parsed[1], 16)) +
+    ", " +
+    String(Number.parseInt(parsed[2], 16)) +
+    ", " +
+    String(Number.parseInt(parsed[3], 16)) +
+    ", " +
+    String(alpha) +
+    ")";
+}
+
+function getSkyPalette(theme: TerrainTheme): {
+  skyTop: string;
+  skyMid: string;
+  skyBottom: string;
+  cloudAlpha: number;
+} {
+  if (theme === "sunset") {
+    return {
+      skyTop: "#ffd1a6",
+      skyMid: "#f39779",
+      skyBottom: "#6b70b8",
+      cloudAlpha: 0.64
+    };
+  }
+
+  if (theme === "midnight") {
+    return {
+      skyTop: "#19284e",
+      skyMid: "#294a79",
+      skyBottom: "#13253f",
+      cloudAlpha: 0.32
+    };
+  }
+
+  return {
+    skyTop: "#b4e1ff",
+    skyMid: "#79c0f4",
+    skyBottom: "#4f93ca",
+    cloudAlpha: 0.84
+  };
+}
+
 function roundRect(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
   context.beginPath();
   context.moveTo(x + radius, y);
@@ -765,10 +1166,10 @@ function roundRect(context: CanvasRenderingContext2D, x: number, y: number, widt
   context.quadraticCurveTo(x + width, y, x + width, y + radius);
   context.lineTo(x + width, y + height - radius);
   context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-  context.lineTo(x + radius, y + height);
+  context.lineTo(x - radius, y + height);
   context.quadraticCurveTo(x, y + height, x, y + height - radius);
   context.lineTo(x, y + radius);
-  context.quadraticCurveTo(x, y, x + radius, y);
+  context.quadraticCurveTo(x, y, x - radius, y);
   context.closePath();
 }
 
@@ -777,7 +1178,6 @@ function drawTrackTread(context: CanvasRenderingContext2D, x: number, y: number,
   context.lineWidth = 1;
   let index = 0;
   const start = x - width * 0.42;
-
   while (index < 6) {
     const offset = start + index * (width * 0.16);
     context.beginPath();

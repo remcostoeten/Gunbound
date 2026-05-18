@@ -2,31 +2,33 @@
 
 import { create } from "zustand";
 import type { StateCreator } from "zustand";
-import { createProjectile, distanceDamage, stepProjectile } from "@/features/game/engine/physics";
-import { normalizeSeed, randomInt } from "@/features/game/engine/random";
-import { carveCrater, clamp, createTerrain, getSurfaceY } from "@/features/game/engine/terrain";
-import { getWeaponDisplayName } from "@/features/game/engine/weapons";
-import { getWindLabel, rollWind } from "@/features/game/engine/wind";
+import { defaultSuddenDeathTurn, defaultTargetScore, getPhaseDuration } from "@/features/game/constants/gameplay";
+import { applyMobileGravity, markPlayersForFalling } from "@/features/game/engine/gravity";
+import { moveMobileAlongTerrain } from "@/features/game/engine/movement";
+import { applyExplosionDamage, stepProjectile } from "@/features/game/engine/physics";
+import { advanceRoundTurn, getRoundWinner, resolveMatchContinuation, resolveRoundWinner } from "@/features/game/engine/rounds";
+import { normalizeSeed } from "@/features/game/engine/random";
+import { carveCrater, clamp, getSurfaceY } from "@/features/game/engine/terrain";
+import { canSelectWeapon, getNextWeapon, getWeaponDisplayName, shouldConsumeSpecialCharge } from "@/features/game/engine/weapons";
+import { appendHistory, appendMatchEventEntries, createMatchEvent as buildMatchEvent } from "@/features/game/factories/create-match-event";
+import { createPlaceholderPlayers } from "@/features/game/factories/create-player";
+import { createProjectile } from "@/features/game/factories/create-projectile";
+import { createStartedMatchState } from "@/features/game/factories/create-round-state";
+import { createTurnAnnouncement } from "@/features/game/factories/create-turn-announcement";
+import type {
+  CombatHit,
+  ExplosionState
+} from "@/features/game/types/combat";
 import type {
   BonusBox,
-  BonusType,
-  DamagePopup,
-  ExplosionState,
-  ExplosionVisual,
-  GamePhase,
-  GameState,
-  InputState,
-  MatchEvent,
-  MatchEventKind,
-  MatchConfig,
   Mobile,
-  MobileType,
   Player,
-  TerrainState,
-  TurnAnnouncement,
-  WeaponType
-} from "@/features/game/types/game";
-import { worldHeight, worldWidth } from "@/features/game/types/game";
+  TerrainState
+} from "@/features/game/types/entities";
+import type { DamagePopup, ExplosionVisual, TurnAnnouncement } from "@/features/game/types/effects";
+import type { MatchEvent } from "@/features/game/types/events";
+import type { GameState, InputState, MatchConfig } from "@/features/game/types/state";
+import type { BonusType } from "@/features/game/types/shared";
 
 type GameStoreState = GameState & {
   input: InputState;
@@ -49,6 +51,10 @@ export const defaultSetup: MatchConfig = {
   playerTwoName: "Player 2",
   playerOneMobile: "armor",
   playerTwoMobile: "knight",
+  playerOneTitle: "Captain",
+  playerTwoTitle: "Raider",
+  playerOneAccent: "sky",
+  playerTwoAccent: "coral",
   seedText: "gunbound-local"
 };
 
@@ -63,15 +69,15 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
     phase: "move",
     turn: 1,
     wind: { x: 0, y: 0 },
-    players: createPlaceholderPlayers(),
+    players: createPlaceholderPlayers(defaultSetup),
     tick: 0,
     seed: normalizeSeed(defaultSetup.seedText),
     terrain: null,
     projectile: null,
     winner: null,
     round: 1,
-    targetScore: 2,
-    suddenDeathTurn: 12,
+    targetScore: defaultTargetScore,
+    suddenDeathTurn: defaultSuddenDeathTurn,
     suddenDeathActive: false,
     power: 0,
     charging: false,
@@ -92,44 +98,15 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
     setup: defaultSetup,
     resolveTimer: 0,
     startMatch: function startMatch(config: MatchConfig): void {
-      const seed = normalizeSeed(config.seedText);
-      const terrainRoll = createTerrain(seed, worldWidth, worldHeight);
-      const players = createPlayers(config, terrainRoll.terrain);
-      const windRoll = rollWind(terrainRoll.state);
+      const startedMatchState = createStartedMatchState(config);
 
       set({
-        scene: "playing",
-        phase: "move",
-        turn: 1,
-        wind: windRoll.wind,
-        players,
-        tick: 0,
-        seed,
-        terrain: terrainRoll.terrain,
-        projectile: null,
-        winner: null,
-        round: 1,
-        targetScore: 2,
-        suddenDeathTurn: 12,
-        suddenDeathActive: false,
-        power: 0,
-        charging: false,
-        turnCount: 1,
-        phaseTimer: getPhaseDuration("move"),
-        phaseDuration: getPhaseDuration("move"),
-        bonusBoxes: [],
-        explosionVisual: null,
-        damagePopups: [],
-        turnAnnouncement: createTurnAnnouncement(1, players[0].name),
-        history: createRoundHistory(players, 1, 1, "Round 1 started."),
-        message: "Player 1 turn. Move or fire.",
+        ...startedMatchState,
         input: {
           aimUp: false,
           aimDown: false
         },
-        randomState: windRoll.state,
-        setup: config,
-        resolveTimer: 0
+        setup: config
       });
     },
     restartMatch: function restartMatch(): void {
@@ -144,8 +121,8 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         power: 0,
         winner: null,
         round: 1,
-        targetScore: 2,
-        suddenDeathTurn: 12,
+        targetScore: defaultTargetScore,
+        suddenDeathTurn: defaultSuddenDeathTurn,
         suddenDeathActive: false,
         phaseTimer: getPhaseDuration("move"),
         phaseDuration: getPhaseDuration("move"),
@@ -214,33 +191,20 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
           nextExplosionVisual = createExplosionVisual(step.explosion);
           nextPower = 0;
           nextCharging = false;
-          nextWinner = getWinner(nextPlayers);
+          nextWinner = getRoundWinner(nextPlayers);
           if (nextWinner !== null) {
-            nextPlayers = awardRoundScore(nextPlayers, nextWinner);
-            nextHistory = appendHistory(
-              nextHistory,
-              [
-                createMatchEvent(
-                  state.round,
-                  state.turn,
-                  "round-end",
-                  nextPlayers[nextWinner - 1].name +
-                    " won round " +
-                    String(state.round) +
-                    ". Score " +
-                    String(nextPlayers[0].score) +
-                    "-" +
-                    String(nextPlayers[1].score) +
-                    "."
-                )
-              ]
-            );
+            const resolution = resolveRoundWinner(nextPlayers, nextWinner, state.round, state.turn, nextHistory);
+            nextPlayers = resolution.players;
+            nextHistory = resolution.history;
+            nextMessage = resolution.message;
           }
           nextPhase = nextWinner === null ? "resolve" : "end";
           nextResolveTimer = 0.7;
           nextPhaseTimer = nextWinner === null ? getPhaseDuration("resolve") : 2.2;
           nextPhaseDuration = nextWinner === null ? getPhaseDuration("resolve") : 2.2;
-          nextMessage = nextWinner === null ? "Impact resolved. Passing turn." : createWinnerMessage(nextPlayers, nextWinner);
+          if (nextWinner === null) {
+            nextMessage = "Impact resolved. Passing turn.";
+          }
         }
       }
 
@@ -261,30 +225,32 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
           nextMessage = fired.message;
           nextPhaseTimer = getPhaseDuration("fire");
           nextPhaseDuration = getPhaseDuration("fire");
-          nextHistory = appendHistory(
-            nextHistory,
-            [
-              createMatchEvent(
-                state.round,
-                state.turn,
-                "shot",
+          nextHistory = appendMatchEventEntries(nextHistory, [
+            {
+              round: state.round,
+              turn: state.turn,
+              kind: "shot",
+              text:
                 fired.players[state.turn - 1].name +
-                  " auto-fired " +
-                  getWeaponDisplayName(fired.players[state.turn - 1].mobile.type, fired.players[state.turn - 1].mobile.weapon) +
-                  "."
-              )
-            ]
-          );
+                " auto-fired " +
+                getWeaponDisplayName(fired.players[state.turn - 1].mobile.type, fired.players[state.turn - 1].mobile.weapon) +
+                "."
+            }
+          ]);
         } else if (nextPhase !== "resolve" && nextPhase !== "end" && nextProjectile === null) {
           nextPhase = "resolve";
           nextResolveTimer = 0.45;
           nextPhaseTimer = getPhaseDuration("resolve");
           nextPhaseDuration = getPhaseDuration("resolve");
           nextMessage = nextPlayers[state.turn - 1].name + " timed out.";
-          nextHistory = appendHistory(
-            nextHistory,
-            [createMatchEvent(state.round, state.turn, "turn-start", nextPlayers[state.turn - 1].name + " timed out.")]
-          );
+          nextHistory = appendMatchEventEntries(nextHistory, [
+            {
+              round: state.round,
+              turn: state.turn,
+              kind: "turn-start",
+              text: nextPlayers[state.turn - 1].name + " timed out."
+            }
+          ]);
         }
       }
 
@@ -296,15 +262,15 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       }
 
       if (shouldAdvanceTurn && nextWinner === null && nextProjectile === null && nextPhase === "resolve") {
-        const advanced = advanceTurn(nextPlayers, nextTerrain, state.round, state.turn, state.randomState, state.turnCount, state.suddenDeathTurn, nextBonusBoxes);
+        const advanced = advanceRoundTurn(nextPlayers, nextTerrain, state.round, state.turn, state.randomState, state.turnCount, state.suddenDeathTurn, nextBonusBoxes);
         nextHistory = appendHistory(nextHistory, advanced.history);
         nextDamagePopups = nextDamagePopups.concat(advanced.damagePopups);
 
         if (advanced.winner !== null) {
-          const scoredPlayers = awardRoundScore(advanced.players, advanced.winner);
+          const resolution = resolveRoundWinner(advanced.players, advanced.winner, state.round, advanced.turn, nextHistory);
           set({
             scene: "playing",
-            players: scoredPlayers,
+            players: resolution.players,
             turn: advanced.turn,
             wind: advanced.wind,
             phase: "end",
@@ -315,7 +281,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
             round: state.round,
             targetScore: state.targetScore,
             suddenDeathTurn: state.suddenDeathTurn,
-            suddenDeathActive: true,
+            suddenDeathActive: advanced.suddenDeathActive,
             turnCount: advanced.turnCount,
             phaseTimer: 2.2,
             phaseDuration: 2.2,
@@ -324,25 +290,8 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
             explosionVisual: nextExplosionVisual,
             damagePopups: nextDamagePopups,
             turnAnnouncement: null,
-            history: appendHistory(
-              nextHistory,
-              [
-                createMatchEvent(
-                  state.round,
-                  advanced.turn,
-                  "round-end",
-                  scoredPlayers[advanced.winner - 1].name +
-                    " won round " +
-                    String(state.round) +
-                    ". Score " +
-                    String(scoredPlayers[0].score) +
-                    "-" +
-                    String(scoredPlayers[1].score) +
-                    "."
-                )
-              ]
-            ),
-            message: createWinnerMessage(scoredPlayers, advanced.winner),
+            history: resolution.history,
+            message: resolution.message,
             randomState: advanced.randomState,
             resolveTimer: 0,
             terrain: nextTerrain
@@ -383,11 +332,11 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       if (nextWinner !== null) {
         nextPhase = "end";
         if (nextPhaseTimer <= 0) {
-          if (nextPlayers[nextWinner - 1].score >= state.targetScore) {
+          const continuation = resolveMatchContinuation(state.setup, nextPlayers, state.round, state.targetScore, nextHistory);
+          if (continuation.type === "match-end") {
             nextScene = "end";
           } else {
-            const nextRoundState = buildNextRoundState(state.setup, nextPlayers, state.round + 1, nextHistory);
-            set(nextRoundState);
+            set(continuation.state);
             return;
           }
         }
@@ -471,7 +420,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       const currentPlayer = players[state.turn - 1];
       const power = clamp(state.power, 0.08, 1);
       const projectile = createProjectile(currentPlayer.mobile, state.turn, power);
-      const shouldConsumeCharge = currentPlayer.mobile.weapon === "secondary" && state.turnCount < 4 && currentPlayer.mobile.specialCharges > 0;
+      const shouldConsumeCharge = shouldConsumeSpecialCharge(currentPlayer.mobile.weapon, currentPlayer.mobile.specialCharges, state.turnCount);
 
       if (shouldConsumeCharge) {
         currentPlayer.mobile.specialCharges -= 1;
@@ -485,17 +434,14 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         phase: "fire",
         phaseTimer: getPhaseDuration("fire"),
         phaseDuration: getPhaseDuration("fire"),
-        history: appendHistory(
-          state.history,
-          [
-            createMatchEvent(
-              state.round,
-              state.turn,
-              "shot",
-              currentPlayer.name + " fired " + getWeaponDisplayName(currentPlayer.mobile.type, currentPlayer.mobile.weapon) + "."
-            )
-          ]
-        ),
+        history: appendMatchEventEntries(state.history, [
+          {
+            round: state.round,
+            turn: state.turn,
+            kind: "shot",
+            text: currentPlayer.name + " fired " + getWeaponDisplayName(currentPlayer.mobile.type, currentPlayer.mobile.weapon) + "."
+          }
+        ]),
         message: currentPlayer.name + " fired."
       });
     },
@@ -533,16 +479,15 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         phaseDuration: getPhaseDuration("resolve"),
         resolveTimer: 0.45,
         history: appendHistory(
-          state.history,
-          [
-            createMatchEvent(
-              state.round,
-              state.turn,
-              "move",
-              currentPlayer.name + " moved to x " + String(Math.round(currentPlayer.mobile.position.x)) + "."
-            ),
-            ...pickupHistory
-          ]
+          appendMatchEventEntries(state.history, [
+            {
+              round: state.round,
+              turn: state.turn,
+              kind: "move",
+              text: currentPlayer.name + " moved to x " + String(Math.round(currentPlayer.mobile.position.x)) + "."
+            }
+          ]),
+          pickupHistory
         ),
         message: currentPlayer.name + " moved and ended the turn."
       });
@@ -559,7 +504,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
 
       const players = clonePlayers(state.players);
       const currentPlayer = players[state.turn - 1];
-      const nextWeapon: WeaponType = currentPlayer.mobile.weapon === "primary" ? "secondary" : "primary";
+      const nextWeapon = getNextWeapon(currentPlayer.mobile.weapon);
 
       if (nextWeapon === "secondary" && !canSelectWeapon(nextWeapon, currentPlayer.mobile.specialCharges, state.turnCount)) {
         return;
@@ -569,109 +514,17 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
 
       set({
         players,
-        history: appendHistory(
-          state.history,
-          [
-            createMatchEvent(
-              state.round,
-              state.turn,
-              "weapon-switch",
-              currentPlayer.name + " selected " + getWeaponDisplayName(currentPlayer.mobile.type, nextWeapon) + "."
-            )
-          ]
-        ),
+        history: appendMatchEventEntries(state.history, [
+          {
+            round: state.round,
+            turn: state.turn,
+            kind: "weapon-switch",
+            text: currentPlayer.name + " selected " + getWeaponDisplayName(currentPlayer.mobile.type, nextWeapon) + "."
+          }
+        ]),
         message: currentPlayer.name + " selected " + nextWeapon + "."
       });
     }
-  };
-}
-
-function createPlaceholderPlayers(): [Player, Player] {
-  return [
-    {
-      id: 1,
-      name: defaultSetup.playerOneName,
-      score: 0,
-      mobile: createMobile(defaultSetup.playerOneMobile, "p1-mobile", 1, 160)
-    },
-    {
-      id: 2,
-      name: defaultSetup.playerTwoName,
-      score: 0,
-      mobile: createMobile(defaultSetup.playerTwoMobile, "p2-mobile", 2, worldWidth - 160)
-    }
-  ];
-}
-
-function createPlayers(config: MatchConfig, terrain: TerrainState): [Player, Player] {
-  const playerOneMobile = createMobile(config.playerOneMobile, "p1-mobile", 1, 164);
-  const playerTwoMobile = createMobile(config.playerTwoMobile, "p2-mobile", 2, worldWidth - 164);
-
-  playerOneMobile.position.y = getSurfaceY(terrain, playerOneMobile.position.x);
-  playerTwoMobile.position.y = getSurfaceY(terrain, playerTwoMobile.position.x);
-  playerOneMobile.facing = 1;
-  playerTwoMobile.facing = -1;
-
-  return [
-    {
-      id: 1,
-      name: config.playerOneName || "Player 1",
-      mobile: playerOneMobile,
-      score: 0
-    },
-    {
-      id: 2,
-      name: config.playerTwoName || "Player 2",
-      mobile: playerTwoMobile,
-      score: 0
-    }
-  ];
-}
-
-function createPlayersForRound(config: MatchConfig, terrain: TerrainState, previousPlayers: [Player, Player]): [Player, Player] {
-  const nextPlayers = createPlayers(config, terrain);
-  nextPlayers[0].score = previousPlayers[0].score;
-  nextPlayers[1].score = previousPlayers[1].score;
-  return nextPlayers;
-}
-
-function createMobile(type: MobileType, id: string, playerId: 1 | 2, x: number): Mobile {
-  if (type === "knight") {
-    return {
-      id,
-      type,
-      hp: 92,
-      maxHp: 92,
-      position: { x, y: worldHeight * 0.6 },
-      weapon: "primary",
-      width: 34,
-      height: 20,
-      angle: 52,
-      facing: playerId === 1 ? 1 : -1,
-      moveRange: 84,
-      shotDelay: 1.1,
-      specialCharges: 0,
-      doubleDamageTurns: 0,
-      verticalVelocity: 0
-    };
-  }
-
-  return {
-    id,
-    type,
-    hp: 118,
-    maxHp: 118,
-    position: { x, y: worldHeight * 0.6 },
-    weapon: "primary",
-    width: 40,
-    height: 24,
-    angle: 46,
-    facing: playerId === 1 ? 1 : -1,
-    moveRange: 68,
-    shotDelay: 0.92,
-    specialCharges: 0,
-    doubleDamageTurns: 0,
-    verticalVelocity: 0
   };
 }
 
@@ -680,12 +533,16 @@ function clonePlayers(players: [Player, Player]): [Player, Player] {
     {
       id: players[0].id,
       name: players[0].name,
+      title: players[0].title,
+      accent: players[0].accent,
       score: players[0].score,
       mobile: cloneMobile(players[0].mobile)
     },
     {
       id: players[1].id,
       name: players[1].name,
+      title: players[1].title,
+      accent: players[1].accent,
       score: players[1].score,
       mobile: cloneMobile(players[1].mobile)
     }
@@ -735,49 +592,6 @@ function applyAimInput(players: [Player, Player], turn: 1 | 2, input: InputState
   return nextPlayers;
 }
 
-function moveMobileAlongTerrain(
-  mobile: Mobile,
-  terrain: TerrainState,
-  direction: -1 | 1,
-  otherMobile: Mobile
-): {
-  mobile: Mobile;
-  moved: boolean;
-} {
-  const nextMobile = cloneMobile(mobile);
-  const stepSize = 6;
-  const totalSteps = Math.max(1, Math.floor(mobile.moveRange / stepSize));
-  const climbLimit = 12;
-  let step = 0;
-  let moved = false;
-
-  while (step < totalSteps) {
-    const candidateX = clamp(nextMobile.position.x + stepSize * direction, 48, terrain.width - 48);
-    const candidateY = getSurfaceY(terrain, candidateX);
-    const currentY = getSurfaceY(terrain, nextMobile.position.x);
-    const otherDistance = Math.abs(candidateX - otherMobile.position.x);
-    const minDistance = nextMobile.width * 0.7 + otherMobile.width * 0.7;
-
-    if (Math.abs(candidateY - currentY) > climbLimit) {
-      break;
-    }
-
-    if (otherDistance < minDistance) {
-      break;
-    }
-
-    nextMobile.position.x = candidateX;
-    nextMobile.position.y = candidateY;
-    moved = true;
-    step += 1;
-  }
-
-  return {
-    mobile: nextMobile,
-    moved
-  };
-}
-
 function applyExplosion(
   players: [Player, Player],
   explosion: ExplosionState,
@@ -788,257 +602,14 @@ function applyExplosion(
   damagePopups: DamagePopup[];
   history: MatchEvent[];
 } {
-  const nextPlayers = clonePlayers(players);
-  const damagePopups: DamagePopup[] = [];
-  const history: MatchEvent[] = [];
-  let index = 0;
-
-  while (index < nextPlayers.length) {
-    const player = nextPlayers[index];
-    const targetPoint = {
-      x: player.mobile.position.x,
-      y: player.mobile.position.y - player.mobile.height * 0.5
-    };
-    let damage = distanceDamage(explosion, targetPoint);
-    const owner = nextPlayers[explosion.owner - 1];
-
-    if (owner.mobile.doubleDamageTurns > 0) {
-      damage *= 2;
-    }
-
-    const roundedDamage = Math.round(damage);
-    player.mobile.hp = Math.max(0, Math.round(player.mobile.hp - damage));
-    if (roundedDamage > 0) {
-      damagePopups.push(createDamagePopup(player, roundedDamage));
-      history.push(
-        createMatchEvent(
-          round,
-          turn,
-          "hit",
-          nextPlayers[explosion.owner - 1].name +
-            " hit " +
-            player.name +
-            " for " +
-            String(roundedDamage) +
-            "."
-        )
-      );
-    }
-    index += 1;
-  }
-
-  nextPlayers[explosion.owner - 1].mobile.doubleDamageTurns = Math.max(0, nextPlayers[explosion.owner - 1].mobile.doubleDamageTurns - 1);
+  const resolution = applyExplosionDamage(players, explosion);
+  const history = createHitHistory(resolution.hits, resolution.players[explosion.owner - 1].name, round, turn);
 
   return {
-    players: nextPlayers,
-    damagePopups,
+    players: resolution.players,
+    damagePopups: createDamagePopups(resolution.hits),
     history
   };
-}
-
-function settlePlayersOnTerrain(players: [Player, Player], terrain: TerrainState): [Player, Player] {
-  const nextPlayers = clonePlayers(players);
-  let index = 0;
-
-  while (index < nextPlayers.length) {
-    const player = nextPlayers[index];
-    player.mobile.position.y = getSurfaceY(terrain, player.mobile.position.x);
-    index += 1;
-  }
-
-  return nextPlayers;
-}
-
-function markPlayersForFalling(players: [Player, Player]): [Player, Player] {
-  const nextPlayers = clonePlayers(players);
-  let index = 0;
-
-  while (index < nextPlayers.length) {
-    nextPlayers[index].mobile.verticalVelocity = 0;
-    index += 1;
-  }
-
-  return nextPlayers;
-}
-
-function applyMobileGravity(
-  players: [Player, Player],
-  terrain: TerrainState,
-  dt: number
-): {
-  players: [Player, Player];
-  unstable: boolean;
-} {
-  const nextPlayers = clonePlayers(players);
-  let unstable = false;
-  let index = 0;
-
-  while (index < nextPlayers.length) {
-    const mobile = nextPlayers[index].mobile;
-    const surfaceY = getSurfaceY(terrain, mobile.position.x);
-
-    if (mobile.position.y < surfaceY - 0.5) {
-      mobile.verticalVelocity += 960 * dt;
-      mobile.position.y = Math.min(surfaceY, mobile.position.y + mobile.verticalVelocity * dt);
-      unstable = true;
-
-      if (mobile.position.y >= surfaceY) {
-        mobile.position.y = surfaceY;
-        mobile.verticalVelocity = 0;
-      }
-    } else {
-      mobile.position.y = surfaceY;
-      mobile.verticalVelocity = 0;
-    }
-
-    index += 1;
-  }
-
-  return {
-    players: nextPlayers,
-    unstable
-  };
-}
-
-function getWinner(players: [Player, Player]): 1 | 2 | null {
-  if (players[0].mobile.hp <= 0 && players[1].mobile.hp <= 0) {
-    return 1;
-  }
-
-  if (players[0].mobile.hp <= 0) {
-    return 2;
-  }
-
-  if (players[1].mobile.hp <= 0) {
-    return 1;
-  }
-
-  return null;
-}
-
-function awardRoundScore(players: [Player, Player], winner: 1 | 2): [Player, Player] {
-  const nextPlayers = clonePlayers(players);
-  nextPlayers[winner - 1].score += 1;
-  return nextPlayers;
-}
-
-function createWinnerMessage(players: [Player, Player], winner: 1 | 2): string {
-  return players[winner - 1].name + " wins.";
-}
-
-function advanceTurn(
-  players: [Player, Player],
-  terrain: TerrainState,
-  round: number,
-  turn: 1 | 2,
-  randomState: number,
-  turnCount: number,
-  suddenDeathTurn: number,
-  bonusBoxes: BonusBox[]
-): {
-  players: [Player, Player];
-  turn: 1 | 2;
-  wind: { x: number; y: number };
-  turnCount: number;
-  bonusBoxes: BonusBox[];
-  message: string;
-  randomState: number;
-  suddenDeathActive: boolean;
-  history: MatchEvent[];
-  damagePopups: DamagePopup[];
-  winner: 1 | 2 | null;
-} {
-  const nextTurn = turn === 1 ? 2 : 1;
-  const nextTurnCount = turnCount + 1;
-  const windRoll = rollWind(randomState);
-  const nextPlayers = clonePlayers(players);
-  const history: MatchEvent[] = [];
-  let damagePopups: DamagePopup[] = [];
-  const suddenDeathActive = nextTurnCount >= suddenDeathTurn;
-  nextPlayers[nextTurn - 1].mobile.weapon = "primary";
-  const bonusRoll = maybeSpawnBonusBoxes(windRoll.state, bonusBoxes, nextTurnCount, terrain);
-  history.push(createMatchEvent(round, nextTurn, "turn-start", nextPlayers[nextTurn - 1].name + " turn."));
-
-  if (nextTurnCount === suddenDeathTurn) {
-    history.push(createMatchEvent(round, nextTurn, "sudden-death", "Sudden death started."));
-  }
-
-  if (suddenDeathActive) {
-    const suddenDeathResult = applySuddenDeathTick(nextPlayers, round, nextTurn);
-    damagePopups = suddenDeathResult.damagePopups;
-    history.push(...suddenDeathResult.history);
-  }
-
-  const winner = getWinner(nextPlayers);
-  const message =
-    winner === null
-      ? nextPlayers[nextTurn - 1].name + " turn. Wind " + getWindLabel(windRoll.wind) + "."
-      : createWinnerMessage(nextPlayers, winner);
-
-  return {
-    players: nextPlayers,
-    turn: nextTurn,
-    wind: windRoll.wind,
-    turnCount: nextTurnCount,
-    bonusBoxes: bonusRoll.bonusBoxes,
-    message,
-    randomState: bonusRoll.randomState,
-    suddenDeathActive,
-    history,
-    damagePopups,
-    winner
-  };
-}
-
-function maybeSpawnBonusBoxes(
-  randomState: number,
-  bonusBoxes: BonusBox[],
-  turnCount: number,
-  terrain: TerrainState
-): {
-  bonusBoxes: BonusBox[];
-  randomState: number;
-} {
-  if (turnCount % 3 !== 0 || bonusBoxes.length >= 3) {
-    return {
-      bonusBoxes,
-      randomState
-    };
-  }
-
-  const typeRoll = randomInt(randomState, 0, 2);
-  const xRoll = randomInt(typeRoll.state, 120, worldWidth - 120);
-  const bonusType = getBonusType(typeRoll.value);
-  const box: BonusBox = {
-    id: "box-" + String(turnCount) + "-" + String(typeRoll.state),
-    type: bonusType,
-    position: {
-      x: xRoll.value,
-      y: 76
-    },
-    radius: 16,
-    verticalVelocity: 0,
-    landed: false
-  };
-  const nextBoxes = bonusBoxes.slice();
-  nextBoxes.push(box);
-
-  return {
-    bonusBoxes: nextBoxes,
-    randomState: xRoll.state
-  };
-}
-
-function getBonusType(value: number): BonusType {
-  if (value === 0) {
-    return "weapon";
-  }
-
-  if (value === 1) {
-    return "repair";
-  }
-
-  return "double";
 }
 
 function pickupBonusBoxes(
@@ -1092,14 +663,6 @@ function applyBonus(mobile: Mobile, bonus: BonusType): void {
   mobile.doubleDamageTurns = 1;
 }
 
-function canSelectWeapon(weapon: WeaponType, specialCharges: number, turnCount: number): boolean {
-  if (weapon === "primary") {
-    return true;
-  }
-
-  return turnCount >= 4 || specialCharges > 0;
-}
-
 function tickBonusBoxes(bonusBoxes: BonusBox[], terrain: TerrainState, dt: number): BonusBox[] {
   const nextBoxes: BonusBox[] = [];
   let index = 0;
@@ -1146,26 +709,6 @@ function hasAirborneBoxes(bonusBoxes: BonusBox[]): boolean {
   return false;
 }
 
-function getPhaseDuration(phase: GamePhase): number {
-  if (phase === "move") {
-    return 12;
-  }
-
-  if (phase === "aim") {
-    return 10;
-  }
-
-  if (phase === "fire") {
-    return 8;
-  }
-
-  if (phase === "resolve") {
-    return 1.2;
-  }
-
-  return 0;
-}
-
 function forceReleaseCharge(
   players: [Player, Player],
   turn: 1 | 2,
@@ -1181,7 +724,7 @@ function forceReleaseCharge(
   const currentPlayer = nextPlayers[turn - 1];
   const nextPower = clamp(power, 0.08, 1);
   const projectile = createProjectile(currentPlayer.mobile, turn, nextPower);
-  const shouldConsumeCharge = currentPlayer.mobile.weapon === "secondary" && turnCount < 4 && currentPlayer.mobile.specialCharges > 0;
+  const shouldConsumeCharge = shouldConsumeSpecialCharge(currentPlayer.mobile.weapon, currentPlayer.mobile.specialCharges, turnCount);
 
   if (shouldConsumeCharge) {
     currentPlayer.mobile.specialCharges -= 1;
@@ -1193,90 +736,6 @@ function forceReleaseCharge(
     power: nextPower,
     message: currentPlayer.name + " auto-fired."
   };
-}
-
-function applySuddenDeathTick(
-  players: [Player, Player],
-  round: number,
-  turn: 1 | 2
-): {
-  damagePopups: DamagePopup[];
-  history: MatchEvent[];
-} {
-  const damagePopups: DamagePopup[] = [];
-  const history: MatchEvent[] = [];
-  let index = 0;
-
-  while (index < players.length) {
-    const player = players[index];
-    const damage = 8;
-    player.mobile.hp = Math.max(0, player.mobile.hp - damage);
-    damagePopups.push(createDamagePopup(player, damage));
-    history.push(createMatchEvent(round, turn, "sudden-death", player.name + " took " + String(damage) + " storm damage."));
-    index += 1;
-  }
-
-  return {
-    damagePopups,
-    history
-  };
-}
-
-function buildNextRoundState(
-  setup: MatchConfig,
-  previousPlayers: [Player, Player],
-  round: number,
-  previousHistory: MatchEvent[]
-): Partial<GameStoreState> {
-  const seed = normalizeSeed(setup.seedText + "-round-" + String(round));
-  const terrainRoll = createTerrain(seed, worldWidth, worldHeight);
-  const players = createPlayersForRound(setup, terrainRoll.terrain, previousPlayers);
-  const windRoll = rollWind(terrainRoll.state);
-  const starter: 1 | 2 = round % 2 === 0 ? 2 : 1;
-  const message = players[starter - 1].name + " starts round " + String(round) + ".";
-
-  return {
-    scene: "playing",
-    phase: "move",
-    turn: starter,
-    wind: windRoll.wind,
-    players,
-    seed,
-    terrain: terrainRoll.terrain,
-    projectile: null,
-    winner: null,
-    round,
-    suddenDeathActive: false,
-    power: 0,
-    charging: false,
-    turnCount: 1,
-    phaseTimer: getPhaseDuration("move"),
-    phaseDuration: getPhaseDuration("move"),
-    bonusBoxes: [],
-    explosionVisual: null,
-    damagePopups: [],
-    turnAnnouncement: createTurnAnnouncement(starter, "Round " + String(round)),
-    history: appendHistory(
-      previousHistory,
-      [
-        createMatchEvent(round, starter, "round-start", "Round " + String(round) + " started."),
-        createMatchEvent(round, starter, "turn-start", players[starter - 1].name + " opens the round.")
-      ]
-    ),
-    message,
-    randomState: windRoll.state,
-    resolveTimer: 0
-  };
-}
-
-function createRoundHistory(players: [Player, Player], round: number, turn: 1 | 2, text: string): MatchEvent[] {
-  return appendHistory(
-    [],
-    [
-      createMatchEvent(round, turn, "round-start", text),
-      createMatchEvent(round, turn, "turn-start", players[turn - 1].name + " turn.")
-    ]
-  );
 }
 
 function createPickupHistory(
@@ -1335,43 +794,13 @@ function getBonusHistoryLabel(type: BonusType): string {
   return "a double damage crate";
 }
 
-function createMatchEvent(round: number, turn: 1 | 2, kind: MatchEventKind, text: string): MatchEvent {
-  return {
-    id: String(round) + "-" + String(turn) + "-" + kind + "-" + String(text.length) + "-" + String(Math.abs(hashText(text))),
+function createMatchEvent(round: number, turn: 1 | 2, kind: MatchEvent["kind"], text: string): MatchEvent {
+  return buildMatchEvent({
     round,
     turn,
     kind,
     text
-  };
-}
-
-function appendHistory(history: MatchEvent[], entries: MatchEvent[]): MatchEvent[] {
-  const nextHistory = history.slice();
-  let index = 0;
-
-  while (index < entries.length) {
-    nextHistory.push(entries[index]);
-    index += 1;
-  }
-
-  if (nextHistory.length > 80) {
-    return nextHistory.slice(nextHistory.length - 80);
-  }
-
-  return nextHistory;
-}
-
-function hashText(text: string): number {
-  let hash = 0;
-  let index = 0;
-
-  while (index < text.length) {
-    hash = (hash << 5) - hash + text.charCodeAt(index);
-    hash |= 0;
-    index += 1;
-  }
-
-  return hash;
+  });
 }
 
 function createExplosionVisual(explosion: ExplosionState): ExplosionVisual {
@@ -1383,26 +812,46 @@ function createExplosionVisual(explosion: ExplosionState): ExplosionVisual {
   };
 }
 
-function createDamagePopup(player: Player, value: number): DamagePopup {
+function createDamagePopup(hit: CombatHit): DamagePopup {
   return {
-    id: "popup-" + String(player.id) + "-" + String(value) + "-" + String(player.mobile.hp),
-    value,
-    position: {
-      x: player.mobile.position.x,
-      y: player.mobile.position.y - player.mobile.height - 16
-    },
+    id: "popup-" + String(hit.playerId) + "-" + String(hit.damage) + "-" + String(Math.round(hit.popupPosition.x)) + "-" + String(Math.round(hit.popupPosition.y)),
+    value: hit.damage,
+    position: hit.popupPosition,
     timer: 1,
     duration: 1
   };
 }
 
-function createTurnAnnouncement(playerId: 1 | 2, playerName: string): TurnAnnouncement {
-  return {
-    playerId,
-    text: playerName + " turn",
-    timer: 1.65,
-    duration: 1.65
-  };
+function createDamagePopups(hits: CombatHit[]): DamagePopup[] {
+  const damagePopups: DamagePopup[] = [];
+  let index = 0;
+
+  while (index < hits.length) {
+    damagePopups.push(createDamagePopup(hits[index]));
+    index += 1;
+  }
+
+  return damagePopups;
+}
+
+function createHitHistory(hits: CombatHit[], attackerName: string, round: number, turn: 1 | 2): MatchEvent[] {
+  const history: MatchEvent[] = [];
+  let index = 0;
+
+  while (index < hits.length) {
+    const hit = hits[index];
+    history.push(
+      createMatchEvent(
+        round,
+        turn,
+        "hit",
+        attackerName + " hit " + hit.playerName + " for " + String(hit.damage) + "."
+      )
+    );
+    index += 1;
+  }
+
+  return history;
 }
 
 function tickExplosionVisual(explosionVisual: ExplosionVisual | null, dt: number): ExplosionVisual | null {

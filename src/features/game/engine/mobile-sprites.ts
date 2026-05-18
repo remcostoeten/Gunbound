@@ -1,4 +1,4 @@
-import type { MobileType } from "@/features/game/types/game";
+import type { MobileType } from "@/features/game/types/shared";
 
 export type SpriteSource = {
   width: number;

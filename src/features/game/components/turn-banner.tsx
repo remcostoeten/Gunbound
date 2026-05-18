@@ -1,6 +1,7 @@
 "use client";
 
 import { useGameState } from "@/features/game/hooks/use-game-state";
+import { selectTurnAnnouncement } from "@/features/game/store/selectors/hud-selectors";
 
 export function TurnBanner(): React.JSX.Element | null {
   const turnAnnouncement = useGameState(selectTurnAnnouncement);
@@ -25,8 +26,4 @@ function getTurnBannerClassName(playerId: 1 | 2): string {
   }
 
   return "turn-banner-card player-two";
-}
-
-function selectTurnAnnouncement(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>) {
-  return state.turnAnnouncement;
 }

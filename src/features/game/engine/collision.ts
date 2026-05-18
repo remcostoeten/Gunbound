@@ -1,5 +1,6 @@
 import { isTerrainSolid } from "@/features/game/engine/terrain";
-import type { Player, TerrainState, Vec2 } from "@/features/game/types/game";
+import type { Player, TerrainState } from "@/features/game/types/entities";
+import type { Vec2 } from "@/features/game/types/shared";
 
 export function traceTerrainCollision(terrain: TerrainState, from: Vec2, to: Vec2, radius: number): Vec2 | null {
   const distance = Math.hypot(to.x - from.x, to.y - from.y);

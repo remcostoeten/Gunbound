@@ -1,46 +1,18 @@
-import { createWeaponProfile } from "@/features/game/engine/weapons";
 import { tracePlayerCollision, traceTerrainCollision } from "@/features/game/engine/collision";
 import { clamp, getTerrainNormal } from "@/features/game/engine/terrain";
 import type {
+  CombatHit,
   ExplosionState,
-  Mobile,
-  Player,
+  ExplosionDamageResult,
   ProjectileState,
-  TerrainState,
-  Vec2,
-  WeaponType
-} from "@/features/game/types/game";
+} from "@/features/game/types/combat";
+import type { Mobile, Player, TerrainState } from "@/features/game/types/entities";
+import type { Vec2 } from "@/features/game/types/shared";
 
 export type ProjectileStep = {
   projectile: ProjectileState | null;
   explosion: ExplosionState | null;
 };
-
-export function createProjectile(mobile: Mobile, owner: 1 | 2, power: number): ProjectileState {
-  const launchAngle = getLaunchRadians(mobile);
-  const profile = createWeaponProfile(mobile.type, mobile.weapon, power);
-  const muzzle = getMuzzlePosition(mobile, launchAngle);
-
-  return {
-    active: true,
-    position: muzzle,
-    previousPosition: muzzle,
-    velocity: {
-      x: Math.cos(launchAngle) * profile.speed,
-      y: -Math.sin(launchAngle) * profile.speed
-    },
-    radius: profile.radius,
-    owner,
-    weapon: mobile.weapon,
-    damage: profile.damage,
-    blastRadius: profile.blastRadius,
-    bouncesLeft: profile.bouncesLeft,
-    power,
-    life: 0,
-    windScale: profile.windScale,
-    gravityScale: profile.gravityScale
-  };
-}
 
 export function getLaunchRadians(mobile: Mobile): number {
   const degrees = mobile.facing === 1 ? mobile.angle : 180 - mobile.angle;
@@ -189,10 +161,90 @@ export function distanceDamage(explosion: ExplosionState, target: Vec2): number 
   return explosion.damage * falloff;
 }
 
-export function canUseSecondary(weapon: WeaponType, specialCharges: number, turnCount: number): boolean {
-  if (weapon === "primary") {
-    return true;
+export function applyExplosionDamage(players: [Player, Player], explosion: ExplosionState): ExplosionDamageResult {
+  const nextPlayers = clonePlayers(players);
+  const hits: CombatHit[] = [];
+  let index = 0;
+
+  while (index < nextPlayers.length) {
+    const player = nextPlayers[index];
+    const targetPoint = {
+      x: player.mobile.position.x,
+      y: player.mobile.position.y - player.mobile.height * 0.5
+    };
+    let damage = distanceDamage(explosion, targetPoint);
+    const owner = nextPlayers[explosion.owner - 1];
+
+    if (owner.mobile.doubleDamageTurns > 0) {
+      damage *= 2;
+    }
+
+    const roundedDamage = Math.round(damage);
+    player.mobile.hp = Math.max(0, Math.round(player.mobile.hp - damage));
+
+    if (roundedDamage > 0) {
+      hits.push({
+        playerId: player.id,
+        playerName: player.name,
+        damage: roundedDamage,
+        popupPosition: {
+          x: player.mobile.position.x,
+          y: player.mobile.position.y - player.mobile.height - 16
+        }
+      });
+    }
+
+    index += 1;
   }
 
-  return turnCount >= 4 || specialCharges > 0;
+  nextPlayers[explosion.owner - 1].mobile.doubleDamageTurns = Math.max(0, nextPlayers[explosion.owner - 1].mobile.doubleDamageTurns - 1);
+
+  return {
+    players: nextPlayers,
+    hits
+  };
+}
+
+function clonePlayers(players: [Player, Player]): [Player, Player] {
+  return [
+    {
+      id: players[0].id,
+      name: players[0].name,
+      title: players[0].title,
+      accent: players[0].accent,
+      score: players[0].score,
+      mobile: cloneMobile(players[0].mobile)
+    },
+    {
+      id: players[1].id,
+      name: players[1].name,
+      title: players[1].title,
+      accent: players[1].accent,
+      score: players[1].score,
+      mobile: cloneMobile(players[1].mobile)
+    }
+  ];
+}
+
+function cloneMobile(mobile: Mobile): Mobile {
+  return {
+    id: mobile.id,
+    type: mobile.type,
+    hp: mobile.hp,
+    maxHp: mobile.maxHp,
+    position: {
+      x: mobile.position.x,
+      y: mobile.position.y
+    },
+    weapon: mobile.weapon,
+    width: mobile.width,
+    height: mobile.height,
+    angle: mobile.angle,
+    facing: mobile.facing,
+    moveRange: mobile.moveRange,
+    shotDelay: mobile.shotDelay,
+    specialCharges: mobile.specialCharges,
+    doubleDamageTurns: mobile.doubleDamageTurns,
+    verticalVelocity: mobile.verticalVelocity
+  };
 }

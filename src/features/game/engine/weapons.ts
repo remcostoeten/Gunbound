@@ -1,68 +1,100 @@
-import type { MobileType, WeaponType } from "@/features/game/types/game";
+import type { WeaponProfile, WeaponProfileDefinition, WeaponProfileMap } from "@/features/game/types/combat";
+import type { MobileType, WeaponType } from "@/features/game/types/shared";
 
-export type WeaponProfile = {
-  name: string;
-  speed: number;
-  damage: number;
-  blastRadius: number;
-  bouncesLeft: number;
-  windScale: number;
-  gravityScale: number;
-  radius: number;
-};
-
-export function createWeaponProfile(mobileType: MobileType, weaponType: WeaponType, power: number): WeaponProfile {
-  if (mobileType === "armor" && weaponType === "primary") {
-    return {
+const weaponProfileDefinitions: WeaponProfileMap = {
+  armor: {
+    primary: {
       name: "Armor Cannon",
-      speed: 430 + power * 340,
-      damage: 42 + power * 28,
+      baseSpeed: 430,
+      speedScale: 340,
+      baseDamage: 42,
+      damageScale: 28,
       blastRadius: 48,
       bouncesLeft: 0,
       windScale: 0.82,
       gravityScale: 1.05,
       radius: 5
-    };
-  }
-
-  if (mobileType === "armor" && weaponType === "secondary") {
-    return {
+    },
+    secondary: {
       name: "Heavy Mortar",
-      speed: 360 + power * 250,
-      damage: 58 + power * 34,
+      baseSpeed: 360,
+      speedScale: 250,
+      baseDamage: 58,
+      damageScale: 34,
       blastRadius: 62,
       bouncesLeft: 0,
       windScale: 0.74,
       gravityScale: 1.22,
       radius: 6
-    };
-  }
-
-  if (mobileType === "knight" && weaponType === "primary") {
-    return {
+    }
+  },
+  knight: {
+    primary: {
       name: "Lance Shot",
-      speed: 400 + power * 300,
-      damage: 30 + power * 22,
+      baseSpeed: 400,
+      speedScale: 300,
+      baseDamage: 30,
+      damageScale: 22,
       blastRadius: 40,
       bouncesLeft: 0,
       windScale: 1.05,
       gravityScale: 0.92,
       radius: 4
-    };
+    },
+    secondary: {
+      name: "Sky Bounce",
+      baseSpeed: 410,
+      speedScale: 310,
+      baseDamage: 36,
+      damageScale: 24,
+      blastRadius: 42,
+      bouncesLeft: 2,
+      windScale: 1.15,
+      gravityScale: 0.88,
+      radius: 4
+    }
   }
+};
+
+export function createWeaponProfile(mobileType: MobileType, weaponType: WeaponType, power: number): WeaponProfile {
+  const definition = getWeaponProfileDefinition(mobileType, weaponType);
 
   return {
-    name: "Sky Bounce",
-    speed: 410 + power * 310,
-    damage: 36 + power * 24,
-    blastRadius: 42,
-    bouncesLeft: 2,
-    windScale: 1.15,
-    gravityScale: 0.88,
-    radius: 4
+    name: definition.name,
+    speed: definition.baseSpeed + power * definition.speedScale,
+    damage: definition.baseDamage + power * definition.damageScale,
+    blastRadius: definition.blastRadius,
+    bouncesLeft: definition.bouncesLeft,
+    windScale: definition.windScale,
+    gravityScale: definition.gravityScale,
+    radius: definition.radius
   };
 }
 
+export function getWeaponProfileDefinition(mobileType: MobileType, weaponType: WeaponType): WeaponProfileDefinition {
+  return weaponProfileDefinitions[mobileType][weaponType];
+}
+
 export function getWeaponDisplayName(mobileType: MobileType, weaponType: WeaponType): string {
-  return createWeaponProfile(mobileType, weaponType, 0.5).name;
+  return getWeaponProfileDefinition(mobileType, weaponType).name;
+}
+
+export function canSelectWeapon(weapon: WeaponType, specialCharges: number, turnCount: number): boolean {
+  if (weapon === "primary") {
+    return true;
+  }
+
+  return turnCount >= 4 || specialCharges > 0;
+}
+
+export function shouldConsumeSpecialCharge(weapon: WeaponType, specialCharges: number, turnCount: number): boolean {
+  return weapon === "secondary" && turnCount < 4 && specialCharges > 0;
+}
+
+export function getNextWeapon(currentWeapon: WeaponType): WeaponType {
+  if (currentWeapon === "primary") {
+    return "secondary";
+  }
+
+  return "primary";
 }

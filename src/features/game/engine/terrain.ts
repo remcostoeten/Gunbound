@@ -1,5 +1,6 @@
 import { randomRange } from "@/features/game/engine/random";
-import type { TerrainState, Vec2 } from "@/features/game/types/game";
+import type { TerrainState } from "@/features/game/types/entities";
+import type { TerrainTheme, Vec2 } from "@/features/game/types/shared";
 
 export type TerrainRoll = {
   terrain: TerrainState;
@@ -12,6 +13,7 @@ export function createTerrain(seed: number, width: number, height: number): Terr
     width,
     height,
     seed,
+    theme: getTerrainTheme(seed),
     heights: generated.heights,
     mask: createMask(width, height, generated.heights),
     canvas: null
@@ -181,7 +183,63 @@ export function redrawTerrainCanvas(terrain: TerrainState): void {
   context.putImageData(imageData, 0, 0);
 }
 
+export function getTerrainTheme(seed: number): TerrainTheme {
+  const roll = Math.abs(seed) % 3;
+  if (roll === 0) {
+    return "meadow";
+  }
+
+  if (roll === 1) {
+    return "sunset";
+  }
+
+  return "midnight";
+}
+
+type TerrainPalette = {
+  grassTop: [number, number, number];
+  grassMid: [number, number, number];
+  dirtTop: [number, number, number];
+  dirtMid: [number, number, number];
+  dirtDeep: [number, number, number];
+  edge: [number, number, number];
+};
+
+export function getTerrainPalette(theme: TerrainTheme): TerrainPalette {
+  if (theme === "sunset") {
+    return {
+      grassTop: [227, 197, 95],
+      grassMid: [201, 150, 72],
+      dirtTop: [145, 87, 64],
+      dirtMid: [119, 63, 46],
+      dirtDeep: [84, 42, 31],
+      edge: [166, 101, 68]
+    };
+  }
+
+  if (theme === "midnight") {
+    return {
+      grassTop: [129, 197, 149],
+      grassMid: [76, 143, 112],
+      dirtTop: [86, 88, 120],
+      dirtMid: [63, 59, 92],
+      dirtDeep: [42, 39, 63],
+      edge: [104, 100, 139]
+    };
+  }
+
+  return {
+    grassTop: [160, 217, 92],
+    grassMid: [123, 183, 87],
+    dirtTop: [148, 93, 52],
+    dirtMid: [135, 84, 48],
+    dirtDeep: [109, 66, 38],
+    edge: [119, 72, 42]
+  };
+}
+
 export function paintTerrainPixel(data: Uint8ClampedArray, terrain: TerrainState, x: number, y: number, pixel: number): void {
+  const palette = getTerrainPalette(terrain.theme);
   const aboveEmpty = y === 0 || terrain.mask[(y - 1) * terrain.width + x] === 0;
   const belowEmpty = y === terrain.height - 1 || terrain.mask[(y + 1) * terrain.width + x] === 0;
   const sideEdge = isTerrainEdge(terrain, x, y);
@@ -192,37 +250,37 @@ export function paintTerrainPixel(data: Uint8ClampedArray, terrain: TerrainState
 
   if (aboveEmpty || topBand <= 4) {
     if (topBand <= 1) {
-      setPixel(data, pixel, 160, 217, 92, 255);
+      setPixel(data, pixel, palette.grassTop[0], palette.grassTop[1], palette.grassTop[2], 255);
       return;
     }
 
     if (topBand <= 3) {
-      setPixel(data, pixel, 123, 183, 87, 255);
+      setPixel(data, pixel, palette.grassMid[0], palette.grassMid[1], palette.grassMid[2], 255);
       return;
     }
   }
 
   if (belowEmpty && !aboveEmpty) {
-    setPixel(data, pixel, 105, 64, 36, 255);
+    setPixel(data, pixel, palette.dirtDeep[0], palette.dirtDeep[1], palette.dirtDeep[2], 255);
     return;
   }
 
   if (sideEdge) {
-    setPixel(data, pixel, 119, 72, 42, 255);
+    setPixel(data, pixel, palette.edge[0], palette.edge[1], palette.edge[2], 255);
     return;
   }
 
   if (speckle < 4) {
-    setPixel(data, pixel, 148, 93, 52, 255);
+    setPixel(data, pixel, palette.dirtTop[0], palette.dirtTop[1], palette.dirtTop[2], 255);
     return;
   }
 
   if (dirtBand > 0.55) {
-    setPixel(data, pixel, 109, 66, 38, 255);
+    setPixel(data, pixel, palette.dirtDeep[0], palette.dirtDeep[1], palette.dirtDeep[2], 255);
     return;
   }
 
-  setPixel(data, pixel, 135, 84, 48, 255);
+  setPixel(data, pixel, palette.dirtMid[0], palette.dirtMid[1], palette.dirtMid[2], 255);
 }
 
 export function setPixel(data: Uint8ClampedArray, pixel: number, red: number, green: number, blue: number, alpha: number): void {
@@ -298,6 +356,7 @@ export function carveCrater(terrain: TerrainState, center: Vec2, radius: number)
     width: terrain.width,
     height: terrain.height,
     seed: terrain.seed,
+    theme: terrain.theme,
     heights: terrain.heights,
     mask: terrain.mask,
     canvas: terrain.canvas

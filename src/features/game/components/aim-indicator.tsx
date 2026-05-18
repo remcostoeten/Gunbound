@@ -1,6 +1,14 @@
 "use client";
 
 import { useGameState } from "@/features/game/hooks/use-game-state";
+import {
+  selectCharging,
+  selectPhase,
+  selectPhaseTimer,
+  selectPlayers,
+  selectPower,
+  selectTurn
+} from "@/features/game/store/selectors/hud-selectors";
 
 export function AimIndicator(): React.JSX.Element {
   const turn = useGameState(selectTurn);
@@ -49,28 +57,4 @@ export function AimIndicator(): React.JSX.Element {
 
 function capitalize(value: string): string {
   return value.slice(0, 1).toUpperCase() + value.slice(1);
-}
-
-function selectTurn(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>): 1 | 2 {
-  return state.turn;
-}
-
-function selectPlayers(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>) {
-  return state.players;
-}
-
-function selectPower(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>): number {
-  return state.power;
-}
-
-function selectCharging(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>): boolean {
-  return state.charging;
-}
-
-function selectPhase(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>) {
-  return state.phase;
-}
-
-function selectPhaseTimer(state: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>) {
-  return state.phaseTimer;
 }

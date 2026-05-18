@@ -1,4 +1,4 @@
-import type { Vec2 } from "@/features/game/types/game";
+import type { Vec2 } from "@/features/game/types/shared";
 import { randomRange } from "@/features/game/engine/random";
 
 export type WindRoll = {
