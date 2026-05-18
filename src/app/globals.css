@@ -375,6 +375,29 @@ select {
   font-size: 0.72rem;
 }
 
+.lobby-player-profile {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.lobby-player-profile-role {
+  color: #ffe9ad;
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.lobby-player-profile-copy {
+  color: #d9e8f4;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
 .lobby-field {
   display: grid;
   gap: 6px;

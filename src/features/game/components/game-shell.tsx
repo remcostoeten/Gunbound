@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getMobilePresentation } from "@/features/game/constants/mobile-presentation";
 import { getMobileSpriteSource } from "@/features/game/engine/mobile-sprites";
 import { AimIndicator } from "@/features/game/components/aim-indicator";
 import { GameCanvas } from "@/features/game/components/game-canvas";
@@ -264,6 +265,7 @@ function renderLobbyPlayer(
         slot === 1 ? formState.playerOneAccent : formState.playerTwoAccent;
     const isBlue = slot === 1;
     const spriteSource = getMobileSpriteSource(mobile);
+    const presentation = getMobilePresentation(mobile);
 
     return (
         <div className={"lobby-player-card" + (isBlue ? " blue" : " red")}>
@@ -346,23 +348,25 @@ function renderLobbyPlayer(
                     {title} {name.trim() || "Player " + String(slot)}
                 </span>
             </div>
+            <div className="lobby-player-profile">
+                <span className="lobby-player-profile-role">
+                    {presentation.role}
+                </span>
+                <span className="lobby-player-profile-copy">
+                    {presentation.profile}
+                </span>
+            </div>
             <div className="lobby-player-stats">
                 <div className="lobby-stat">
-                    <span className="lobby-stat-val">
-                        {mobile === "armor" ? "118" : "92"}
-                    </span>
+                    <span className="lobby-stat-val">{presentation.hp}</span>
                     <span className="lobby-stat-label">HP</span>
                 </div>
                 <div className="lobby-stat">
-                    <span className="lobby-stat-val">
-                        {mobile === "armor" ? "Short" : "Long"}
-                    </span>
+                    <span className="lobby-stat-val">{presentation.move}</span>
                     <span className="lobby-stat-label">Move</span>
                 </div>
                 <div className="lobby-stat">
-                    <span className="lobby-stat-val">
-                        {mobile === "armor" ? "Heavy" : "Arc"}
-                    </span>
+                    <span className="lobby-stat-val">{presentation.shot}</span>
                     <span className="lobby-stat-label">Shot</span>
                 </div>
             </div>
