@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { createCameraRig, getCameraFrame, stepCameraRig } from "@/features/game/engine/camera";
 import { createVisualEffectsState, stepVisualEffectsState } from "@/features/game/engine/effects";
-import { getTerrainPalette } from "@/features/game/engine/terrain";
+import { getSkyPalette, getTerrainPalette } from "@/features/game/engine/terrain-theme";
 import { getMobileSpriteFrame, getMobileSpriteSource } from "@/features/game/engine/mobile-sprites";
 import { getLaunchRadians, getMuzzlePosition } from "@/features/game/engine/physics";
 import { useGameLoop } from "@/features/game/hooks/use-game-loop";
@@ -170,13 +170,8 @@ function drawTerrain(context: CanvasRenderingContext2D, terrain: TerrainState): 
     context.drawImage(terrain.canvas, 0, 0);
   }
 
-  context.strokeStyle = "#d8f5a0";
-  if (terrain.theme === "sunset") {
-    context.strokeStyle = "#ffd889";
-  }
-  if (terrain.theme === "midnight") {
-    context.strokeStyle = "#b7efcf";
-  }
+  const skyPalette = getSkyPalette(terrain.theme);
+  context.strokeStyle = skyPalette.terrainStroke;
   context.lineWidth = 3;
   context.beginPath();
   let x = 0;
@@ -614,10 +609,11 @@ function drawHitFlash(context: CanvasRenderingContext2D, flash: HitFlash | null)
 }
 
 function drawSun(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
+  const palette = getSkyPalette(theme);
   if (theme === "midnight") {
     const moonGradient = context.createRadialGradient(170, 120, 0, 170, 120, 72);
-    moonGradient.addColorStop(0, "rgba(246, 248, 255, 0.92)");
-    moonGradient.addColorStop(0.65, "rgba(194, 214, 255, 0.5)");
+    moonGradient.addColorStop(0, palette.sunInner);
+    moonGradient.addColorStop(0.65, palette.sunOuter);
     moonGradient.addColorStop(1, "rgba(194, 214, 255, 0)");
     context.fillStyle = moonGradient;
     context.beginPath();
@@ -627,9 +623,9 @@ function drawSun(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
   }
 
   const gradient = context.createRadialGradient(170, 120, 0, 170, 120, 92);
-  gradient.addColorStop(0, theme === "sunset" ? "rgba(255, 224, 167, 0.98)" : "rgba(255, 245, 180, 0.98)");
-  gradient.addColorStop(0.6, theme === "sunset" ? "rgba(255, 150, 94, 0.85)" : "rgba(255, 211, 111, 0.85)");
-  gradient.addColorStop(1, theme === "sunset" ? "rgba(255, 150, 94, 0)" : "rgba(255, 211, 111, 0)");
+  gradient.addColorStop(0, palette.sunInner);
+  gradient.addColorStop(0.6, palette.sunOuter);
+  gradient.addColorStop(1, palette.sunFade);
   context.fillStyle = gradient;
   context.beginPath();
   context.arc(170, 120, 92, 0, Math.PI * 2);
@@ -651,7 +647,7 @@ function drawCloudBubble(context: CanvasRenderingContext2D, x: number, y: number
 }
 
 function drawBackMountains(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
-  context.fillStyle = theme === "sunset" ? "rgba(152, 103, 114, 0.72)" : theme === "midnight" ? "rgba(54, 78, 118, 0.78)" : "rgba(68, 133, 173, 0.78)";
+  context.fillStyle = getSkyPalette(theme).backMountains;
   context.beginPath();
   context.moveTo(0, 465);
   context.lineTo(140, 355);
@@ -670,7 +666,7 @@ function drawBackMountains(context: CanvasRenderingContext2D, theme: TerrainThem
 }
 
 function drawFrontMountains(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
-  context.fillStyle = theme === "sunset" ? "rgba(127, 109, 79, 0.58)" : theme === "midnight" ? "rgba(64, 99, 102, 0.56)" : "rgba(83, 146, 117, 0.56)";
+  context.fillStyle = getSkyPalette(theme).frontMountains;
   context.beginPath();
   context.moveTo(0, 520);
   context.lineTo(95, 438);
@@ -900,38 +896,6 @@ function toAlphaColor(hex: string, alpha: number): string {
     ", " +
     String(alpha) +
     ")";
-}
-
-function getSkyPalette(theme: TerrainTheme): {
-  skyTop: string;
-  skyMid: string;
-  skyBottom: string;
-  cloudAlpha: number;
-} {
-  if (theme === "sunset") {
-    return {
-      skyTop: "#ffd1a6",
-      skyMid: "#f39779",
-      skyBottom: "#6b70b8",
-      cloudAlpha: 0.64
-    };
-  }
-
-  if (theme === "midnight") {
-    return {
-      skyTop: "#19284e",
-      skyMid: "#294a79",
-      skyBottom: "#13253f",
-      cloudAlpha: 0.32
-    };
-  }
-
-  return {
-    skyTop: "#b4e1ff",
-    skyMid: "#79c0f4",
-    skyBottom: "#4f93ca",
-    cloudAlpha: 0.84
-  };
 }
 
 function roundRect(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {

@@ -1,3 +1,4 @@
+import { getTerrainPalette } from "@/features/game/engine/terrain-theme";
 import { randomRange } from "@/features/game/engine/random";
 import type { TerrainState } from "@/features/game/types/entities";
 import type { TerrainTheme, Vec2 } from "@/features/game/types/shared";
@@ -194,48 +195,6 @@ export function getTerrainTheme(seed: number): TerrainTheme {
   }
 
   return "midnight";
-}
-
-type TerrainPalette = {
-  grassTop: [number, number, number];
-  grassMid: [number, number, number];
-  dirtTop: [number, number, number];
-  dirtMid: [number, number, number];
-  dirtDeep: [number, number, number];
-  edge: [number, number, number];
-};
-
-export function getTerrainPalette(theme: TerrainTheme): TerrainPalette {
-  if (theme === "sunset") {
-    return {
-      grassTop: [227, 197, 95],
-      grassMid: [201, 150, 72],
-      dirtTop: [145, 87, 64],
-      dirtMid: [119, 63, 46],
-      dirtDeep: [84, 42, 31],
-      edge: [166, 101, 68]
-    };
-  }
-
-  if (theme === "midnight") {
-    return {
-      grassTop: [129, 197, 149],
-      grassMid: [76, 143, 112],
-      dirtTop: [86, 88, 120],
-      dirtMid: [63, 59, 92],
-      dirtDeep: [42, 39, 63],
-      edge: [104, 100, 139]
-    };
-  }
-
-  return {
-    grassTop: [160, 217, 92],
-    grassMid: [123, 183, 87],
-    dirtTop: [148, 93, 52],
-    dirtMid: [135, 84, 48],
-    dirtDeep: [109, 66, 38],
-    edge: [119, 72, 42]
-  };
 }
 
 export function paintTerrainPixel(data: Uint8ClampedArray, terrain: TerrainState, x: number, y: number, pixel: number): void {
