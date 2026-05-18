@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { createAudioEventTracker, deriveAudioEvents } from "@/features/game/engine/audio-events";
 import { useGameStore } from "@/features/game/store/game-store";
+import type { AudioCue, AudioEventTracker } from "@/features/game/engine/audio-events";
+import type { GameState } from "@/features/game/types/state";
 
 type AudioPool = {
   context: AudioContext | null;
@@ -34,17 +37,9 @@ export function useGunboundSfx(): void {
   });
   const prevSceneRef = useRef<string>("");
   const lobbyStartedRef = useRef(false);
-  const chargeStateRef = useRef(false);
-  const projectileStateRef = useRef(false);
-  const turnRef = useRef<1 | 2 | null>(null);
-  const explosionTimerRef = useRef(0);
-  const historyLenRef = useRef(0);
-  const windBucketRef = useRef(0);
-  const lowHealthWarnedRef = useRef<[boolean, boolean]>([false, false]);
+  const trackerRef = useRef<AudioEventTracker>(createAudioEventTracker());
   const windAmbientNodeRef = useRef<{ source: AudioBufferSourceNode | null; gain: GainNode | null } | null>(null);
   const rafRef = useRef(0);
-  const previousBouncesRef = useRef(0);
-  const previousWeaponRef = useRef<["primary" | "secondary", "primary" | "secondary"]>(["primary", "primary"]);
 
   useEffect(() => {
     function unlockAudio(): void {
@@ -61,7 +56,7 @@ export function useGunboundSfx(): void {
 
   useEffect(() => {
     function frame(): void {
-      syncAudioState(poolRef.current, prevSceneRef, lobbyStartedRef, chargeStateRef, projectileStateRef, turnRef, explosionTimerRef, historyLenRef, windBucketRef, lowHealthWarnedRef, windAmbientNodeRef, previousBouncesRef, previousWeaponRef);
+      syncAudioState(poolRef.current, prevSceneRef, lobbyStartedRef, trackerRef, windAmbientNodeRef);
       rafRef.current = window.requestAnimationFrame(frame);
     }
     rafRef.current = window.requestAnimationFrame(frame);
@@ -150,16 +145,8 @@ function syncAudioState(
   pool: AudioPool,
   prevSceneRef: React.MutableRefObject<string>,
   lobbyStartedRef: React.MutableRefObject<boolean>,
-  chargeStateRef: React.MutableRefObject<boolean>,
-  projectileStateRef: React.MutableRefObject<boolean>,
-  turnRef: React.MutableRefObject<1 | 2 | null>,
-  explosionTimerRef: React.MutableRefObject<number>,
-  historyLenRef: React.MutableRefObject<number>,
-  windBucketRef: React.MutableRefObject<number>,
-  lowHealthWarnedRef: React.MutableRefObject<[boolean, boolean]>,
-  windAmbientNodeRef: React.MutableRefObject<{ source: AudioBufferSourceNode | null; gain: GainNode | null } | null>,
-  previousBouncesRef: React.MutableRefObject<number>,
-  previousWeaponRef: React.MutableRefObject<["primary" | "secondary", "primary" | "secondary"]>
+  trackerRef: React.MutableRefObject<AudioEventTracker>,
+  windAmbientNodeRef: React.MutableRefObject<{ source: AudioBufferSourceNode | null; gain: GainNode | null } | null>
 ): void {
   const state = useGameStore.getState();
   const context = pool.context;
@@ -167,23 +154,7 @@ function syncAudioState(
 
   if (context === null || gain === null) return;
 
-  if (state.scene === "playing" && prevSceneRef.current === "start") {
-    stopMusic(pool);
-    playSfx(pool, "super-shot");
-    startWindAmbient(context, gain, windAmbientNodeRef);
-  }
-
-  if (state.scene === "end" && prevSceneRef.current !== "end") {
-    playSfx(pool, "adios");
-    stopWindAmbient(windAmbientNodeRef);
-  }
-
-  if (state.scene === "start" && prevSceneRef.current === "end") {
-    if (!lobbyStartedRef.current) {
-      startLobbyMusic(pool);
-      lobbyStartedRef.current = true;
-    }
-  }
+  routeSceneState(pool, state.scene, prevSceneRef, lobbyStartedRef, windAmbientNodeRef, context, gain);
 
   if (state.scene !== "playing") {
     prevSceneRef.current = state.scene;
@@ -191,80 +162,105 @@ function syncAudioState(
   }
 
   updateWindAmbient(state.wind.x, windAmbientNodeRef);
-  syncWindIntensityCue(context, gain, state.wind.x, windBucketRef);
-  syncLowHealthCue(context, gain, state.turn, state.players, lowHealthWarnedRef);
-
-  if (state.projectile !== null && !projectileStateRef.current) {
-    const owner = state.projectile.owner;
-    const mobileType = state.players[owner - 1]?.mobile.type || "armor";
-    playShotFire(context, gain, state.projectile.weapon === "secondary", mobileType, state.power);
-  }
-
-  if (state.projectile !== null && projectileStateRef.current) {
-    if (state.projectile.bouncesLeft < previousBouncesRef.current) {
-      playRicochet(context, gain);
-    }
-  }
-
-  if (state.projectile === null) {
-    previousBouncesRef.current = 0;
-  } else {
-    previousBouncesRef.current = state.projectile.bouncesLeft;
-  }
-
-  if (state.explosionVisual !== null && state.explosionVisual.timer > explosionTimerRef.current) {
-    if (state.damagePopups.length > 0) {
-      playExplosion(context, gain, state.explosionVisual.radius);
-      playSfx(pool, "great");
-    } else {
-      playTerrainThud(context, gain, state.explosionVisual.radius);
-    }
-  }
-  if (state.turnAnnouncement !== null && state.turn !== turnRef.current) {
-    playTurnCue(context, gain, state.turn);
-    playSfx(pool, "bien");
-  }
-
-  if (state.charging && !chargeStateRef.current) {
-    playChargeStart(context, gain, state.power);
-  }
-  if (!state.charging && chargeStateRef.current) {
-    playChargeRelease(context, gain, state.power);
-  }
-
-  const p1Weapon = state.players[0].mobile.weapon;
-  const p2Weapon = state.players[1].mobile.weapon;
-  if (p1Weapon !== previousWeaponRef.current[0] || p2Weapon !== previousWeaponRef.current[1]) {
-    playWeaponSwitch(context, gain);
-  }
-  previousWeaponRef.current = [p1Weapon, p2Weapon];
-
-  if (state.history.length > historyLenRef.current) {
-    for (let i = historyLenRef.current; i < state.history.length; i++) {
-      const entry = state.history[i];
-      if (entry.kind === "move") {
-        playMovementTread(context, gain);
-      }
-      if (entry.kind === "hit") {
-        playImpactAlarm(context, gain);
-        playSfx(pool, "dios-mio");
-      }
-      if (entry.kind === "bonus") {
-        playSupplyPickup(context, gain);
-        playSfx(pool, "muy-bien");
-      }
-      if (entry.kind === "round-end") {
-        playSfx(pool, "adios");
-      }
-    }
-  }
+  const derived = deriveAudioEvents(state, trackerRef.current);
+  trackerRef.current = derived.tracker;
+  routeAudioCues(pool, context, gain, windAmbientNodeRef, derived.cues);
 
   prevSceneRef.current = state.scene;
-  chargeStateRef.current = state.charging;
-  projectileStateRef.current = state.projectile !== null;
-  turnRef.current = state.turn;
-  explosionTimerRef.current = state.explosionVisual === null ? 0 : state.explosionVisual.timer;
-  historyLenRef.current = state.history.length;
+}
+
+function routeSceneState(
+  pool: AudioPool,
+  scene: GameState["scene"],
+  prevSceneRef: React.MutableRefObject<string>,
+  lobbyStartedRef: React.MutableRefObject<boolean>,
+  windAmbientNodeRef: React.MutableRefObject<{ source: AudioBufferSourceNode | null; gain: GainNode | null } | null>,
+  context: AudioContext,
+  gain: GainNode
+): void {
+  if (scene === "playing" && prevSceneRef.current === "start") {
+    stopMusic(pool);
+    playSfx(pool, "super-shot");
+    startWindAmbient(context, gain, windAmbientNodeRef);
+  }
+
+  if (scene === "end" && prevSceneRef.current !== "end") {
+    playSfx(pool, "adios");
+    stopWindAmbient(windAmbientNodeRef);
+  }
+
+  if (scene === "start" && prevSceneRef.current === "end") {
+    if (!lobbyStartedRef.current) {
+      startLobbyMusic(pool);
+      lobbyStartedRef.current = true;
+    }
+  }
+}
+
+function routeAudioCues(
+  pool: AudioPool,
+  context: AudioContext,
+  gain: GainNode,
+  windAmbientNodeRef: React.MutableRefObject<{ source: AudioBufferSourceNode | null; gain: GainNode | null } | null>,
+  cues: AudioCue[]
+): void {
+  let index = 0;
+  while (index < cues.length) {
+    const cue = cues[index];
+    if (cue.kind === "scene-playing-start") {
+      startWindAmbient(context, gain, windAmbientNodeRef);
+    }
+    if (cue.kind === "scene-ended") {
+      stopWindAmbient(windAmbientNodeRef);
+    }
+    if (cue.kind === "wind-intensity-up") {
+      playWindGust(context, gain, cue.bucket);
+    }
+    if (cue.kind === "low-health") {
+      playLowHealthAlarm(context, gain, cue.isCurrentTurn);
+    }
+    if (cue.kind === "shot-fire") {
+      playShotFire(context, gain, cue.isSecondary, cue.mobileType, cue.power);
+    }
+    if (cue.kind === "ricochet") {
+      playRicochet(context, gain);
+    }
+    if (cue.kind === "explosion-hit") {
+      playExplosion(context, gain, cue.radius);
+      playSfx(pool, "great");
+    }
+    if (cue.kind === "explosion-terrain") {
+      playTerrainThud(context, gain, cue.radius);
+    }
+    if (cue.kind === "turn-cue") {
+      playTurnCue(context, gain, cue.turn);
+      playSfx(pool, "bien");
+    }
+    if (cue.kind === "charge-start") {
+      playChargeStart(context, gain, cue.power);
+    }
+    if (cue.kind === "charge-release") {
+      playChargeRelease(context, gain, cue.power);
+    }
+    if (cue.kind === "weapon-switch") {
+      playWeaponSwitch(context, gain);
+    }
+    if (cue.kind === "history-move") {
+      playMovementTread(context, gain);
+    }
+    if (cue.kind === "history-hit") {
+      playImpactAlarm(context, gain);
+      playSfx(pool, "dios-mio");
+    }
+    if (cue.kind === "history-bonus") {
+      playSupplyPickup(context, gain);
+      playSfx(pool, "muy-bien");
+    }
+    if (cue.kind === "history-round-end") {
+      playSfx(pool, "adios");
+    }
+    index += 1;
+  }
 }
 
 function updateWindAmbient(horizontalWind: number, windAmbientNodeRef: React.MutableRefObject<{ source: AudioBufferSourceNode | null; gain: GainNode | null } | null>): void {
@@ -277,39 +273,6 @@ function updateWindAmbient(horizontalWind: number, windAmbientNodeRef: React.Mut
   const intensity = Math.min(1, Math.abs(horizontalWind) / 0.75);
   node.gain.gain.cancelScheduledValues(now);
   node.gain.gain.linearRampToValueAtTime(0.025 + intensity * 0.035, now + 0.18);
-}
-
-function syncWindIntensityCue(
-  context: AudioContext,
-  gain: GainNode,
-  horizontalWind: number,
-  windBucketRef: React.MutableRefObject<number>
-): void {
-  const bucket = Math.min(3, Math.floor((Math.abs(horizontalWind) / 0.75) * 4));
-  if (bucket > windBucketRef.current) {
-    playWindGust(context, gain, bucket);
-  }
-  windBucketRef.current = bucket;
-}
-
-function syncLowHealthCue(
-  context: AudioContext,
-  gain: GainNode,
-  turn: 1 | 2,
-  players: ReturnType<typeof useGameStore.getState>["players"],
-  lowHealthWarnedRef: React.MutableRefObject<[boolean, boolean]>
-): void {
-  let index = 0;
-  while (index < players.length) {
-    const ratio = players[index].mobile.hp / players[index].mobile.maxHp;
-    if (ratio <= 0.35 && !lowHealthWarnedRef.current[index]) {
-      playLowHealthAlarm(context, gain, turn === players[index].id);
-      lowHealthWarnedRef.current[index] = true;
-    } else if (ratio > 0.45) {
-      lowHealthWarnedRef.current[index] = false;
-    }
-    index += 1;
-  }
 }
 
 function startWindAmbient(
