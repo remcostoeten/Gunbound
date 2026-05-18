@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { createCameraRig, getCameraFrame, stepCameraRig } from "@/features/game/engine/camera";
 import { getTerrainPalette } from "@/features/game/engine/terrain";
 import { getMobileSpriteFrame, getMobileSpriteSource } from "@/features/game/engine/mobile-sprites";
 import { getLaunchRadians, getMuzzlePosition } from "@/features/game/engine/physics";
@@ -11,6 +12,7 @@ import { worldHeight, worldWidth } from "@/features/game/constants/world";
 import type { ProjectileState } from "@/features/game/types/combat";
 import type { BonusBox, Player, TerrainState } from "@/features/game/types/entities";
 import type { DamagePopup, ExplosionVisual } from "@/features/game/types/effects";
+import type { CameraFrame } from "@/features/game/types/presentation";
 import type { MobileType, PlayerAccent, TerrainTheme, Vec2, WeaponType } from "@/features/game/types/shared";
 
 type SpriteCache = {
@@ -108,6 +110,7 @@ export function GameCanvas(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const previousFrameTimeRef = useRef(0);
   const visualTimeRef = useRef(0);
+  const cameraRigRef = useRef(createCameraRig());
   const trailRef = useRef<Vec2[]>([]);
   const previousProjectileRef = useRef<ProjectileState | null>(null);
   const muzzleFlashRef = useRef<ExplosionVisual | null>(null);
@@ -153,7 +156,7 @@ export function GameCanvas(): React.JSX.Element {
     if (context === null) return;
 
     context.imageSmoothingEnabled = false;
-    advanceVisualClock();
+    const delta = advanceVisualClock();
 
     const state = useGameStore.getState();
     syncProjectileEffects(state.projectile, state.players, state.turn);
@@ -166,9 +169,19 @@ export function GameCanvas(): React.JSX.Element {
     syncBounceSparks(state.projectile);
     updateParticles();
     syncParticleData();
+    cameraRigRef.current = stepCameraRig(cameraRigRef.current, {
+      scene: state.scene,
+      phase: state.phase,
+      turn: state.turn,
+      players: state.players,
+      projectile: state.projectile,
+      explosionVisual: state.explosionVisual,
+      dt: delta
+    });
+    const cameraFrame = getCameraFrame(cameraRigRef.current, visualTimeRef.current, state.explosionVisual, getFireShake());
 
     context.save();
-    applyCameraShake(context, state.explosionVisual);
+    applyCameraFrame(context, cameraFrame);
 
     drawBackground(context, state.terrain?.theme || "meadow", visualTimeRef.current);
 
@@ -204,11 +217,11 @@ export function GameCanvas(): React.JSX.Element {
     context.restore();
   }
 
-  function advanceVisualClock(): void {
+  function advanceVisualClock(): number {
     const now = performance.now();
     if (previousFrameTimeRef.current === 0) {
       previousFrameTimeRef.current = now;
-      return;
+      return 0;
     }
     const delta = Math.min(0.05, (now - previousFrameTimeRef.current) / 1000);
     previousFrameTimeRef.current = now;
@@ -216,6 +229,7 @@ export function GameCanvas(): React.JSX.Element {
     tickMuzzleFlash(delta);
     tickHitFlash(delta);
     tickFireShake(delta);
+    return delta;
   }
 
   function syncProjectileEffects(projectile: ProjectileState | null, players: [Player, Player], turn: 1 | 2): void {
@@ -798,20 +812,9 @@ function drawHpTickMarks(context: CanvasRenderingContext2D, player: Player): voi
   }
 }
 
-function applyCameraShake(context: CanvasRenderingContext2D, explosionVisual: ExplosionVisual | null): void {
-  let shakeIntensity = 0;
-  if (explosionVisual !== null) {
-    shakeIntensity = Math.max(shakeIntensity, (explosionVisual.timer / explosionVisual.duration) * 12);
-  }
-  const fireShake = getFireShake();
-  if (fireShake > 0) {
-    shakeIntensity = Math.max(shakeIntensity, fireShake * 3);
-  }
-  if (shakeIntensity > 0) {
-    const offsetX = (Math.random() - 0.5) * shakeIntensity;
-    const offsetY = (Math.random() - 0.5) * shakeIntensity * 0.8;
-    context.translate(offsetX, offsetY);
-  }
+function applyCameraFrame(context: CanvasRenderingContext2D, cameraFrame: CameraFrame): void {
+  context.scale(cameraFrame.scale, cameraFrame.scale);
+  context.translate(-cameraFrame.offset.x, -cameraFrame.offset.y);
 }
 
 function drawProjectileTrail(context: CanvasRenderingContext2D, trail: Vec2[]): void {
