@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "bun --bun next dev",
     "build": "NODE_ENV=production next build",
-    "start": "bun --bun next start"
+    "start": "bun --bun next start",
+    "prepare-mobile-asset": "python3 scripts/prepare-mobile-asset.py"
   },
   "dependencies": {
     "next": "^15.3.5",
