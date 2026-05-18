@@ -1,5 +1,6 @@
 "use client";
 
+import { getMobilePresentation } from "@/features/game/constants/mobile-presentation";
 import { normalizeSeed } from "@/features/game/engine/random";
 import { getTerrainTheme } from "@/features/game/engine/terrain";
 import { getMobileSpriteSource } from "@/features/game/engine/mobile-sprites";
@@ -71,11 +72,7 @@ function getRoomSlotClassName(slot: 1 | 2): string {
 }
 
 function getRoomMobileLabel(mobileType: MobileType): string {
-  if (mobileType === "armor") {
-    return "Armor Mobile";
-  }
-
-  return "Knight Mobile";
+  return getMobilePresentation(mobileType).label + " Mobile";
 }
 
 function getTerrainThemeLabel(theme: ReturnType<typeof getTerrainTheme>): string {

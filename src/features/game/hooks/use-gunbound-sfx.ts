@@ -343,6 +343,14 @@ function playShotFire(context: AudioContext, gain: GainNode, isSecondary: boolea
     playOscillatorSweep(context, gain, 60, 35, 0.16, "sine", 0.18 * powerScale);
     playOscillatorSweep(context, gain, isSecondary ? 200 : 280, isSecondary ? 60 : 90, 0.14, "sawtooth", 0.22 * powerScale);
     playNoiseBurst(context, gain, 0.1, 0.14 * powerScale);
+  } else if (mobileType === "snow") {
+    playOscillatorSweep(context, gain, 70, 42, 0.18, "triangle", 0.17 * powerScale);
+    playOscillatorSweep(context, gain, isSecondary ? 190 : 250, isSecondary ? 72 : 100, 0.16, "sawtooth", 0.2 * powerScale);
+    playNoiseBurst(context, gain, 0.09, 0.12 * powerScale);
+  } else if (mobileType === "dragon") {
+    playOscillatorSweep(context, gain, 160, 92, 0.1, "triangle", 0.12 * powerScale);
+    playOscillatorSweep(context, gain, isSecondary ? 420 : 520, isSecondary ? 130 : 180, 0.14, "square", 0.18 * powerScale);
+    playNoiseBurst(context, gain, 0.05, 0.08 * powerScale);
   } else {
     playOscillatorSweep(context, gain, 110, 60, 0.1, "sine", 0.12 * powerScale);
     playOscillatorSweep(context, gain, isSecondary ? 350 : 480, isSecondary ? 100 : 140, 0.12, "square", 0.18 * powerScale);

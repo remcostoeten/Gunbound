@@ -8,7 +8,7 @@ export type GameScene = "start" | "playing" | "end";
 
 export type WeaponType = "primary" | "secondary";
 
-export type MobileType = "armor" | "knight";
+export type MobileType = "armor" | "knight" | "dragon" | "snow";
 
 export type BonusType = "weapon" | "repair" | "double";
 

@@ -18,6 +18,8 @@ import type {
   DamagePopup,
   DebrisParticle,
   DustPuff,
+  ExplosionSpriteEffect,
+  ExplosionSpriteSheet,
   ExplosionVisual,
   GrassTuft,
   HitFlash,
@@ -32,6 +34,62 @@ import type { MobileType, PlayerAccent, TerrainTheme, Vec2, WeaponType } from "@
 type SpriteCache = {
   armor: HTMLImageElement | null;
   knight: HTMLImageElement | null;
+  dragon: HTMLImageElement | null;
+  snow: HTMLImageElement | null;
+};
+
+type ExplosionSpriteSpec = {
+  path: string;
+  frames: number;
+  width: number;
+  height: number;
+};
+
+type ExplosionSpriteCache = Record<ExplosionSpriteSheet, HTMLImageElement | null>;
+
+const explosionSpriteSpecs: Record<ExplosionSpriteSheet, ExplosionSpriteSpec> = {
+  "aduka-thor": {
+    path: "/explodes/aduka1-thor.png",
+    frames: 14,
+    width: 1368,
+    height: 96
+  },
+  "armor-primary": {
+    path: "/explodes/armor1.png",
+    frames: 19,
+    width: 2376,
+    height: 128
+  },
+  "armor-secondary": {
+    path: "/explodes/armor2.png",
+    frames: 15,
+    width: 1921,
+    height: 124
+  },
+  gum: {
+    path: "/explodes/gum1.png",
+    frames: 14,
+    width: 1546,
+    height: 110
+  },
+  "jd-secondary": {
+    path: "/explodes/jd2.png",
+    frames: 16,
+    width: 1995,
+    height: 128
+  },
+  "jd-lightning": {
+    path: "/explodes/lightning12-jd1.png",
+    frames: 10,
+    width: 1253,
+    height: 122
+  },
+  nak: {
+    path: "/explodes/nak.png",
+    frames: 9,
+    width: 1094,
+    height: 128
+  }
 };
 
 export function GameCanvas(): React.JSX.Element {
@@ -42,8 +100,11 @@ export function GameCanvas(): React.JSX.Element {
   const visualEffectsRef = useRef<VisualEffectsState>(createVisualEffectsState());
   const spriteCacheRef = useRef<SpriteCache>({
     armor: null,
-    knight: null
+    knight: null,
+    dragon: null,
+    snow: null
   });
+  const explosionSpriteCacheRef = useRef<ExplosionSpriteCache>(createExplosionSpriteCache());
 
   useInput();
   useGameLoop(drawFrame);
@@ -57,6 +118,7 @@ export function GameCanvas(): React.JSX.Element {
     canvas.width = worldWidth;
     canvas.height = worldHeight;
     loadMobileSprites(spriteCacheRef.current);
+    loadExplosionSprites(explosionSpriteCacheRef.current);
   }
 
   function drawFrame(): void {
@@ -127,6 +189,7 @@ export function GameCanvas(): React.JSX.Element {
     drawBounceSparks(context, visualEffects.bounceSparks);
     drawMuzzleFlash(context, visualEffects.muzzleFlash);
     drawExplosionVisual(context, state.explosionVisual);
+    drawExplosionSprites(context, visualEffects.explosionSprites, explosionSpriteCacheRef.current);
     drawDamagePopups(context, state.damagePopups);
     drawHitFlash(context, visualEffects.hitFlash);
     context.restore();
@@ -296,6 +359,35 @@ function loadMobileSprites(spriteCache: SpriteCache): void {
   if (typeof Image === "undefined") return;
   if (spriteCache.armor === null) spriteCache.armor = createMobileSpriteImage("armor");
   if (spriteCache.knight === null) spriteCache.knight = createMobileSpriteImage("knight");
+  if (spriteCache.dragon === null) spriteCache.dragon = createMobileSpriteImage("dragon");
+  if (spriteCache.snow === null) spriteCache.snow = createMobileSpriteImage("snow");
+}
+
+function createExplosionSpriteCache(): ExplosionSpriteCache {
+  return {
+    "aduka-thor": null,
+    "armor-primary": null,
+    "armor-secondary": null,
+    gum: null,
+    "jd-secondary": null,
+    "jd-lightning": null,
+    nak: null
+  };
+}
+
+function loadExplosionSprites(spriteCache: ExplosionSpriteCache): void {
+  if (typeof Image === "undefined") return;
+  const sheets = Object.keys(explosionSpriteSpecs) as ExplosionSpriteSheet[];
+  let index = 0;
+  while (index < sheets.length) {
+    const sheet = sheets[index];
+    if (spriteCache[sheet] === null) {
+      const image = new Image();
+      image.src = explosionSpriteSpecs[sheet].path;
+      spriteCache[sheet] = image;
+    }
+    index += 1;
+  }
 }
 
 function createMobileSpriteImage(type: MobileType): HTMLImageElement {
@@ -337,11 +429,23 @@ function drawMobileSprite(context: CanvasRenderingContext2D, player: Player, spr
 }
 
 function getCachedSprite(spriteCache: SpriteCache, type: MobileType): HTMLImageElement | null {
-  return type === "armor" ? spriteCache.armor : spriteCache.knight;
+  if (type === "armor") {
+    return spriteCache.armor;
+  }
+
+  if (type === "knight") {
+    return spriteCache.knight;
+  }
+
+  if (type === "dragon") {
+    return spriteCache.dragon;
+  }
+
+  return spriteCache.snow;
 }
 
 function drawFallbackMobile(context: CanvasRenderingContext2D, player: Player): void {
-  if (player.mobile.type === "armor") {
+  if (player.mobile.type === "armor" || player.mobile.type === "snow") {
     drawArmorMobile(context, player, "#62c3ff");
   } else {
     drawKnightMobile(context, player, "#ff9262");
@@ -437,6 +541,45 @@ function drawExplosionVisual(context: CanvasRenderingContext2D, explosionVisual:
   context.beginPath();
   context.arc(explosionVisual.point.x, explosionVisual.point.y, outerRingRadius, 0, Math.PI * 2);
   context.stroke();
+}
+
+function drawExplosionSprites(context: CanvasRenderingContext2D, sprites: ExplosionSpriteEffect[], spriteCache: ExplosionSpriteCache): void {
+  let index = 0;
+  while (index < sprites.length) {
+    drawExplosionSprite(context, sprites[index], spriteCache);
+    index += 1;
+  }
+}
+
+function drawExplosionSprite(context: CanvasRenderingContext2D, sprite: ExplosionSpriteEffect, spriteCache: ExplosionSpriteCache): void {
+  const image = spriteCache[sprite.sheet];
+  if (image === null || !image.complete || image.naturalWidth === 0) {
+    return;
+  }
+
+  const spec = explosionSpriteSpecs[sprite.sheet];
+  const frameWidth = spec.width / spec.frames;
+  const progress = Math.max(0, Math.min(0.999, sprite.timer / sprite.duration));
+  const frame = Math.min(spec.frames - 1, Math.floor(progress * spec.frames));
+  const alpha = progress < 0.82 ? 1 : 1 - (progress - 0.82) / 0.18;
+  const destinationWidth = frameWidth * sprite.scale;
+  const destinationHeight = spec.height * sprite.scale;
+
+  context.save();
+  context.globalAlpha = Math.max(0, Math.min(1, alpha));
+  context.globalCompositeOperation = "screen";
+  context.drawImage(
+    image,
+    frame * frameWidth,
+    0,
+    frameWidth,
+    spec.height,
+    sprite.point.x - destinationWidth * 0.5,
+    sprite.point.y - destinationHeight * 0.72,
+    destinationWidth,
+    destinationHeight
+  );
+  context.restore();
 }
 
 function drawDamagePopups(context: CanvasRenderingContext2D, damagePopups: DamagePopup[]): void {

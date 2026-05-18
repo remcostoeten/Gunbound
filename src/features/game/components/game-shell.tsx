@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { getMobilePresentation } from "@/features/game/constants/mobile-presentation";
+import { getMobilePresentation, mobilePresentationOptions } from "@/features/game/constants/mobile-presentation";
 import { getMobileSpriteSource } from "@/features/game/engine/mobile-sprites";
 import { AimIndicator } from "@/features/game/components/aim-indicator";
 import { GameCanvas } from "@/features/game/components/game-canvas";
@@ -309,8 +309,11 @@ function renderLobbyPlayer(
                         value={mobile}
                         onChange={onMobileChange}
                     >
-                        <option value="armor">Armor</option>
-                        <option value="knight">Knight</option>
+                        {mobilePresentationOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                                {option.label}
+                            </option>
+                        ))}
                     </select>
                 </div>
                 <div className="lobby-field">

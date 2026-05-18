@@ -11,14 +11,30 @@ export function getMobileSpriteSource(type: MobileType): SpriteSource {
     return {
       width: 64,
       height: 64,
-      path: "/mobiles/generated/car-sheet.png"
+      path: "/mobiles/armor-sheet.svg"
+    };
+  }
+
+  if (type === "knight") {
+    return {
+      width: 64,
+      height: 64,
+      path: "/mobiles/knight-sheet.svg"
+    };
+  }
+
+  if (type === "dragon") {
+    return {
+      width: 64,
+      height: 64,
+      path: "/mobiles/generated/dragon-sheet.png"
     };
   }
 
   return {
     width: 64,
     height: 64,
-    path: "/mobiles/knight-sheet.svg"
+    path: "/mobiles/generated/snow-sheet.png"
   };
 }
 

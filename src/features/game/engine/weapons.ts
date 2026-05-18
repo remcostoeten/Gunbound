@@ -53,6 +53,58 @@ const weaponProfileDefinitions: WeaponProfileMap = {
       gravityScale: 0.88,
       radius: 4
     }
+  },
+  dragon: {
+    primary: {
+      name: "Wing Burst",
+      baseSpeed: 415,
+      speedScale: 320,
+      baseDamage: 32,
+      damageScale: 23,
+      blastRadius: 42,
+      bouncesLeft: 0,
+      windScale: 1.12,
+      gravityScale: 0.86,
+      radius: 4
+    },
+    secondary: {
+      name: "Drake Dive",
+      baseSpeed: 388,
+      speedScale: 286,
+      baseDamage: 40,
+      damageScale: 26,
+      blastRadius: 46,
+      bouncesLeft: 0,
+      windScale: 1.04,
+      gravityScale: 0.8,
+      radius: 5
+    }
+  },
+  snow: {
+    primary: {
+      name: "Powder Pot",
+      baseSpeed: 405,
+      speedScale: 300,
+      baseDamage: 36,
+      damageScale: 24,
+      blastRadius: 44,
+      bouncesLeft: 0,
+      windScale: 0.9,
+      gravityScale: 1,
+      radius: 5
+    },
+    secondary: {
+      name: "Avalanche Lob",
+      baseSpeed: 360,
+      speedScale: 250,
+      baseDamage: 50,
+      damageScale: 30,
+      blastRadius: 58,
+      bouncesLeft: 0,
+      windScale: 0.82,
+      gravityScale: 1.16,
+      radius: 6
+    }
   }
 };
 
