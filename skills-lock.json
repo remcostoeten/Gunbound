@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "skills": {
+    "agent-browser": {
+      "source": "vercel-labs/agent-browser",
+      "sourceType": "github",
+      "skillPath": "skills/agent-browser/SKILL.md",
+      "computedHash": "228f87d57035100d9dc6efcfc05aafd4b6e3962adacaa04b8217ab2fadb15dc8"
+    },
+    "game-engine": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "skillPath": "skills/game-engine/SKILL.md",
+      "computedHash": "20057f62cf7a8b2d9f940b3de0b18e5426e8f4bb50e236d36b1033aa0d42c4d8"
+    },
+    "next-best-practices": {
+      "source": "vercel-labs/next-skills",
+      "sourceType": "github",
+      "skillPath": "skills/next-best-practices/SKILL.md",
+      "computedHash": "f4678aef4ffc10a5ea64a91e57abe5a5081af813b06d58d565caf3e8ef56e26c"
+    },
+    "spacetimedb-best-practices": {
+      "source": "isyn/stdb-skills",
+      "sourceType": "github",
+      "skillPath": "skills/spacetimedb-best-practices/SKILL.md",
+      "computedHash": "cf0f990c9e9c23e6fc675b9522e508b95c34b43f5d697c2902103fe9a13da8ad"
+    },
+    "spacetimedb-cli": {
+      "source": "douglance/spacetimedb",
+      "sourceType": "github",
+      "skillPath": "skills/spacetimedb-cli/SKILL.md",
+      "computedHash": "f976732a196f6f20ca1e68cd35264b95ea18e9a33d58b5f2b6a257229465b6f1"
+    },
+    "spacetimedb-concepts": {
+      "source": "douglance/spacetimedb",
+      "sourceType": "github",
+      "skillPath": "skills/spacetimedb-concepts/SKILL.md",
+      "computedHash": "137ab47013b1d9815961f43227271911acec4e648dbe0f35bc2914122ccb0276"
+    },
+    "typescript-advanced-types": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "skillPath": "plugins/javascript-typescript/skills/typescript-advanced-types/SKILL.md",
+      "computedHash": "3a3be8c925f96ac4e1280db28a01677e7ca5197f3792de2bbf35ab3bb324b6dd"
+    },
+    "vercel-react-best-practices": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/react-best-practices/SKILL.md",
+      "computedHash": "ca7b0c0c6e5f2750043f7f0cd72d16ac4e2abc48f9b5500d047a4b77a2506212"
+    },
+    "web-design-guidelines": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/web-design-guidelines/SKILL.md",
+      "computedHash": "f3bc47f890f42a44db1007ab390709ec368e4b8c089baee6b0007182236ac474"
+    }
+  }
+}
