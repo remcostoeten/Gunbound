@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { createCameraRig, getCameraFrame, stepCameraRig } from "@/features/game/engine/camera";
+import { createVisualEffectsState, stepVisualEffectsState } from "@/features/game/engine/effects";
 import { getTerrainPalette } from "@/features/game/engine/terrain";
 import { getMobileSpriteFrame, getMobileSpriteSource } from "@/features/game/engine/mobile-sprites";
 import { getLaunchRadians, getMuzzlePosition } from "@/features/game/engine/physics";
@@ -11,7 +12,20 @@ import { useGameStore } from "@/features/game/store/game-store";
 import { worldHeight, worldWidth } from "@/features/game/constants/world";
 import type { ProjectileState } from "@/features/game/types/combat";
 import type { BonusBox, Player, TerrainState } from "@/features/game/types/entities";
-import type { DamagePopup, ExplosionVisual } from "@/features/game/types/effects";
+import type {
+  BounceSpark,
+  ChargeSpark,
+  DamagePopup,
+  DebrisParticle,
+  DustPuff,
+  ExplosionVisual,
+  GrassTuft,
+  HitFlash,
+  ShellCasing,
+  SmokePuff,
+  VisualEffectsState,
+  WindLeaf
+} from "@/features/game/types/effects";
 import type { CameraFrame } from "@/features/game/types/presentation";
 import type { MobileType, PlayerAccent, TerrainTheme, Vec2, WeaponType } from "@/features/game/types/shared";
 
@@ -20,120 +34,16 @@ type SpriteCache = {
   knight: HTMLImageElement | null;
 };
 
-type DebrisParticle = {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  life: number;
-  maxLife: number;
-  size: number;
-  color: string;
-};
-
-type WindLeaf = {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  rotation: number;
-  rotSpeed: number;
-  size: number;
-  alpha: number;
-};
-
-type ChargeSpark = {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  life: number;
-  maxLife: number;
-  size: number;
-};
-
-type DustPuff = {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  life: number;
-  maxLife: number;
-  size: number;
-};
-
-type HitFlash = {
-  alpha: number;
-  timer: number;
-};
-
-type ShellCasing = {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  rotation: number;
-  rotSpeed: number;
-  life: number;
-  maxLife: number;
-};
-
-type SmokePuff = {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  life: number;
-  maxLife: number;
-  size: number;
-  alpha: number;
-};
-
-type BounceSpark = {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  life: number;
-  maxLife: number;
-  size: number;
-};
-
-type GrassTuft = {
-  x: number;
-  y: number;
-  height: number;
-  sway: number;
-};
-
 export function GameCanvas(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const previousFrameTimeRef = useRef(0);
   const visualTimeRef = useRef(0);
   const cameraRigRef = useRef(createCameraRig());
-  const trailRef = useRef<Vec2[]>([]);
-  const previousProjectileRef = useRef<ProjectileState | null>(null);
-  const muzzleFlashRef = useRef<ExplosionVisual | null>(null);
+  const visualEffectsRef = useRef<VisualEffectsState>(createVisualEffectsState());
   const spriteCacheRef = useRef<SpriteCache>({
     armor: null,
     knight: null
   });
-  const debrisRef = useRef<DebrisParticle[]>([]);
-  const leavesRef = useRef<WindLeaf[]>([]);
-  const sparksRef = useRef<ChargeSpark[]>([]);
-  const dustRef = useRef<DustPuff[]>([]);
-  const hitFlashRef = useRef<HitFlash | null>(null);
-  const grassRef = useRef<GrassTuft[]>([]);
-  const previousExplosionRef = useRef<ExplosionVisual | null>(null);
-  const previousPhaseRef = useRef<string>("");
-  const leafSpawnTimerRef = useRef(0);
-  const windParticlesEnabledRef = useRef(false);
-  const shellCasingsRef = useRef<ShellCasing[]>([]);
-  const smokePuffsRef = useRef<SmokePuff[]>([]);
-  const bounceSparksRef = useRef<BounceSpark[]>([]);
-  const fireShakeRef = useRef(0);
-  const previousBouncesRef2 = useRef(0);
-  const lastWeaponRef = useRef<WeaponType>("primary");
 
   useInput();
   useGameLoop(drawFrame);
@@ -159,16 +69,21 @@ export function GameCanvas(): React.JSX.Element {
     const delta = advanceVisualClock();
 
     const state = useGameStore.getState();
-    syncProjectileEffects(state.projectile, state.players, state.turn);
-    syncExplosionDebris(state.explosionVisual);
-    syncWindLeaves(state.wind, state.scene);
-    syncChargeSparks(state.charging, state.players, state.turn);
-    syncDustOnMove(state.phase, state.players, state.turn);
-    syncHitFlash(state.damagePopups);
-    syncGrass(state.terrain);
-    syncBounceSparks(state.projectile);
-    updateParticles();
-    syncParticleData();
+    visualEffectsRef.current = stepVisualEffectsState(visualEffectsRef.current, {
+      projectile: state.projectile,
+      players: state.players,
+      turn: state.turn,
+      explosionVisual: state.explosionVisual,
+      wind: state.wind,
+      scene: state.scene,
+      charging: state.charging,
+      phase: state.phase,
+      damagePopups: state.damagePopups,
+      terrain: state.terrain,
+      dt: delta,
+      visualTime: visualTimeRef.current
+    });
+    const visualEffects = visualEffectsRef.current;
     cameraRigRef.current = stepCameraRig(cameraRigRef.current, {
       scene: state.scene,
       phase: state.phase,
@@ -178,7 +93,7 @@ export function GameCanvas(): React.JSX.Element {
       explosionVisual: state.explosionVisual,
       dt: delta
     });
-    const cameraFrame = getCameraFrame(cameraRigRef.current, visualTimeRef.current, state.explosionVisual, getFireShake());
+    const cameraFrame = getCameraFrame(cameraRigRef.current, visualTimeRef.current, state.explosionVisual, visualEffects.fireShake);
 
     context.save();
     applyCameraFrame(context, cameraFrame);
@@ -187,7 +102,7 @@ export function GameCanvas(): React.JSX.Element {
 
     if (state.terrain !== null) {
       drawTerrain(context, state.terrain);
-      drawGrass(context, state.terrain, visualTimeRef.current, state.wind);
+      drawGrass(context, state.terrain, visualTimeRef.current, state.wind, visualEffects.grass);
     }
 
     drawBonusBoxes(context, state.bonusBoxes);
@@ -196,24 +111,24 @@ export function GameCanvas(): React.JSX.Element {
       drawAimGuide(context, state.players[state.turn - 1], state.wind, state.power, state.charging, state.terrain);
     }
 
-    drawProjectileTrail(context, trailRef.current);
-    drawWindLeaves(context, visualTimeRef.current);
+    drawProjectileTrail(context, visualEffects.trail, visualEffects.lastWeapon);
+    drawWindLeaves(context, visualEffects.leaves);
     drawPlayers(context, state.players, state.turn, visualTimeRef.current, spriteCacheRef.current);
 
     if (state.projectile !== null) {
       drawProjectile(context, state.projectile);
     }
 
-    drawChargeSparks(context);
-    drawDustPuffs(context);
-    drawDebris(context);
-    drawShellCasings(context);
-    drawSmokePuffs(context);
-    drawBounceSparks(context);
-    drawMuzzleFlash(context, muzzleFlashRef.current);
+    drawChargeSparks(context, visualEffects.sparks);
+    drawDustPuffs(context, visualEffects.dust);
+    drawDebris(context, visualEffects.debris);
+    drawShellCasings(context, visualEffects.shellCasings);
+    drawSmokePuffs(context, visualEffects.smokePuffs);
+    drawBounceSparks(context, visualEffects.bounceSparks);
+    drawMuzzleFlash(context, visualEffects.muzzleFlash);
     drawExplosionVisual(context, state.explosionVisual);
     drawDamagePopups(context, state.damagePopups);
-    drawHitFlash(context, hitFlashRef.current);
+    drawHitFlash(context, visualEffects.hitFlash);
     context.restore();
   }
 
@@ -226,356 +141,7 @@ export function GameCanvas(): React.JSX.Element {
     const delta = Math.min(0.05, (now - previousFrameTimeRef.current) / 1000);
     previousFrameTimeRef.current = now;
     visualTimeRef.current += delta;
-    tickMuzzleFlash(delta);
-    tickHitFlash(delta);
-    tickFireShake(delta);
     return delta;
-  }
-
-  function syncProjectileEffects(projectile: ProjectileState | null, players: [Player, Player], turn: 1 | 2): void {
-    if (projectile !== null) {
-      if (previousProjectileRef.current === null) {
-        muzzleFlashRef.current = {
-          point: projectile.position,
-          radius: 48,
-          timer: 0.25,
-          duration: 0.25
-        };
-        fireShakeRef.current = 0.3;
-        trailRef.current = [];
-
-        const shooter = players[turn - 1];
-        for (let i = 0; i < 2; i++) {
-          const casingAngle = Math.random() * 0.8 - 0.5;
-          shellCasingsRef.current.push({
-            x: projectile.position.x + (Math.random() - 0.5) * 6,
-            y: projectile.position.y + (Math.random() - 0.5) * 4,
-            vx: (shooter.mobile.facing === 1 ? -1 : 1) * (40 + Math.random() * 30),
-            vy: -60 - Math.random() * 40,
-            rotation: Math.random() * Math.PI * 2,
-            rotSpeed: (Math.random() - 0.5) * 12,
-            life: 0.6 + Math.random() * 0.3,
-            maxLife: 0.6 + Math.random() * 0.3,
-          });
-        }
-
-        for (let i = 0; i < 3; i++) {
-          smokePuffsRef.current.push({
-            x: projectile.position.x + (Math.random() - 0.5) * 8,
-            y: projectile.position.y + (Math.random() - 0.5) * 6,
-            vx: (Math.random() - 0.5) * 15,
-            vy: -15 - Math.random() * 15,
-            life: 0.4 + Math.random() * 0.3,
-            maxLife: 0.4 + Math.random() * 0.3,
-            size: 6 + Math.random() * 6,
-            alpha: 0.35,
-          });
-        }
-
-        lastWeaponRef.current = projectile.weapon;
-      }
-      pushTrailPoint(projectile.position);
-    } else {
-      decayTrail();
-    }
-    previousProjectileRef.current = projectile;
-  }
-
-  function syncExplosionDebris(explosion: ExplosionVisual | null): void {
-    if (explosion !== null && (previousExplosionRef.current === null || explosion.timer > previousExplosionRef.current.timer)) {
-      const count = 12 + Math.floor(Math.random() * 8);
-      const particles: DebrisParticle[] = [];
-      for (let i = 0; i < count; i++) {
-        const angle = Math.random() * Math.PI * 2;
-        const speed = 60 + Math.random() * 140;
-        particles.push({
-          x: explosion.point.x + (Math.random() - 0.5) * 8,
-          y: explosion.point.y + (Math.random() - 0.5) * 8,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed - 80,
-          life: 0.6 + Math.random() * 0.6,
-          maxLife: 0.6 + Math.random() * 0.6,
-          size: 2 + Math.random() * 4,
-          color: Math.random() > 0.5 ? "#8a5433" : "#613923",
-        });
-      }
-      debrisRef.current = debrisRef.current.concat(particles);
-      if (debrisRef.current.length > 120) {
-        debrisRef.current = debrisRef.current.slice(-120);
-      }
-    }
-    previousExplosionRef.current = explosion;
-  }
-
-  function syncWindLeaves(wind: { x: number; y: number }, scene: string): void {
-    windParticlesEnabledRef.current = scene === "playing";
-
-    if (!windParticlesEnabledRef.current) return;
-
-    leafSpawnTimerRef.current += 1;
-    const windSpeed = Math.abs(wind.x);
-    const spawnRate = Math.max(8, Math.round(40 - windSpeed * 30));
-
-    if (leafSpawnTimerRef.current >= spawnRate) {
-      leafSpawnTimerRef.current = 0;
-      const fromLeft = wind.x >= 0;
-      const leaf: WindLeaf = {
-        x: fromLeft ? -30 : worldWidth + 30,
-        y: 40 + Math.random() * (worldHeight * 0.55),
-        vx: (fromLeft ? 1 : -1) * (20 + Math.abs(wind.x) * 60 + Math.random() * 20),
-        vy: (Math.random() - 0.5) * 15,
-        rotation: Math.random() * Math.PI * 2,
-        rotSpeed: (Math.random() - 0.5) * 4,
-        size: 4 + Math.random() * 4,
-        alpha: 0.3 + Math.random() * 0.3,
-      };
-      leavesRef.current.push(leaf);
-      if (leavesRef.current.length > 30) {
-        leavesRef.current.shift();
-      }
-    }
-  }
-
-  function syncChargeSparks(charging: boolean, players: [Player, Player], turn: 1 | 2): void {
-    if (!charging) {
-      if (sparksRef.current.length > 0) {
-        sparksRef.current = [];
-      }
-      return;
-    }
-
-    const mobile = players[turn - 1].mobile;
-    for (let i = 0; i < 2; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const dist = 14 + Math.random() * 20;
-      sparksRef.current.push({
-        x: mobile.position.x + Math.cos(angle) * dist,
-        y: mobile.position.y - mobile.height * 0.5 + Math.sin(angle) * dist,
-        vx: (Math.random() - 0.5) * 30,
-        vy: -20 - Math.random() * 30,
-        life: 0.2 + Math.random() * 0.3,
-        maxLife: 0.2 + Math.random() * 0.3,
-        size: 1.5 + Math.random() * 2,
-      });
-    }
-
-    if (sparksRef.current.length > 40) {
-      sparksRef.current = sparksRef.current.slice(-40);
-    }
-  }
-
-  function syncDustOnMove(phase: string, _players: [Player, Player], _turn: 1 | 2): void {
-    if (phase === "move" && previousPhaseRef.current !== "move") {
-      for (let i = 0; i < 4; i++) {
-        dustRef.current.push({
-          x: _players[_turn - 1].mobile.position.x + (Math.random() - 0.5) * 20,
-          y: _players[_turn - 1].mobile.position.y + (Math.random() - 0.5) * 4,
-          vx: (Math.random() - 0.5) * 20,
-          vy: -10 - Math.random() * 15,
-          life: 0.4 + Math.random() * 0.3,
-          maxLife: 0.4 + Math.random() * 0.3,
-          size: 3 + Math.random() * 4,
-        });
-      }
-    }
-    previousPhaseRef.current = phase;
-  }
-
-  function syncBounceSparks(projectile: ProjectileState | null): void {
-    if (projectile !== null && previousProjectileRef.current !== null) {
-      if (projectile.bouncesLeft < previousBouncesRef2.current) {
-        const count = 6 + Math.floor(Math.random() * 4);
-        for (let i = 0; i < count; i++) {
-          const angle = Math.random() * Math.PI * 2;
-          const speed = 40 + Math.random() * 100;
-          bounceSparksRef.current.push({
-            x: projectile.position.x + (Math.random() - 0.5) * 4,
-            y: projectile.position.y + (Math.random() - 0.5) * 4,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed - 30,
-            life: 0.3 + Math.random() * 0.3,
-            maxLife: 0.3 + Math.random() * 0.3,
-            size: 1.5 + Math.random() * 2,
-          });
-        }
-        if (bounceSparksRef.current.length > 60) {
-          bounceSparksRef.current = bounceSparksRef.current.slice(-60);
-        }
-      }
-    }
-    if (projectile === null) {
-      previousBouncesRef2.current = 0;
-    } else {
-      previousBouncesRef2.current = projectile.bouncesLeft;
-    }
-  }
-
-  function syncHitFlash(damagePopups: DamagePopup[]): void {
-    if (damagePopups.length > 0 && hitFlashRef.current === null) {
-      hitFlashRef.current = { alpha: 0.15, timer: 0.25 };
-    }
-  }
-
-  function syncGrass(terrain: TerrainState | null): void {
-    if (terrain === null) return;
-    if (grassRef.current.length > 0) {
-      setGrassData(grassRef.current);
-      return;
-    }
-
-    const tufts: GrassTuft[] = [];
-    let x = 0;
-    while (x < terrain.width) {
-      if (Math.random() < 0.12) {
-        tufts.push({
-          x: x + (Math.random() - 0.5) * 3,
-          y: terrain.heights[x],
-          height: 5 + Math.random() * 8,
-          sway: Math.random() * Math.PI * 2,
-        });
-      }
-      x += 1;
-    }
-    grassRef.current = tufts;
-    setGrassData(tufts);
-  }
-
-  function updateParticles(): void {
-    const dt = 1 / 60;
-
-    debrisRef.current = debrisRef.current
-      .map(p => ({
-        ...p,
-        x: p.x + p.vx * dt,
-        y: p.y + p.vy * dt,
-        vy: p.vy + 320 * dt,
-        life: p.life - dt,
-      }))
-      .filter(p => p.life > 0);
-
-    leavesRef.current = leavesRef.current
-      .map(l => ({
-        ...l,
-        x: l.x + l.vx * dt,
-        y: l.y + l.vy * dt + Math.sin(visualTimeRef.current * 2 + l.x * 0.01) * 0.3,
-        rotation: l.rotation + l.rotSpeed * dt,
-        vy: l.vy + 4 * dt,
-        alpha: l.alpha * 0.998,
-      }))
-      .filter(l => l.x > -60 && l.x < worldWidth + 60 && l.y < worldHeight + 20 && l.alpha > 0.01);
-
-    sparksRef.current = sparksRef.current
-      .map(s => ({
-        ...s,
-        x: s.x + s.vx * dt,
-        y: s.y + s.vy * dt,
-        vy: s.vy + 60 * dt,
-        life: s.life - dt,
-      }))
-      .filter(s => s.life > 0);
-
-    dustRef.current = dustRef.current
-      .map(d => ({
-        ...d,
-        x: d.x + d.vx * dt,
-        y: d.y + d.vy * dt,
-        vy: d.vy + 30 * dt,
-        life: d.life - dt,
-        size: d.size + 6 * dt,
-      }))
-      .filter(d => d.life > 0);
-
-    if (shellCasingsRef.current.length > 0) {
-      shellCasingsRef.current = shellCasingsRef.current
-        .map(c => ({
-          ...c,
-          x: c.x + c.vx * dt,
-          y: c.y + c.vy * dt,
-          vy: c.vy + 280 * dt,
-          rotation: c.rotation + c.rotSpeed * dt,
-          life: c.life - dt,
-        }))
-        .filter(c => c.life > 0);
-    }
-
-    if (smokePuffsRef.current.length > 0) {
-      smokePuffsRef.current = smokePuffsRef.current
-        .map(s => ({
-          ...s,
-          x: s.x + s.vx * dt,
-          y: s.y + s.vy * dt,
-          vy: s.vy + 15 * dt,
-          life: s.life - dt,
-          size: s.size + 12 * dt,
-          alpha: s.alpha - 0.5 * dt,
-        }))
-        .filter(s => s.life > 0 && s.alpha > 0);
-    }
-
-    if (bounceSparksRef.current.length > 0) {
-      bounceSparksRef.current = bounceSparksRef.current
-        .map(s => ({
-          ...s,
-          x: s.x + s.vx * dt,
-          y: s.y + s.vy * dt,
-          vy: s.vy + 160 * dt,
-          life: s.life - dt,
-        }))
-        .filter(s => s.life > 0);
-    }
-  }
-
-  function tickFireShake(delta: number): void {
-    if (fireShakeRef.current > 0) {
-      fireShakeRef.current = Math.max(0, fireShakeRef.current - delta);
-    }
-  }
-
-  function syncParticleData(): void {
-    setDebrisData(debrisRef.current);
-    setLeafData(leavesRef.current);
-    setSparkData(sparksRef.current);
-    setDustData(dustRef.current);
-    setCasingData(shellCasingsRef.current);
-    setSmokeData(smokePuffsRef.current);
-    setBounceData(bounceSparksRef.current);
-    fireShakeData = fireShakeRef.current;
-    setLastWeapon(lastWeaponRef.current);
-  }
-
-  function tickMuzzleFlash(delta: number): void {
-    const muzzleFlash = muzzleFlashRef.current;
-    if (muzzleFlash === null) return;
-    const nextTimer = muzzleFlash.timer - delta;
-    if (nextTimer <= 0) {
-      muzzleFlashRef.current = null;
-      return;
-    }
-    muzzleFlashRef.current = {
-      point: muzzleFlash.point,
-      radius: muzzleFlash.radius,
-      timer: nextTimer,
-      duration: muzzleFlash.duration
-    };
-  }
-
-  function tickHitFlash(delta: number): void {
-    const flash = hitFlashRef.current;
-    if (flash === null) return;
-    flash.timer -= delta;
-    flash.alpha *= 0.94;
-    if (flash.timer <= 0 || flash.alpha < 0.01) {
-      hitFlashRef.current = null;
-    }
-  }
-
-  function pushTrailPoint(point: Vec2): void {
-    trailRef.current.push({ x: point.x, y: point.y });
-    if (trailRef.current.length > 28) trailRef.current.shift();
-  }
-
-  function decayTrail(): void {
-    if (trailRef.current.length > 0) trailRef.current.shift();
   }
 }
 
@@ -626,11 +192,10 @@ function drawTerrain(context: CanvasRenderingContext2D, terrain: TerrainState): 
   context.stroke();
 }
 
-function drawGrass(context: CanvasRenderingContext2D, terrain: TerrainState, visualTime: number, wind: { x: number; y: number }): void {
+function drawGrass(context: CanvasRenderingContext2D, terrain: TerrainState, visualTime: number, wind: { x: number; y: number }, grass: GrassTuft[]): void {
   const palette = getTerrainPalette(terrain.theme);
-  const grassData = getGrassData();
-  for (let i = 0; i < grassData.length; i++) {
-    const g = grassData[i];
+  for (let i = 0; i < grass.length; i++) {
+    const g = grass[i];
     const sway = Math.sin(visualTime * 2.4 + g.sway) * 3 + wind.x * 4;
     context.strokeStyle = "rgba(" + String(palette.grassMid[0]) + ", " + String(palette.grassMid[1]) + ", " + String(palette.grassMid[2]) + ", 0.7)";
     context.lineWidth = 1.5;
@@ -639,19 +204,6 @@ function drawGrass(context: CanvasRenderingContext2D, terrain: TerrainState, vis
     context.quadraticCurveTo(g.x + sway * 0.5, g.y - g.height * 0.8, g.x + sway, g.y - g.height);
     context.stroke();
   }
-}
-
-let cachedGrass: GrassTuft[] | null = null;
-function getGrassData(): GrassTuft[] {
-  return cachedGrass || [];
-}
-
-export function invalidateGrassCache(): void {
-  cachedGrass = null;
-}
-
-export function setGrassData(grass: GrassTuft[]): void {
-  cachedGrass = grass;
 }
 
 // ---- Bonus boxes ----
@@ -817,9 +369,8 @@ function applyCameraFrame(context: CanvasRenderingContext2D, cameraFrame: Camera
   context.translate(-cameraFrame.offset.x, -cameraFrame.offset.y);
 }
 
-function drawProjectileTrail(context: CanvasRenderingContext2D, trail: Vec2[]): void {
+function drawProjectileTrail(context: CanvasRenderingContext2D, trail: Vec2[], weaponType: WeaponType): void {
   if (trail.length < 2) return;
-  const weaponType = getLastWeapon();
   const color = weaponType === "secondary" ? "255, 211, 97" : "255, 250, 220";
   let index = 0;
   while (index < trail.length) {
@@ -949,8 +500,7 @@ function drawAimGuide(context: CanvasRenderingContext2D, player: Player, wind: {
 
 // ---- Particle draw functions ----
 
-function drawDebris(context: CanvasRenderingContext2D): void {
-  const debris = getDebrisData();
+function drawDebris(context: CanvasRenderingContext2D, debris: DebrisParticle[]): void {
   for (let i = 0; i < debris.length; i++) {
     const p = debris[i];
     const alpha = p.life / p.maxLife;
@@ -961,8 +511,7 @@ function drawDebris(context: CanvasRenderingContext2D): void {
   context.globalAlpha = 1;
 }
 
-function drawWindLeaves(context: CanvasRenderingContext2D, _visualTime: number): void {
-  const leaves = getLeafData();
+function drawWindLeaves(context: CanvasRenderingContext2D, leaves: WindLeaf[]): void {
   for (let i = 0; i < leaves.length; i++) {
     const l = leaves[i];
     context.save();
@@ -982,8 +531,7 @@ function drawWindLeaves(context: CanvasRenderingContext2D, _visualTime: number):
   context.globalAlpha = 1;
 }
 
-function drawChargeSparks(context: CanvasRenderingContext2D): void {
-  const sparks = getSparkData();
+function drawChargeSparks(context: CanvasRenderingContext2D, sparks: ChargeSpark[]): void {
   for (let i = 0; i < sparks.length; i++) {
     const s = sparks[i];
     const alpha = s.life / s.maxLife;
@@ -999,8 +547,7 @@ function drawChargeSparks(context: CanvasRenderingContext2D): void {
   context.globalAlpha = 1;
 }
 
-function drawDustPuffs(context: CanvasRenderingContext2D): void {
-  const dust = getDustData();
+function drawDustPuffs(context: CanvasRenderingContext2D, dust: DustPuff[]): void {
   for (let i = 0; i < dust.length; i++) {
     const d = dust[i];
     const alpha = d.life / d.maxLife;
@@ -1013,8 +560,7 @@ function drawDustPuffs(context: CanvasRenderingContext2D): void {
   context.globalAlpha = 1;
 }
 
-function drawShellCasings(context: CanvasRenderingContext2D): void {
-  const casings = getCasingData();
+function drawShellCasings(context: CanvasRenderingContext2D, casings: ShellCasing[]): void {
   for (let i = 0; i < casings.length; i++) {
     const c = casings[i];
     const alpha = c.life / c.maxLife;
@@ -1032,8 +578,7 @@ function drawShellCasings(context: CanvasRenderingContext2D): void {
   context.globalAlpha = 1;
 }
 
-function drawSmokePuffs(context: CanvasRenderingContext2D): void {
-  const smoke = getSmokeData();
+function drawSmokePuffs(context: CanvasRenderingContext2D, smoke: SmokePuff[]): void {
   for (let i = 0; i < smoke.length; i++) {
     const s = smoke[i];
     const alpha = s.alpha * (s.life / s.maxLife);
@@ -1046,8 +591,7 @@ function drawSmokePuffs(context: CanvasRenderingContext2D): void {
   context.globalAlpha = 1;
 }
 
-function drawBounceSparks(context: CanvasRenderingContext2D): void {
-  const sparks = getBounceData();
+function drawBounceSparks(context: CanvasRenderingContext2D, sparks: BounceSpark[]): void {
   for (let i = 0; i < sparks.length; i++) {
     const s = sparks[i];
     const alpha = s.life / s.maxLife;
@@ -1068,39 +612,6 @@ function drawHitFlash(context: CanvasRenderingContext2D, flash: HitFlash | null)
   context.fillStyle = "rgba(255, 255, 255, " + String(flash.alpha) + ")";
   context.fillRect(0, 0, worldWidth, worldHeight);
 }
-
-// ---- Particle data accessors (bridged from refs) ----
-
-let debrisData: DebrisParticle[] = [];
-let leafData: WindLeaf[] = [];
-let sparkData: ChargeSpark[] = [];
-let dustData: DustPuff[] = [];
-let casingData: ShellCasing[] = [];
-let smokeData: SmokePuff[] = [];
-let bounceData: BounceSpark[] = [];
-let fireShakeData = 0;
-
-export function setDebrisData(d: DebrisParticle[]): void { debrisData = d; }
-export function setLeafData(d: WindLeaf[]): void { leafData = d; }
-export function setSparkData(d: ChargeSpark[]): void { sparkData = d; }
-export function setDustData(d: DustPuff[]): void { dustData = d; }
-export function setCasingData(d: ShellCasing[]): void { casingData = d; }
-export function setSmokeData(d: SmokePuff[]): void { smokeData = d; }
-export function setBounceData(d: BounceSpark[]): void { bounceData = d; }
-function getDebrisData(): DebrisParticle[] { return debrisData; }
-function getLeafData(): WindLeaf[] { return leafData; }
-function getSparkData(): ChargeSpark[] { return sparkData; }
-function getDustData(): DustPuff[] { return dustData; }
-function getCasingData(): ShellCasing[] { return casingData; }
-function getSmokeData(): SmokePuff[] { return smokeData; }
-function getBounceData(): BounceSpark[] { return bounceData; }
-function getFireShake(): number { return fireShakeData; }
-
-let lastWeaponGlobal: WeaponType = "primary";
-export function setLastWeapon(w: WeaponType): void { lastWeaponGlobal = w; }
-function getLastWeapon(): WeaponType { return lastWeaponGlobal; }
-
-// ---- Visual helpers (unchanged) ----
 
 function drawSun(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
   if (theme === "midnight") {
