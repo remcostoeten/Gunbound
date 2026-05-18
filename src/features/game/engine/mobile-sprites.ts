@@ -11,7 +11,7 @@ export function getMobileSpriteSource(type: MobileType): SpriteSource {
     return {
       width: 64,
       height: 64,
-      path: "/mobiles/armor-sheet.svg"
+      path: "/mobiles/generated/car-sheet.png"
     };
   }
 
