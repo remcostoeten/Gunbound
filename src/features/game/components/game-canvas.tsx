@@ -11,7 +11,7 @@ import { worldHeight, worldWidth } from "@/features/game/constants/world";
 import type { ProjectileState } from "@/features/game/types/combat";
 import type { BonusBox, Player, TerrainState } from "@/features/game/types/entities";
 import type { DamagePopup, ExplosionVisual } from "@/features/game/types/effects";
-import type { MobileType, PlayerAccent, TerrainTheme, Vec2 } from "@/features/game/types/shared";
+import type { MobileType, PlayerAccent, TerrainTheme, Vec2, WeaponType } from "@/features/game/types/shared";
 
 type SpriteCache = {
   armor: HTMLImageElement | null;
@@ -65,6 +65,38 @@ type HitFlash = {
   timer: number;
 };
 
+type ShellCasing = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  rotation: number;
+  rotSpeed: number;
+  life: number;
+  maxLife: number;
+};
+
+type SmokePuff = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  size: number;
+  alpha: number;
+};
+
+type BounceSpark = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  size: number;
+};
+
 type GrassTuft = {
   x: number;
   y: number;
@@ -93,6 +125,12 @@ export function GameCanvas(): React.JSX.Element {
   const previousPhaseRef = useRef<string>("");
   const leafSpawnTimerRef = useRef(0);
   const windParticlesEnabledRef = useRef(false);
+  const shellCasingsRef = useRef<ShellCasing[]>([]);
+  const smokePuffsRef = useRef<SmokePuff[]>([]);
+  const bounceSparksRef = useRef<BounceSpark[]>([]);
+  const fireShakeRef = useRef(0);
+  const previousBouncesRef2 = useRef(0);
+  const lastWeaponRef = useRef<WeaponType>("primary");
 
   useInput();
   useGameLoop(drawFrame);
@@ -118,13 +156,14 @@ export function GameCanvas(): React.JSX.Element {
     advanceVisualClock();
 
     const state = useGameStore.getState();
-    syncProjectileEffects(state.projectile);
+    syncProjectileEffects(state.projectile, state.players, state.turn);
     syncExplosionDebris(state.explosionVisual);
     syncWindLeaves(state.wind, state.scene);
     syncChargeSparks(state.charging, state.players, state.turn);
     syncDustOnMove(state.phase, state.players, state.turn);
     syncHitFlash(state.damagePopups);
     syncGrass(state.terrain);
+    syncBounceSparks(state.projectile);
     updateParticles();
     syncParticleData();
 
@@ -155,6 +194,9 @@ export function GameCanvas(): React.JSX.Element {
     drawChargeSparks(context);
     drawDustPuffs(context);
     drawDebris(context);
+    drawShellCasings(context);
+    drawSmokePuffs(context);
+    drawBounceSparks(context);
     drawMuzzleFlash(context, muzzleFlashRef.current);
     drawExplosionVisual(context, state.explosionVisual);
     drawDamagePopups(context, state.damagePopups);
@@ -173,18 +215,50 @@ export function GameCanvas(): React.JSX.Element {
     visualTimeRef.current += delta;
     tickMuzzleFlash(delta);
     tickHitFlash(delta);
+    tickFireShake(delta);
   }
 
-  function syncProjectileEffects(projectile: ProjectileState | null): void {
+  function syncProjectileEffects(projectile: ProjectileState | null, players: [Player, Player], turn: 1 | 2): void {
     if (projectile !== null) {
       if (previousProjectileRef.current === null) {
         muzzleFlashRef.current = {
           point: projectile.position,
-          radius: 34,
-          timer: 0.16,
-          duration: 0.16
+          radius: 48,
+          timer: 0.25,
+          duration: 0.25
         };
+        fireShakeRef.current = 0.3;
         trailRef.current = [];
+
+        const shooter = players[turn - 1];
+        for (let i = 0; i < 2; i++) {
+          const casingAngle = Math.random() * 0.8 - 0.5;
+          shellCasingsRef.current.push({
+            x: projectile.position.x + (Math.random() - 0.5) * 6,
+            y: projectile.position.y + (Math.random() - 0.5) * 4,
+            vx: (shooter.mobile.facing === 1 ? -1 : 1) * (40 + Math.random() * 30),
+            vy: -60 - Math.random() * 40,
+            rotation: Math.random() * Math.PI * 2,
+            rotSpeed: (Math.random() - 0.5) * 12,
+            life: 0.6 + Math.random() * 0.3,
+            maxLife: 0.6 + Math.random() * 0.3,
+          });
+        }
+
+        for (let i = 0; i < 3; i++) {
+          smokePuffsRef.current.push({
+            x: projectile.position.x + (Math.random() - 0.5) * 8,
+            y: projectile.position.y + (Math.random() - 0.5) * 6,
+            vx: (Math.random() - 0.5) * 15,
+            vy: -15 - Math.random() * 15,
+            life: 0.4 + Math.random() * 0.3,
+            maxLife: 0.4 + Math.random() * 0.3,
+            size: 6 + Math.random() * 6,
+            alpha: 0.35,
+          });
+        }
+
+        lastWeaponRef.current = projectile.weapon;
       }
       pushTrailPoint(projectile.position);
     } else {
@@ -293,6 +367,35 @@ export function GameCanvas(): React.JSX.Element {
     previousPhaseRef.current = phase;
   }
 
+  function syncBounceSparks(projectile: ProjectileState | null): void {
+    if (projectile !== null && previousProjectileRef.current !== null) {
+      if (projectile.bouncesLeft < previousBouncesRef2.current) {
+        const count = 6 + Math.floor(Math.random() * 4);
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 40 + Math.random() * 100;
+          bounceSparksRef.current.push({
+            x: projectile.position.x + (Math.random() - 0.5) * 4,
+            y: projectile.position.y + (Math.random() - 0.5) * 4,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - 30,
+            life: 0.3 + Math.random() * 0.3,
+            maxLife: 0.3 + Math.random() * 0.3,
+            size: 1.5 + Math.random() * 2,
+          });
+        }
+        if (bounceSparksRef.current.length > 60) {
+          bounceSparksRef.current = bounceSparksRef.current.slice(-60);
+        }
+      }
+    }
+    if (projectile === null) {
+      previousBouncesRef2.current = 0;
+    } else {
+      previousBouncesRef2.current = projectile.bouncesLeft;
+    }
+  }
+
   function syncHitFlash(damagePopups: DamagePopup[]): void {
     if (damagePopups.length > 0 && hitFlashRef.current === null) {
       hitFlashRef.current = { alpha: 0.15, timer: 0.25 };
@@ -367,6 +470,51 @@ export function GameCanvas(): React.JSX.Element {
         size: d.size + 6 * dt,
       }))
       .filter(d => d.life > 0);
+
+    if (shellCasingsRef.current.length > 0) {
+      shellCasingsRef.current = shellCasingsRef.current
+        .map(c => ({
+          ...c,
+          x: c.x + c.vx * dt,
+          y: c.y + c.vy * dt,
+          vy: c.vy + 280 * dt,
+          rotation: c.rotation + c.rotSpeed * dt,
+          life: c.life - dt,
+        }))
+        .filter(c => c.life > 0);
+    }
+
+    if (smokePuffsRef.current.length > 0) {
+      smokePuffsRef.current = smokePuffsRef.current
+        .map(s => ({
+          ...s,
+          x: s.x + s.vx * dt,
+          y: s.y + s.vy * dt,
+          vy: s.vy + 15 * dt,
+          life: s.life - dt,
+          size: s.size + 12 * dt,
+          alpha: s.alpha - 0.5 * dt,
+        }))
+        .filter(s => s.life > 0 && s.alpha > 0);
+    }
+
+    if (bounceSparksRef.current.length > 0) {
+      bounceSparksRef.current = bounceSparksRef.current
+        .map(s => ({
+          ...s,
+          x: s.x + s.vx * dt,
+          y: s.y + s.vy * dt,
+          vy: s.vy + 160 * dt,
+          life: s.life - dt,
+        }))
+        .filter(s => s.life > 0);
+    }
+  }
+
+  function tickFireShake(delta: number): void {
+    if (fireShakeRef.current > 0) {
+      fireShakeRef.current = Math.max(0, fireShakeRef.current - delta);
+    }
   }
 
   function syncParticleData(): void {
@@ -374,6 +522,11 @@ export function GameCanvas(): React.JSX.Element {
     setLeafData(leavesRef.current);
     setSparkData(sparksRef.current);
     setDustData(dustRef.current);
+    setCasingData(shellCasingsRef.current);
+    setSmokeData(smokePuffsRef.current);
+    setBounceData(bounceSparksRef.current);
+    fireShakeData = fireShakeRef.current;
+    setLastWeapon(lastWeaponRef.current);
   }
 
   function tickMuzzleFlash(delta: number): void {
@@ -404,7 +557,7 @@ export function GameCanvas(): React.JSX.Element {
 
   function pushTrailPoint(point: Vec2): void {
     trailRef.current.push({ x: point.x, y: point.y });
-    if (trailRef.current.length > 18) trailRef.current.shift();
+    if (trailRef.current.length > 28) trailRef.current.shift();
   }
 
   function decayTrail(): void {
@@ -552,12 +705,23 @@ function getTurretAngle(player: Player): number {
 }
 
 function drawProjectile(context: CanvasRenderingContext2D, projectile: ProjectileState): void {
-  context.fillStyle = projectile.weapon === "secondary" ? "#ffe7a5" : "#ffffff";
-  context.shadowBlur = 14;
-  context.shadowColor = projectile.weapon === "secondary" ? "rgba(255, 211, 97, 0.82)" : "rgba(255, 255, 255, 0.72)";
+  const isSecondary = projectile.weapon === "secondary";
+  const color = isSecondary ? "#ffe7a5" : "#ffffff";
+  const glowColor = isSecondary ? "rgba(255, 211, 97, 0.85)" : "rgba(255, 255, 255, 0.75)";
+
+  context.shadowBlur = 20;
+  context.shadowColor = glowColor;
+  context.fillStyle = color;
   context.beginPath();
-  context.arc(projectile.position.x, projectile.position.y, projectile.radius, 0, Math.PI * 2);
+  context.arc(projectile.position.x, projectile.position.y, projectile.radius + 1, 0, Math.PI * 2);
   context.fill();
+
+  context.shadowBlur = 8;
+  context.fillStyle = isSecondary ? "#fff5d4" : "#ffffff";
+  context.beginPath();
+  context.arc(projectile.position.x, projectile.position.y, projectile.radius * 0.5, 0, Math.PI * 2);
+  context.fill();
+
   context.shadowBlur = 0;
 }
 
@@ -635,26 +799,39 @@ function drawHpTickMarks(context: CanvasRenderingContext2D, player: Player): voi
 }
 
 function applyCameraShake(context: CanvasRenderingContext2D, explosionVisual: ExplosionVisual | null): void {
-  if (explosionVisual === null) return;
-  const intensity = explosionVisual.timer / explosionVisual.duration;
-  const offsetX = (Math.random() - 0.5) * 12 * intensity;
-  const offsetY = (Math.random() - 0.5) * 10 * intensity;
-  context.translate(offsetX, offsetY);
+  let shakeIntensity = 0;
+  if (explosionVisual !== null) {
+    shakeIntensity = Math.max(shakeIntensity, (explosionVisual.timer / explosionVisual.duration) * 12);
+  }
+  const fireShake = getFireShake();
+  if (fireShake > 0) {
+    shakeIntensity = Math.max(shakeIntensity, fireShake * 3);
+  }
+  if (shakeIntensity > 0) {
+    const offsetX = (Math.random() - 0.5) * shakeIntensity;
+    const offsetY = (Math.random() - 0.5) * shakeIntensity * 0.8;
+    context.translate(offsetX, offsetY);
+  }
 }
 
 function drawProjectileTrail(context: CanvasRenderingContext2D, trail: Vec2[]): void {
   if (trail.length < 2) return;
+  const weaponType = getLastWeapon();
+  const color = weaponType === "secondary" ? "255, 211, 97" : "255, 250, 220";
   let index = 0;
   while (index < trail.length) {
     const point = trail[index];
     const alpha = (index + 1) / trail.length;
-    const radius = 1 + alpha * 3;
-    context.fillStyle = "rgba(255, 250, 220, " + String(alpha * 0.38) + ")";
+    const radius = 1 + alpha * 4;
+    context.shadowBlur = 6 * alpha;
+    context.shadowColor = "rgba(" + color + ", " + String(alpha * 0.5) + ")";
+    context.fillStyle = "rgba(" + color + ", " + String(alpha * 0.5) + ")";
     context.beginPath();
     context.arc(point.x, point.y, radius, 0, Math.PI * 2);
     context.fill();
     index += 1;
   }
+  context.shadowBlur = 0;
 }
 
 function drawMuzzleFlash(context: CanvasRenderingContext2D, muzzleFlash: ExplosionVisual | null): void {
@@ -674,23 +851,42 @@ function drawMuzzleFlash(context: CanvasRenderingContext2D, muzzleFlash: Explosi
 function drawExplosionVisual(context: CanvasRenderingContext2D, explosionVisual: ExplosionVisual | null): void {
   if (explosionVisual === null) return;
   const progress = 1 - explosionVisual.timer / explosionVisual.duration;
-  const ringRadius = explosionVisual.radius * (0.45 + progress * 0.95);
-  const smokeRadius = explosionVisual.radius * (0.55 + progress * 0.7);
   const alpha = 1 - progress;
-  const gradient = context.createRadialGradient(explosionVisual.point.x, explosionVisual.point.y, 0, explosionVisual.point.x, explosionVisual.point.y, smokeRadius);
-  gradient.addColorStop(0, "rgba(255, 242, 183, " + String(alpha) + ")");
-  gradient.addColorStop(0.35, "rgba(255, 169, 74, " + String(alpha * 0.92) + ")");
-  gradient.addColorStop(0.7, "rgba(143, 88, 52, " + String(alpha * 0.55) + ")");
-  gradient.addColorStop(1, "rgba(143, 88, 52, 0)");
-  context.fillStyle = gradient;
+
+  const flashRadius = explosionVisual.radius * (0.2 + progress * 0.5);
+  const flashGradient = context.createRadialGradient(explosionVisual.point.x, explosionVisual.point.y, 0, explosionVisual.point.x, explosionVisual.point.y, flashRadius);
+  flashGradient.addColorStop(0, "rgba(255, 255, 255, " + String(alpha * 0.95) + ")");
+  flashGradient.addColorStop(0.3, "rgba(255, 242, 183, " + String(alpha * 0.85) + ")");
+  flashGradient.addColorStop(0.7, "rgba(255, 190, 80, " + String(alpha * 0.5) + ")");
+  flashGradient.addColorStop(1, "rgba(255, 190, 80, 0)");
+  context.fillStyle = flashGradient;
+  context.beginPath();
+  context.arc(explosionVisual.point.x, explosionVisual.point.y, flashRadius, 0, Math.PI * 2);
+  context.fill();
+
+  const smokeRadius = explosionVisual.radius * (0.6 + progress * 0.8);
+  const smokeGradient = context.createRadialGradient(explosionVisual.point.x, explosionVisual.point.y, 0, explosionVisual.point.x, explosionVisual.point.y, smokeRadius);
+  smokeGradient.addColorStop(0, "rgba(255, 200, 100, " + String(alpha * 0.6) + ")");
+  smokeGradient.addColorStop(0.4, "rgba(180, 110, 50, " + String(alpha * 0.5) + ")");
+  smokeGradient.addColorStop(0.8, "rgba(100, 65, 40, " + String(alpha * 0.3) + ")");
+  smokeGradient.addColorStop(1, "rgba(100, 65, 40, 0)");
+  context.fillStyle = smokeGradient;
   context.beginPath();
   context.arc(explosionVisual.point.x, explosionVisual.point.y, smokeRadius, 0, Math.PI * 2);
   context.fill();
 
-  context.strokeStyle = "rgba(255, 252, 229, " + String(alpha * 0.9) + ")";
-  context.lineWidth = 5 * alpha + 1;
+  const ringRadius = explosionVisual.radius * (0.4 + progress * 1.0);
+  context.strokeStyle = "rgba(255, 252, 229, " + String(alpha * 0.8) + ")";
+  context.lineWidth = 6 * alpha + 1;
   context.beginPath();
   context.arc(explosionVisual.point.x, explosionVisual.point.y, ringRadius, 0, Math.PI * 2);
+  context.stroke();
+
+  const outerRingRadius = explosionVisual.radius * (0.5 + progress * 1.1);
+  context.strokeStyle = "rgba(200, 140, 80, " + String(alpha * 0.35) + ")";
+  context.lineWidth = 3 * alpha + 1;
+  context.beginPath();
+  context.arc(explosionVisual.point.x, explosionVisual.point.y, outerRingRadius, 0, Math.PI * 2);
   context.stroke();
 }
 
@@ -814,6 +1010,56 @@ function drawDustPuffs(context: CanvasRenderingContext2D): void {
   context.globalAlpha = 1;
 }
 
+function drawShellCasings(context: CanvasRenderingContext2D): void {
+  const casings = getCasingData();
+  for (let i = 0; i < casings.length; i++) {
+    const c = casings[i];
+    const alpha = c.life / c.maxLife;
+    context.save();
+    context.translate(c.x, c.y);
+    context.rotate(c.rotation);
+    context.globalAlpha = alpha;
+    context.fillStyle = "#e8c87a";
+    context.strokeStyle = "#8a6e3a";
+    context.lineWidth = 1;
+    context.fillRect(-3, -5, 6, 10);
+    context.strokeRect(-3, -5, 6, 10);
+    context.restore();
+  }
+  context.globalAlpha = 1;
+}
+
+function drawSmokePuffs(context: CanvasRenderingContext2D): void {
+  const smoke = getSmokeData();
+  for (let i = 0; i < smoke.length; i++) {
+    const s = smoke[i];
+    const alpha = s.alpha * (s.life / s.maxLife);
+    context.globalAlpha = alpha;
+    context.fillStyle = "rgba(140, 140, 150, " + String(alpha) + ")";
+    context.beginPath();
+    context.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    context.fill();
+  }
+  context.globalAlpha = 1;
+}
+
+function drawBounceSparks(context: CanvasRenderingContext2D): void {
+  const sparks = getBounceData();
+  for (let i = 0; i < sparks.length; i++) {
+    const s = sparks[i];
+    const alpha = s.life / s.maxLife;
+    context.globalAlpha = alpha;
+    context.fillStyle = "#fffaea";
+    context.shadowBlur = 6;
+    context.shadowColor = "rgba(255, 250, 234, 0.6)";
+    context.beginPath();
+    context.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    context.fill();
+  }
+  context.shadowBlur = 0;
+  context.globalAlpha = 1;
+}
+
 function drawHitFlash(context: CanvasRenderingContext2D, flash: HitFlash | null): void {
   if (flash === null || flash.alpha < 0.01) return;
   context.fillStyle = "rgba(255, 255, 255, " + String(flash.alpha) + ")";
@@ -826,15 +1072,30 @@ let debrisData: DebrisParticle[] = [];
 let leafData: WindLeaf[] = [];
 let sparkData: ChargeSpark[] = [];
 let dustData: DustPuff[] = [];
+let casingData: ShellCasing[] = [];
+let smokeData: SmokePuff[] = [];
+let bounceData: BounceSpark[] = [];
+let fireShakeData = 0;
 
 export function setDebrisData(d: DebrisParticle[]): void { debrisData = d; }
 export function setLeafData(d: WindLeaf[]): void { leafData = d; }
 export function setSparkData(d: ChargeSpark[]): void { sparkData = d; }
 export function setDustData(d: DustPuff[]): void { dustData = d; }
+export function setCasingData(d: ShellCasing[]): void { casingData = d; }
+export function setSmokeData(d: SmokePuff[]): void { smokeData = d; }
+export function setBounceData(d: BounceSpark[]): void { bounceData = d; }
 function getDebrisData(): DebrisParticle[] { return debrisData; }
 function getLeafData(): WindLeaf[] { return leafData; }
 function getSparkData(): ChargeSpark[] { return sparkData; }
 function getDustData(): DustPuff[] { return dustData; }
+function getCasingData(): ShellCasing[] { return casingData; }
+function getSmokeData(): SmokePuff[] { return smokeData; }
+function getBounceData(): BounceSpark[] { return bounceData; }
+function getFireShake(): number { return fireShakeData; }
+
+let lastWeaponGlobal: WeaponType = "primary";
+export function setLastWeapon(w: WeaponType): void { lastWeaponGlobal = w; }
+function getLastWeapon(): WeaponType { return lastWeaponGlobal; }
 
 // ---- Visual helpers (unchanged) ----
 

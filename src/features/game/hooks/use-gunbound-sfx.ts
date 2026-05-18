@@ -43,6 +43,8 @@ export function useGunboundSfx(): void {
   const lowHealthWarnedRef = useRef<[boolean, boolean]>([false, false]);
   const windAmbientNodeRef = useRef<{ source: AudioBufferSourceNode | null; gain: GainNode | null } | null>(null);
   const rafRef = useRef(0);
+  const previousBouncesRef = useRef(0);
+  const previousWeaponRef = useRef<["primary" | "secondary", "primary" | "secondary"]>(["primary", "primary"]);
 
   useEffect(() => {
     function unlockAudio(): void {
@@ -59,7 +61,7 @@ export function useGunboundSfx(): void {
 
   useEffect(() => {
     function frame(): void {
-      syncAudioState(poolRef.current, prevSceneRef, lobbyStartedRef, chargeStateRef, projectileStateRef, turnRef, explosionTimerRef, historyLenRef, windBucketRef, lowHealthWarnedRef, windAmbientNodeRef);
+      syncAudioState(poolRef.current, prevSceneRef, lobbyStartedRef, chargeStateRef, projectileStateRef, turnRef, explosionTimerRef, historyLenRef, windBucketRef, lowHealthWarnedRef, windAmbientNodeRef, previousBouncesRef, previousWeaponRef);
       rafRef.current = window.requestAnimationFrame(frame);
     }
     rafRef.current = window.requestAnimationFrame(frame);
@@ -155,7 +157,9 @@ function syncAudioState(
   historyLenRef: React.MutableRefObject<number>,
   windBucketRef: React.MutableRefObject<number>,
   lowHealthWarnedRef: React.MutableRefObject<[boolean, boolean]>,
-  windAmbientNodeRef: React.MutableRefObject<{ source: AudioBufferSourceNode | null; gain: GainNode | null } | null>
+  windAmbientNodeRef: React.MutableRefObject<{ source: AudioBufferSourceNode | null; gain: GainNode | null } | null>,
+  previousBouncesRef: React.MutableRefObject<number>,
+  previousWeaponRef: React.MutableRefObject<["primary" | "secondary", "primary" | "secondary"]>
 ): void {
   const state = useGameStore.getState();
   const context = pool.context;
@@ -191,11 +195,30 @@ function syncAudioState(
   syncLowHealthCue(context, gain, state.turn, state.players, lowHealthWarnedRef);
 
   if (state.projectile !== null && !projectileStateRef.current) {
-    playShotFire(context, gain, state.projectile.weapon === "secondary");
+    const owner = state.projectile.owner;
+    const mobileType = state.players[owner - 1]?.mobile.type || "armor";
+    playShotFire(context, gain, state.projectile.weapon === "secondary", mobileType, state.power);
   }
+
+  if (state.projectile !== null && projectileStateRef.current) {
+    if (state.projectile.bouncesLeft < previousBouncesRef.current) {
+      playRicochet(context, gain);
+    }
+  }
+
+  if (state.projectile === null) {
+    previousBouncesRef.current = 0;
+  } else {
+    previousBouncesRef.current = state.projectile.bouncesLeft;
+  }
+
   if (state.explosionVisual !== null && state.explosionVisual.timer > explosionTimerRef.current) {
-    playExplosion(context, gain, state.explosionVisual.radius);
-    playSfx(pool, "great");
+    if (state.damagePopups.length > 0) {
+      playExplosion(context, gain, state.explosionVisual.radius);
+      playSfx(pool, "great");
+    } else {
+      playTerrainThud(context, gain, state.explosionVisual.radius);
+    }
   }
   if (state.turnAnnouncement !== null && state.turn !== turnRef.current) {
     playTurnCue(context, gain, state.turn);
@@ -203,18 +226,24 @@ function syncAudioState(
   }
 
   if (state.charging && !chargeStateRef.current) {
-    playChargeStart(context, gain);
+    playChargeStart(context, gain, state.power);
   }
   if (!state.charging && chargeStateRef.current) {
-    playChargeRelease(context, gain);
+    playChargeRelease(context, gain, state.power);
   }
+
+  const p1Weapon = state.players[0].mobile.weapon;
+  const p2Weapon = state.players[1].mobile.weapon;
+  if (p1Weapon !== previousWeaponRef.current[0] || p2Weapon !== previousWeaponRef.current[1]) {
+    playWeaponSwitch(context, gain);
+  }
+  previousWeaponRef.current = [p1Weapon, p2Weapon];
 
   if (state.history.length > historyLenRef.current) {
     for (let i = historyLenRef.current; i < state.history.length; i++) {
       const entry = state.history[i];
       if (entry.kind === "move") {
         playMovementTread(context, gain);
-        playSfx(pool, "ayuda");
       }
       if (entry.kind === "hit") {
         playImpactAlarm(context, gain);
@@ -332,22 +361,41 @@ function stopWindAmbient(windAmbientNodeRef: React.MutableRefObject<{ source: Au
   windAmbientNodeRef.current = null;
 }
 
-function playChargeStart(context: AudioContext, gain: GainNode): void {
-  playOscillatorSweep(context, gain, 320, 620, 0.16, "square", 0.18);
+function playChargeStart(context: AudioContext, gain: GainNode, power: number): void {
+  const peak = 320 + power * 400;
+  playOscillatorSweep(context, gain, 320, peak, 0.16 + power * 0.06, "square", 0.18 + power * 0.06);
 }
 
-function playChargeRelease(context: AudioContext, gain: GainNode): void {
-  playOscillatorSweep(context, gain, 540, 420, 0.08, "triangle", 0.12);
+function playChargeRelease(context: AudioContext, gain: GainNode, power: number): void {
+  const startFreq = 540 + power * 300;
+  playOscillatorSweep(context, gain, startFreq, 420 + power * 200, 0.08, "triangle", 0.12 + power * 0.04);
+  if (power > 0.7) {
+    playNoiseBurst(context, gain, 0.06, 0.06);
+  }
 }
 
-function playShotFire(context: AudioContext, gain: GainNode, isSecondary: boolean): void {
-  playOscillatorSweep(context, gain, isSecondary ? 220 : 300, isSecondary ? 90 : 120, 0.18, "sawtooth", 0.24);
-  playNoiseBurst(context, gain, 0.08, 0.12);
+function playShotFire(context: AudioContext, gain: GainNode, isSecondary: boolean, mobileType: string, power: number): void {
+  const powerScale = 0.7 + power * 0.3;
+  if (mobileType === "armor") {
+    playOscillatorSweep(context, gain, 60, 35, 0.16, "sine", 0.18 * powerScale);
+    playOscillatorSweep(context, gain, isSecondary ? 200 : 280, isSecondary ? 60 : 90, 0.14, "sawtooth", 0.22 * powerScale);
+    playNoiseBurst(context, gain, 0.1, 0.14 * powerScale);
+  } else {
+    playOscillatorSweep(context, gain, 110, 60, 0.1, "sine", 0.12 * powerScale);
+    playOscillatorSweep(context, gain, isSecondary ? 350 : 480, isSecondary ? 100 : 140, 0.12, "square", 0.18 * powerScale);
+    playNoiseBurst(context, gain, 0.06, 0.1 * powerScale);
+  }
 }
 
 function playExplosion(context: AudioContext, gain: GainNode, radius: number): void {
-  playNoiseBurst(context, gain, 0.24, 0.28);
-  playOscillatorSweep(context, gain, 150 + radius, 55, 0.28, "triangle", 0.2);
+  playOscillatorSweep(context, gain, 55, 22, 0.35, "sine", 0.32);
+  playNoiseBurst(context, gain, 0.28, 0.28);
+  playOscillatorSweep(context, gain, 180 + radius * 0.5, 45, 0.32, "triangle", 0.2);
+}
+
+function playTerrainThud(context: AudioContext, gain: GainNode, radius: number): void {
+  playOscillatorSweep(context, gain, 50, 30, 0.12, "sine", 0.1);
+  playNoiseBurst(context, gain, 0.08, 0.06);
 }
 
 function playTurnCue(context: AudioContext, gain: GainNode, turn: 1 | 2): void {
@@ -357,11 +405,23 @@ function playTurnCue(context: AudioContext, gain: GainNode, turn: 1 | 2): void {
 }
 
 function playMovementTread(context: AudioContext, gain: GainNode): void {
-  playOscillatorSweep(context, gain, 140, 96, 0.1, "square", 0.08);
-  playNoiseBurst(context, gain, 0.05, 0.05);
+  playOscillatorSweep(context, gain, 80, 55, 0.12, "sine", 0.1);
+  playNoiseBurst(context, gain, 0.08, 0.04);
+}
+
+function playRicochet(context: AudioContext, gain: GainNode): void {
+  playTone(context, gain, 2200, 0.06, "sine", 0.1, 0);
+  playTone(context, gain, 1800, 0.08, "triangle", 0.06, 0.03);
+  playNoiseBurst(context, gain, 0.04, 0.04);
+}
+
+function playWeaponSwitch(context: AudioContext, gain: GainNode): void {
+  playTone(context, gain, 800, 0.03, "square", 0.06, 0);
+  playTone(context, gain, 1100, 0.04, "square", 0.05, 0.04);
 }
 
 function playImpactAlarm(context: AudioContext, gain: GainNode): void {
+  playOscillatorSweep(context, gain, 280, 120, 0.1, "sawtooth", 0.12);
   playTone(context, gain, 190, 0.07, "sawtooth", 0.08, 0);
   playTone(context, gain, 146, 0.09, "triangle", 0.06, 0.06);
 }

@@ -349,6 +349,32 @@ select {
   gap: 10px;
 }
 
+.lobby-player-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.lobby-player-accent-chip,
+.room-slot-accent,
+.hud-accent-chip {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.14), 0 0 12px rgba(255, 255, 255, 0.2);
+}
+
+.lobby-player-title-preview,
+.hud-player-identity {
+  color: #fff7dd;
+  font-size: 0.72rem;
+}
+
 .lobby-field {
   display: grid;
   gap: 6px;
@@ -1019,7 +1045,7 @@ select {
 
 .room-slot {
   display: grid;
-  grid-template-columns: auto auto 1fr auto;
+  grid-template-columns: auto auto 1fr auto auto;
   gap: 12px;
   align-items: center;
   padding: 12px;
@@ -1083,6 +1109,22 @@ select {
   color: #dff7ce;
   font-size: 0.68rem;
   text-transform: uppercase;
+}
+
+.accent-sky {
+  background: #62c3ff;
+}
+
+.accent-coral {
+  background: #ff8f72;
+}
+
+.accent-mint {
+  background: #71dfb0;
+}
+
+.accent-gold {
+  background: #ffd36d;
 }
 
 .control-list {
@@ -1189,6 +1231,17 @@ select {
 }
 
 .hud-card.right .hud-meta {
+  justify-content: flex-end;
+}
+
+.hud-player-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.hud-card.right .hud-player-identity {
   justify-content: flex-end;
 }
 
