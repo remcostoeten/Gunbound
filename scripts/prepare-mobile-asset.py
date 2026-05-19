@@ -23,30 +23,98 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--edge-sample", type=int, default=18)
     parser.add_argument("--motion", choices=["none", "float"], default="float")
     parser.add_argument("--skip-background-removal", action="store_true")
+    parser.add_argument("--atlas-columns", type=int, default=1)
+    parser.add_argument("--atlas-rows", type=int, default=1)
+    parser.add_argument("--atlas-frames")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     source = Image.open(args.input_path).convert("RGBA")
-    prepared = prepare_source_image(
-        source,
-        tolerance=args.tolerance,
-        edge_sample=args.edge_sample,
-        skip_background_removal=args.skip_background_removal,
-    )
-    sheet = build_sprite_sheet(
-        prepared,
-        frame_width=args.frame_width,
-        frame_height=args.frame_height,
-        frame_count=args.frame_count,
-        padding=args.padding,
-        motion=args.motion,
-    )
+    if args.atlas_columns > 1 or args.atlas_rows > 1:
+        prepared_frames = prepare_atlas_frames(
+            source,
+            atlas_columns=args.atlas_columns,
+            atlas_rows=args.atlas_rows,
+            atlas_frames=parse_atlas_frames(
+                args.atlas_frames,
+                total_frames=args.atlas_columns * args.atlas_rows,
+                frame_count=args.frame_count,
+            ),
+            tolerance=args.tolerance,
+            edge_sample=args.edge_sample,
+            skip_background_removal=args.skip_background_removal,
+        )
+        sheet = build_atlas_sprite_sheet(
+            prepared_frames,
+            frame_width=args.frame_width,
+            frame_height=args.frame_height,
+            padding=args.padding,
+        )
+    else:
+        prepared = prepare_source_image(
+            source,
+            tolerance=args.tolerance,
+            edge_sample=args.edge_sample,
+            skip_background_removal=args.skip_background_removal,
+        )
+        sheet = build_sprite_sheet(
+            prepared,
+            frame_width=args.frame_width,
+            frame_height=args.frame_height,
+            frame_count=args.frame_count,
+            padding=args.padding,
+            motion=args.motion,
+        )
     output_path = Path(args.output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(output_path)
     print(str(output_path))
+
+
+def parse_atlas_frames(value: str | None, total_frames: int, frame_count: int) -> list[int]:
+    if value is None:
+        return list(range(min(frame_count, total_frames)))
+    frames = [int(part.strip()) for part in value.split(",") if part.strip()]
+    return [frame for frame in frames if 0 <= frame < total_frames]
+
+
+def prepare_atlas_frames(
+    image: Image.Image,
+    atlas_columns: int,
+    atlas_rows: int,
+    atlas_frames: list[int],
+    tolerance: float,
+    edge_sample: int,
+    skip_background_removal: bool,
+) -> list[Image.Image]:
+    frames: list[Image.Image] = []
+    for frame_index in atlas_frames:
+        tile = crop_atlas_tile(image, atlas_columns=atlas_columns, atlas_rows=atlas_rows, frame_index=frame_index)
+        prepared = prepare_source_image(
+            tile,
+            tolerance=tolerance,
+            edge_sample=edge_sample,
+            skip_background_removal=skip_background_removal,
+        )
+        frames.append(prepared)
+    return frames
+
+
+def crop_atlas_tile(
+    image: Image.Image,
+    atlas_columns: int,
+    atlas_rows: int,
+    frame_index: int,
+) -> Image.Image:
+    column = frame_index % atlas_columns
+    row = frame_index // atlas_columns
+    left = math.floor(image.width * column / atlas_columns)
+    right = math.floor(image.width * (column + 1) / atlas_columns)
+    top = math.floor(image.height * row / atlas_rows)
+    bottom = math.floor(image.height * (row + 1) / atlas_rows)
+    return image.crop((left, top, right, bottom))
 
 
 def prepare_source_image(
@@ -175,6 +243,24 @@ def build_sprite_sheet(
     return sheet
 
 
+def build_atlas_sprite_sheet(
+    images: list[Image.Image],
+    frame_width: int,
+    frame_height: int,
+    padding: int,
+) -> Image.Image:
+    frames = fit_images_to_frames(
+        images,
+        frame_width=frame_width,
+        frame_height=frame_height,
+        padding=padding,
+    )
+    sheet = Image.new("RGBA", (frame_width * len(frames), frame_height), (0, 0, 0, 0))
+    for index, current in enumerate(frames):
+        sheet.alpha_composite(current, (index * frame_width, 0))
+    return sheet
+
+
 def fit_image_to_frame(
     image: Image.Image,
     frame_width: int,
@@ -184,6 +270,50 @@ def fit_image_to_frame(
     target_width = max(1, frame_width - padding * 2)
     target_height = max(1, frame_height - padding * 2)
     scale = min(target_width / image.width, target_height / image.height)
+    resized = image.resize(
+        (
+            max(1, round(image.width * scale)),
+            max(1, round(image.height * scale)),
+        ),
+        Image.Resampling.LANCZOS,
+    )
+    frame = Image.new("RGBA", (frame_width, frame_height), (0, 0, 0, 0))
+    offset_x = (frame_width - resized.width) // 2
+    offset_y = frame_height - padding - resized.height
+    frame.alpha_composite(resized, (offset_x, offset_y))
+    return frame
+
+
+def fit_images_to_frames(
+    images: list[Image.Image],
+    frame_width: int,
+    frame_height: int,
+    padding: int,
+) -> list[Image.Image]:
+    target_width = max(1, frame_width - padding * 2)
+    target_height = max(1, frame_height - padding * 2)
+    max_width = max(image.width for image in images)
+    max_height = max(image.height for image in images)
+    scale = min(target_width / max_width, target_height / max_height)
+    return [
+        render_image_frame(
+            image,
+            frame_width=frame_width,
+            frame_height=frame_height,
+            padding=padding,
+            scale=scale,
+        )
+        for image in images
+    ]
+
+
+def render_image_frame(
+    image: Image.Image,
+    frame_width: int,
+    frame_height: int,
+    padding: int,
+    scale: float,
+) -> Image.Image:
     resized = image.resize(
         (
             max(1, round(image.width * scale)),
