@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { createCameraRig, getCameraFrame, stepCameraRig } from "@/features/game/engine/camera";
 import { createVisualEffectsState, stepVisualEffectsState } from "@/features/game/engine/effects";
 import { getSkyPalette, getTerrainPalette } from "@/features/game/engine/terrain-theme";
-import { getMobileSpriteFrame, getMobileSpriteSource } from "@/features/game/engine/mobile-sprites";
+import { getMobileSpriteFrame, getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
 import { getLaunchRadians, getMuzzlePosition } from "@/features/game/engine/physics";
 import { useGameLoop } from "@/features/game/hooks/use-game-loop";
 import { useInput } from "@/features/game/hooks/use-input";
@@ -412,18 +412,27 @@ function drawMobileSprite(context: CanvasRenderingContext2D, player: Player, spr
 
   const spriteSource = getMobileSpriteSource(player.mobile.type);
   const frame = getMobileSpriteFrame(visualTime + player.id * 0.17, 6.5);
-  const destinationX = player.mobile.position.x - 31;
-  const destinationY = player.mobile.position.y - 50;
+  const destinationWidth = spriteSource.width * spriteSource.battleScale;
+  const destinationHeight = spriteSource.height * spriteSource.battleScale;
+  const destinationX =
+    player.mobile.position.x -
+    destinationWidth * 0.5 +
+    spriteSource.battleTranslateX;
+  const destinationY =
+    player.mobile.position.y -
+    destinationHeight +
+    14 +
+    spriteSource.battleTranslateY;
 
   context.save();
-  if (player.mobile.facing === -1) {
+  if (shouldFlipMobileSprite(player.mobile.type, player.mobile.facing)) {
     context.translate(player.mobile.position.x, 0);
     context.scale(-1, 1);
     context.translate(-player.mobile.position.x, 0);
   }
   context.drawImage(
     sprite, frame * spriteSource.width, 0, spriteSource.width, spriteSource.height,
-    destinationX, destinationY, spriteSource.width, spriteSource.height
+    destinationX, destinationY, destinationWidth, destinationHeight
   );
   context.restore();
 }

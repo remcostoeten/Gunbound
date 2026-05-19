@@ -15,6 +15,7 @@ type AudioPool = {
 };
 
 const SOUND_PATHS: Record<string, string> = {
+  "match-intro": "/sounds/anos-de-gunbound.mp3",
   "super-shot": "/sounds/super-shot.mp3",
   great: "/sounds/great.mp3",
   "muy-bien": "/sounds/muy-bien.mp3",
@@ -27,6 +28,8 @@ const SOUND_PATHS: Record<string, string> = {
   noobie: "/sounds/noobie.mp3",
 };
 
+export const lobbyMatchStartAudioEvent = "gunbound:lobby-match-start";
+
 export function useGunboundSfx(): void {
   const poolRef = useRef<AudioPool>({
     context: null,
@@ -37,6 +40,7 @@ export function useGunboundSfx(): void {
   });
   const prevSceneRef = useRef<string>("");
   const lobbyStartedRef = useRef(false);
+  const lobbyMatchStartCueAtRef = useRef(0);
   const trackerRef = useRef<AudioEventTracker>(createAudioEventTracker());
   const windAmbientNodeRef = useRef<{ source: AudioBufferSourceNode | null; gain: GainNode | null } | null>(null);
   const rafRef = useRef(0);
@@ -56,7 +60,7 @@ export function useGunboundSfx(): void {
 
   useEffect(() => {
     function frame(): void {
-      syncAudioState(poolRef.current, prevSceneRef, lobbyStartedRef, trackerRef, windAmbientNodeRef);
+      syncAudioState(poolRef.current, prevSceneRef, lobbyStartedRef, lobbyMatchStartCueAtRef, trackerRef, windAmbientNodeRef);
       rafRef.current = window.requestAnimationFrame(frame);
     }
     rafRef.current = window.requestAnimationFrame(frame);
@@ -64,6 +68,20 @@ export function useGunboundSfx(): void {
       window.cancelAnimationFrame(rafRef.current);
       stopMusic(poolRef.current);
       stopWindAmbient(windAmbientNodeRef);
+    };
+  }, []);
+
+  useEffect(function bindLobbyMatchStartCue(): () => void {
+    function playLobbyMatchStartCue(): void {
+      ensureAudio(poolRef.current);
+      initSounds(poolRef.current);
+      lobbyMatchStartCueAtRef.current = window.performance.now();
+      playSfx(poolRef.current, "match-intro");
+    }
+
+    window.addEventListener(lobbyMatchStartAudioEvent, playLobbyMatchStartCue);
+    return function cleanupLobbyMatchStartCue(): void {
+      window.removeEventListener(lobbyMatchStartAudioEvent, playLobbyMatchStartCue);
     };
   }, []);
 
@@ -137,14 +155,21 @@ function startLobbyMusic(pool: AudioPool): void {
 function playSfx(pool: AudioPool, name: string): void {
   if (!pool.sounds[name]) return;
   const clone = pool.sounds[name].cloneNode() as HTMLAudioElement;
-  clone.volume = name === "super-shot" ? 0.3 : 0.25;
+  clone.volume = getSfxVolume(name);
   clone.play().catch(() => {});
+}
+
+function getSfxVolume(name: string): number {
+  if (name === "super-shot") return 0.3;
+  if (name === "match-intro") return 0.22;
+  return 0.25;
 }
 
 function syncAudioState(
   pool: AudioPool,
   prevSceneRef: React.MutableRefObject<string>,
   lobbyStartedRef: React.MutableRefObject<boolean>,
+  lobbyMatchStartCueAtRef: React.MutableRefObject<number>,
   trackerRef: React.MutableRefObject<AudioEventTracker>,
   windAmbientNodeRef: React.MutableRefObject<{ source: AudioBufferSourceNode | null; gain: GainNode | null } | null>
 ): void {
@@ -154,7 +179,7 @@ function syncAudioState(
 
   if (context === null || gain === null) return;
 
-  routeSceneState(pool, state.scene, prevSceneRef, lobbyStartedRef, windAmbientNodeRef, context, gain);
+  routeSceneState(pool, state.scene, prevSceneRef, lobbyStartedRef, lobbyMatchStartCueAtRef, windAmbientNodeRef, context, gain);
 
   if (state.scene !== "playing") {
     prevSceneRef.current = state.scene;
@@ -174,13 +199,16 @@ function routeSceneState(
   scene: GameState["scene"],
   prevSceneRef: React.MutableRefObject<string>,
   lobbyStartedRef: React.MutableRefObject<boolean>,
+  lobbyMatchStartCueAtRef: React.MutableRefObject<number>,
   windAmbientNodeRef: React.MutableRefObject<{ source: AudioBufferSourceNode | null; gain: GainNode | null } | null>,
   context: AudioContext,
   gain: GainNode
 ): void {
   if (scene === "playing" && prevSceneRef.current === "start") {
     stopMusic(pool);
-    playSfx(pool, "super-shot");
+    if (window.performance.now() - lobbyMatchStartCueAtRef.current > 2500) {
+      playSfx(pool, "super-shot");
+    }
     startWindAmbient(context, gain, windAmbientNodeRef);
   }
 

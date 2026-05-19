@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getMobilePresentation, mobilePresentationOptions } from "@/features/game/constants/mobile-presentation";
-import { getMobileSpriteSource } from "@/features/game/engine/mobile-sprites";
+import { getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
 import { AimIndicator } from "@/features/game/components/aim-indicator";
 import { GameCanvas } from "@/features/game/components/game-canvas";
 import { HistoryPanel } from "@/features/game/components/history-panel";
@@ -10,7 +10,10 @@ import { Hud } from "@/features/game/components/hud";
 import { RoomPanel } from "@/features/game/components/room-panel";
 import { TurnBanner } from "@/features/game/components/turn-banner";
 import { useGameState } from "@/features/game/hooks/use-game-state";
-import { useGunboundSfx } from "@/features/game/hooks/use-gunbound-sfx";
+import {
+    lobbyMatchStartAudioEvent,
+    useGunboundSfx,
+} from "@/features/game/hooks/use-gunbound-sfx";
 import { defaultSetup, useGameStore } from "@/features/game/store/game-store";
 import {
     selectMessage,
@@ -28,6 +31,7 @@ import type { MobileType, PlayerAccent, PlayerTitle } from "@/features/game/type
 
 const TITLE_OPTIONS: PlayerTitle[] = ["Captain", "Raider", "Engineer", "Oracle"];
 const ACCENT_OPTIONS: PlayerAccent[] = ["sky", "coral", "mint", "gold"];
+const MATCH_START_DELAY_MS = 850;
 
 export function GameShell() {
     const scene = useGameState(selectScene);
@@ -42,7 +46,23 @@ export function GameShell() {
     const [formState, setFormState] = useState<MatchConfig>(
         setup || defaultSetup,
     );
+    const [matchStarting, setMatchStarting] = useState(false);
+    const matchStartTimeoutRef = useRef<number | null>(null);
     useGunboundSfx();
+
+    useEffect(function resetPendingMatchStart(): void {
+        if (scene !== "start") {
+            setMatchStarting(false);
+        }
+    }, [scene]);
+
+    useEffect(function clearPendingMatchStart(): () => void {
+        return function cleanupPendingMatchStart(): void {
+            if (matchStartTimeoutRef.current !== null) {
+                window.clearTimeout(matchStartTimeoutRef.current);
+            }
+        };
+    }, []);
 
     return (
         <main className="game-shell">
@@ -59,7 +79,12 @@ export function GameShell() {
                 </div>
             ) : null}
             {scene === "start"
-                ? renderStartScreen(formState, setFormState, startMatch)
+                ? renderStartScreen(
+                      formState,
+                      setFormState,
+                      queueMatchStart,
+                      matchStarting,
+                  )
                 : null}
             {scene === "end"
                 ? renderEndScreen(
@@ -72,14 +97,34 @@ export function GameShell() {
                 : null}
         </main>
     );
+
+    function queueMatchStart(config: MatchConfig): void {
+        if (matchStarting) return;
+
+        window.dispatchEvent(new Event(lobbyMatchStartAudioEvent));
+        setMatchStarting(true);
+
+        if (matchStartTimeoutRef.current !== null) {
+            window.clearTimeout(matchStartTimeoutRef.current);
+        }
+
+        matchStartTimeoutRef.current = window.setTimeout(
+            function startQueuedMatch(): void {
+                matchStartTimeoutRef.current = null;
+                startMatch(config);
+            },
+            MATCH_START_DELAY_MS,
+        );
+    }
 }
 
 function renderStartScreen(
     formState: MatchConfig,
     setFormState: React.Dispatch<React.SetStateAction<MatchConfig>>,
-    startMatch: {
+    queueMatchStart: {
         (config: MatchConfig): void;
     },
+    matchStarting: boolean,
 ): React.JSX.Element {
     return (
         <div className="screen">
@@ -145,10 +190,13 @@ function renderStartScreen(
                         <button
                             type="button"
                             className="lobby-btn lobby-btn-primary"
+                            disabled={matchStarting}
                             onClick={handleStartClick}
                         >
                             <span className="lobby-btn-icon">&#9654;</span>
-                            <span className="lobby-btn-label">Start Match</span>
+                            <span className="lobby-btn-label">
+                                {matchStarting ? "Starting" : "Start Match"}
+                            </span>
                         </button>
                     </div>
                 </div>
@@ -238,7 +286,7 @@ function renderStartScreen(
     }
 
     function handleStartClick(): void {
-        startMatch({
+        queueMatchStart({
             ...formState,
             playerOneName: formState.playerOneName.trim() || "Player 1",
             playerTwoName: formState.playerTwoName.trim() || "Player 2",
@@ -278,16 +326,7 @@ function renderLobbyPlayer(
                     <div
                         className="lobby-player-sprite"
                         aria-label={mobile}
-                        style={{
-                            backgroundImage: 'url("' + spriteSource.path + '")',
-                            backgroundPosition: "0 0",
-                            backgroundRepeat: "no-repeat",
-                            backgroundSize:
-                                String(spriteSource.width * 4) +
-                                "px " +
-                                String(spriteSource.height) +
-                                "px",
-                        }}
+                        style={getLobbySpriteStyle(mobile, spriteSource)}
                     />
                 </div>
             </div>
@@ -375,6 +414,31 @@ function renderLobbyPlayer(
             </div>
         </div>
     );
+}
+
+function getLobbySpriteStyle(
+    mobileType: MobileType,
+    spriteSource: ReturnType<typeof getMobileSpriteSource>,
+): React.CSSProperties {
+    const scaleX = shouldFlipMobileSprite(mobileType, 1)
+        ? -spriteSource.previewScale
+        : spriteSource.previewScale;
+    return {
+        backgroundImage: 'url("' + spriteSource.path + '")',
+        backgroundPosition: "0 0",
+        backgroundRepeat: "no-repeat",
+        backgroundSize: String(spriteSource.frameCount * 100) + "% 100%",
+        transform:
+            "scale(" +
+            String(scaleX) +
+            ", " +
+            String(spriteSource.previewScale) +
+            ") translate(" +
+            String(spriteSource.previewTranslateX) +
+            "px, " +
+            String(spriteSource.previewTranslateY) +
+            "px)"
+    };
 }
 
 function capitalizeLabel(value: string): string {

@@ -3,7 +3,7 @@
 import { getMobilePresentation } from "@/features/game/constants/mobile-presentation";
 import { normalizeSeed } from "@/features/game/engine/random";
 import { getTerrainTheme } from "@/features/game/engine/terrain";
-import { getMobileSpriteSource } from "@/features/game/engine/mobile-sprites";
+import { getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
 import type { MatchConfig } from "@/features/game/types/state";
 import type { MobileType, PlayerAccent, PlayerTitle } from "@/features/game/types/shared";
 
@@ -88,18 +88,34 @@ function getTerrainThemeLabel(theme: ReturnType<typeof getTerrainTheme>): string
 }
 
 function renderSpriteThumb(mobileType: MobileType, className: string): React.JSX.Element {
-  const spriteSource = getMobileSpriteSource(mobileType);
-
   return (
     <div
       className={className}
       aria-label={getRoomMobileLabel(mobileType)}
-      style={{
-        backgroundImage: 'url("' + spriteSource.path + '")',
-        backgroundPosition: "0 0",
-        backgroundRepeat: "no-repeat",
-        backgroundSize: String(spriteSource.width * 4) + "px " + String(spriteSource.height) + "px"
-      }}
+      style={getRoomSpriteStyle(mobileType)}
     />
   );
+}
+
+function getRoomSpriteStyle(mobileType: MobileType): React.CSSProperties {
+  const spriteSource = getMobileSpriteSource(mobileType);
+  const needsFlip = shouldFlipMobileSprite(mobileType, 1);
+  const scaleX = needsFlip ? -spriteSource.roomScale : spriteSource.roomScale;
+
+  return {
+    backgroundImage: 'url("' + spriteSource.path + '")',
+    backgroundPosition: "0 0",
+    backgroundRepeat: "no-repeat",
+    backgroundSize: String(spriteSource.frameCount * 100) + "% 100%",
+    transform:
+      "scale(" +
+      String(scaleX) +
+      ", " +
+      String(spriteSource.roomScale) +
+      ") translate(" +
+      String(spriteSource.roomTranslateX) +
+      "px, " +
+      String(spriteSource.roomTranslateY) +
+      "px)"
+  };
 }
