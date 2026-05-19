@@ -1,5 +1,13 @@
 import { worldHeight, worldWidth } from "@/features/game/constants/world";
-import type { DamagePopup, ExplosionVisual, GrassTuft, VisualEffectsInput, VisualEffectsState } from "@/features/game/types/effects";
+import type {
+  DamagePopup,
+  ExplosionSpriteEffect,
+  ExplosionSpriteSheet,
+  ExplosionVisual,
+  GrassTuft,
+  VisualEffectsInput,
+  VisualEffectsState
+} from "@/features/game/types/effects";
 import type { ProjectileState } from "@/features/game/types/combat";
 import type { Player } from "@/features/game/types/entities";
 import type { GamePhase, GameScene, Vec2 } from "@/features/game/types/shared";
@@ -11,6 +19,7 @@ export function createVisualEffectsState(): VisualEffectsState {
     trail: [],
     previousProjectile: null,
     muzzleFlash: null,
+    explosionSprites: [],
     debris: [],
     leaves: [],
     sparks: [],
@@ -32,7 +41,7 @@ export function createVisualEffectsState(): VisualEffectsState {
 
 export function stepVisualEffectsState(state: VisualEffectsState, input: VisualEffectsInput): VisualEffectsState {
   const projectileState = syncProjectileEffects(state, input.projectile, input.players, input.turn);
-  const explosionState = syncExplosionDebris(projectileState, input.explosionVisual);
+  const explosionState = syncExplosionEffects(projectileState, input.explosionVisual, input.damagePopups);
   const windState = syncWindLeaves(explosionState, input.wind, input.scene);
   const chargeState = syncChargeSparks(windState, input.charging, input.players, input.turn);
   const dustState = syncDustOnMove(chargeState, input.phase, input.players, input.turn);
@@ -125,10 +134,12 @@ function syncProjectileEffects(
   };
 }
 
-function syncExplosionDebris(state: VisualEffectsState, explosion: ExplosionVisual | null): VisualEffectsState {
+function syncExplosionEffects(state: VisualEffectsState, explosion: ExplosionVisual | null, damagePopups: DamagePopup[]): VisualEffectsState {
   let debris = state.debris;
+  let explosionSprites = state.explosionSprites;
+  const isNewExplosion = explosion !== null && (state.previousExplosion === null || explosion.timer > state.previousExplosion.timer);
 
-  if (explosion !== null && (state.previousExplosion === null || explosion.timer > state.previousExplosion.timer)) {
+  if (explosion !== null && isNewExplosion) {
     const count = 12 + Math.floor(Math.random() * 8);
     const particles = [];
     let index = 0;
@@ -151,13 +162,51 @@ function syncExplosionDebris(state: VisualEffectsState, explosion: ExplosionVisu
     if (debris.length > 120) {
       debris = debris.slice(-120);
     }
+
+    explosionSprites = explosionSprites.concat(createExplosionSpriteEffect(explosion, damagePopups.length > 0));
+    if (explosionSprites.length > 8) {
+      explosionSprites = explosionSprites.slice(-8);
+    }
   }
 
   return {
     ...state,
     debris,
+    explosionSprites,
     previousExplosion: explosion
   };
+}
+
+function createExplosionSpriteEffect(explosion: ExplosionVisual, hasDamage: boolean): ExplosionSpriteEffect {
+  return {
+    point: {
+      x: explosion.point.x,
+      y: explosion.point.y
+    },
+    radius: explosion.radius,
+    timer: 0,
+    duration: 0.62,
+    sheet: selectExplosionSpriteSheet(explosion, hasDamage),
+    scale: getExplosionSpriteScale(explosion.radius)
+  };
+}
+
+function selectExplosionSpriteSheet(explosion: ExplosionVisual, hasDamage: boolean): ExplosionSpriteSheet {
+  const seed = Math.abs(Math.floor(explosion.point.x * 7 + explosion.point.y * 11 + explosion.radius * 13));
+  if (hasDamage && explosion.radius >= 78) {
+    return seed % 2 === 0 ? "armor-secondary" : "jd-secondary";
+  }
+  if (hasDamage) {
+    return seed % 2 === 0 ? "armor-primary" : "nak";
+  }
+  if (explosion.radius >= 82) {
+    return seed % 2 === 0 ? "aduka-thor" : "jd-lightning";
+  }
+  return seed % 2 === 0 ? "gum" : "armor-primary";
+}
+
+function getExplosionSpriteScale(radius: number): number {
+  return Math.max(0.82, Math.min(1.55, radius / 62));
 }
 
 function syncWindLeaves(state: VisualEffectsState, wind: Vec2, scene: GameScene): VisualEffectsState {
@@ -343,6 +392,16 @@ function createGrassTufts(width: number, heights: number[]): GrassTuft[] {
 function updateParticles(state: VisualEffectsState, visualTime: number): VisualEffectsState {
   return {
     ...state,
+    explosionSprites: state.explosionSprites
+      .map(function mapExplosionSprite(sprite) {
+        return {
+          ...sprite,
+          timer: sprite.timer + particleStep
+        };
+      })
+      .filter(function filterExplosionSprite(sprite) {
+        return sprite.timer < sprite.duration;
+      }),
     debris: state.debris
       .map(function mapDebris(p) {
         return {

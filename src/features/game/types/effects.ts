@@ -110,10 +110,29 @@ export type GrassTuft = {
   sway: number;
 };
 
+export type ExplosionSpriteSheet =
+  | "aduka-thor"
+  | "armor-primary"
+  | "armor-secondary"
+  | "gum"
+  | "jd-secondary"
+  | "jd-lightning"
+  | "nak";
+
+export type ExplosionSpriteEffect = {
+  point: Vec2;
+  radius: number;
+  timer: number;
+  duration: number;
+  sheet: ExplosionSpriteSheet;
+  scale: number;
+};
+
 export type VisualEffectsState = {
   trail: Vec2[];
   previousProjectile: ProjectileState | null;
   muzzleFlash: ExplosionVisual | null;
+  explosionSprites: ExplosionSpriteEffect[];
   debris: DebrisParticle[];
   leaves: WindLeaf[];
   sparks: ChargeSpark[];
