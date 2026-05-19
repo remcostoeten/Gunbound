@@ -6,6 +6,7 @@ import { createVisualEffectsState, stepVisualEffectsState } from "@/features/gam
 import { getSkyPalette, getTerrainPalette } from "@/features/game/engine/terrain-theme";
 import { getMobileSpriteFrame, getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
 import { getLaunchRadians, getMuzzlePosition } from "@/features/game/engine/physics";
+import { getMobileRiderSpriteSource, getRiderSpriteFrame } from "@/features/game/engine/rider-sprites";
 import { useGameLoop } from "@/features/game/hooks/use-game-loop";
 import { useInput } from "@/features/game/hooks/use-input";
 import { useGameStore } from "@/features/game/store/game-store";
@@ -36,6 +37,7 @@ type SpriteCache = {
   knight: HTMLImageElement | null;
   dragon: HTMLImageElement | null;
   snow: HTMLImageElement | null;
+  dragonRider: HTMLImageElement | null;
 };
 
 type ExplosionSpriteSpec = {
@@ -102,7 +104,8 @@ export function GameCanvas(): React.JSX.Element {
     armor: null,
     knight: null,
     dragon: null,
-    snow: null
+    snow: null,
+    dragonRider: null
   });
   const explosionSpriteCacheRef = useRef<ExplosionSpriteCache>(createExplosionSpriteCache());
 
@@ -361,6 +364,7 @@ function loadMobileSprites(spriteCache: SpriteCache): void {
   if (spriteCache.knight === null) spriteCache.knight = createMobileSpriteImage("knight");
   if (spriteCache.dragon === null) spriteCache.dragon = createMobileSpriteImage("dragon");
   if (spriteCache.snow === null) spriteCache.snow = createMobileSpriteImage("snow");
+  if (spriteCache.dragonRider === null) spriteCache.dragonRider = createRiderSpriteImage("dragon");
 }
 
 function createExplosionSpriteCache(): ExplosionSpriteCache {
@@ -394,6 +398,48 @@ function createMobileSpriteImage(type: MobileType): HTMLImageElement {
   const image = new Image();
   image.src = getMobileSpriteSource(type).path;
   return image;
+}
+
+function createRiderSpriteImage(type: MobileType): HTMLImageElement | null {
+  const riderSource = getMobileRiderSpriteSource(type);
+  if (riderSource === null) {
+    return null;
+  }
+
+  const image = new Image();
+  const sourceImage = new Image();
+  sourceImage.onload = function handleRiderSpriteLoad(): void {
+    const canvas = document.createElement("canvas");
+    canvas.width = sourceImage.naturalWidth;
+    canvas.height = sourceImage.naturalHeight;
+    const context = canvas.getContext("2d");
+    if (context === null) {
+      image.src = sourceImage.src;
+      return;
+    }
+
+    context.drawImage(sourceImage, 0, 0);
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    let index = 0;
+    while (index < data.length) {
+      if (isRiderBackdropPixel(data[index], data[index + 1], data[index + 2])) {
+        data[index + 3] = 0;
+      }
+      index += 4;
+    }
+    context.putImageData(imageData, 0, 0);
+    image.src = canvas.toDataURL("image/png");
+  };
+  sourceImage.src = riderSource.path;
+  return image;
+}
+
+function isRiderBackdropPixel(red: number, green: number, blue: number): boolean {
+  const redToGreen = Math.abs(red - green);
+  const greenToBlue = Math.abs(green - blue);
+  const average = (red + green + blue) / 3;
+  return redToGreen <= 7 && greenToBlue <= 7 && average >= 236;
 }
 
 function drawMobileShadow(context: CanvasRenderingContext2D, player: Player): void {
@@ -434,7 +480,38 @@ function drawMobileSprite(context: CanvasRenderingContext2D, player: Player, spr
     sprite, frame * spriteSource.width, 0, spriteSource.width, spriteSource.height,
     destinationX, destinationY, destinationWidth, destinationHeight
   );
+  drawMountedRider(context, player, spriteCache, visualTime);
   context.restore();
+}
+
+function drawMountedRider(context: CanvasRenderingContext2D, player: Player, spriteCache: SpriteCache, visualTime: number): void {
+  const riderSprite = getCachedRiderSprite(spriteCache, player.mobile.type);
+  const riderSource = getMobileRiderSpriteSource(player.mobile.type);
+  if (riderSprite === null || riderSource === null) {
+    return;
+  }
+
+  if (!riderSprite.complete || riderSprite.naturalWidth === 0) {
+    return;
+  }
+
+  const frame = getRiderSpriteFrame(visualTime + player.id * 0.13, 4.5, riderSource.frameCount);
+  const destinationWidth = riderSource.width * riderSource.battleScale;
+  const destinationHeight = riderSource.height * riderSource.battleScale;
+  const destinationX = player.mobile.position.x - destinationWidth * 0.5 + riderSource.battleTranslateX;
+  const destinationY = player.mobile.position.y - destinationHeight + riderSource.battleTranslateY;
+
+  context.drawImage(
+    riderSprite,
+    frame * riderSource.width,
+    0,
+    riderSource.width,
+    riderSource.height,
+    destinationX,
+    destinationY,
+    destinationWidth,
+    destinationHeight
+  );
 }
 
 function getCachedSprite(spriteCache: SpriteCache, type: MobileType): HTMLImageElement | null {
@@ -451,6 +528,14 @@ function getCachedSprite(spriteCache: SpriteCache, type: MobileType): HTMLImageE
   }
 
   return spriteCache.snow;
+}
+
+function getCachedRiderSprite(spriteCache: SpriteCache, type: MobileType): HTMLImageElement | null {
+  if (type === "dragon") {
+    return spriteCache.dragonRider;
+  }
+
+  return null;
 }
 
 function drawFallbackMobile(context: CanvasRenderingContext2D, player: Player): void {
