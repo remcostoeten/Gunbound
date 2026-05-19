@@ -12,6 +12,13 @@ const ROUND_STATUS_FINISHED = 'finished';
 
 export const init = spacetimedb.init(_ctx => {});
 
+/**
+ * Upserts the `player` row for the connecting identity.
+ *
+ * First-time connections create the row with an empty `name`; reconnects
+ * just flip presence to online. We never delete `player` rows — friends
+ * keep their slot across sessions so their display name and history stick.
+ */
 export const onClientConnected = spacetimedb.clientConnected(ctx => {
   const existing = ctx.db.player.identity.find(ctx.sender);
   if (existing) {
@@ -30,6 +37,13 @@ export const onClientConnected = spacetimedb.clientConnected(ctx => {
   });
 });
 
+/**
+ * Marks the player offline and stamps `lastSeen`.
+ *
+ * Room/round membership is intentionally preserved so the player can
+ * reconnect mid-match without losing their seat; cleanup of empty rooms
+ * is driven by `leave_room`, not by disconnect.
+ */
 export const onClientDisconnected = spacetimedb.clientDisconnected(ctx => {
   const existing = ctx.db.player.identity.find(ctx.sender);
   if (!existing) return;
@@ -40,6 +54,14 @@ export const onClientDisconnected = spacetimedb.clientDisconnected(ctx => {
   });
 });
 
+/**
+ * Sets the caller's display name.
+ *
+ * Trims whitespace and enforces a 1-32 character bound so room rosters and
+ * HUD overlays stay readable. Creates the player row if the rename arrives
+ * before the lifecycle hook has fired (shouldn't happen in practice, but
+ * the upsert keeps the reducer safe to retry).
+ */
 export const set_player_name = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
@@ -61,6 +83,14 @@ export const set_player_name = spacetimedb.reducer(
   }
 );
 
+/**
+ * Creates a new room owned by the caller and adds them as the first member.
+ *
+ * Codes are normalized to uppercase and bounded to 4-8 characters so they
+ * stay easy to type and share verbally. Uniqueness is only enforced against
+ * rooms that are still active (`waiting` or `in_round`) — once a room ends,
+ * its code becomes free again so friends can reuse memorable strings.
+ */
 export const create_room = spacetimedb.reducer(
   { code: t.string(), seed: t.u64() },
   (ctx, { code, seed }) => {
@@ -93,6 +123,14 @@ export const create_room = spacetimedb.reducer(
   }
 );
 
+/**
+ * Joins the caller into a room by its shared code.
+ *
+ * Only rooms in `waiting` status are joinable — rooms already in a round
+ * are locked so latecomers don't desync the simulation. The reducer is
+ * idempotent: if the caller is already a member, it returns silently so
+ * a duplicate UI click or websocket retry doesn't error.
+ */
 export const join_room_by_code = spacetimedb.reducer(
   { code: t.string() },
   (ctx, { code }) => {
@@ -123,6 +161,19 @@ export const join_room_by_code = spacetimedb.reducer(
   }
 );
 
+/**
+ * Removes the caller from a room and runs ownership/lifecycle cleanup.
+ *
+ * Three follow-on cases, evaluated in order:
+ *   1. If no members remain, the room is moved to `ended` so its code is
+ *      freed for reuse and clients can drop their subscriptions.
+ *   2. Otherwise, if the leaving member was the host, host is transferred
+ *      to an arbitrary remaining member so the room stays controllable.
+ *   3. Otherwise, no further state changes — non-host departure is silent.
+ *
+ * Round state (if any) is intentionally left untouched; the host decides
+ * via `end_round` whether to abort or let the remaining players continue.
+ */
 export const leave_room = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, { roomId }) => {
@@ -152,6 +203,15 @@ export const leave_room = spacetimedb.reducer(
   }
 );
 
+/**
+ * Host-only: opens a new active round inside an existing room.
+ *
+ * Stamps the round with the caller-supplied `seed` and mirrors it onto the
+ * room so all subscribers — including any reconnecting late-joiners — see
+ * the same RNG seed without waiting on the round subscription to settle.
+ * Refuses to start if a round is already in progress; the host must
+ * `end_round` first to keep the per-room round history linear.
+ */
 export const start_round = spacetimedb.reducer(
   { roomId: t.u64(), seed: t.u64() },
   (ctx, { roomId, seed }) => {
@@ -178,6 +238,17 @@ export const start_round = spacetimedb.reducer(
   }
 );
 
+/**
+ * Appends a single deterministic event to a round's history.
+ *
+ * Authorization: caller must be a member of the round's room. The reducer
+ * intentionally does not validate `tick` ordering or `kind`/`payload`
+ * contents — events are an append-only stream and the client-side replay
+ * is responsible for sorting and interpreting them. Keeping this surface
+ * small lets gameplay evolve without server redeploys.
+ *
+ * Rejects events for non-active rounds so finished history is immutable.
+ */
 export const record_round_event = spacetimedb.reducer(
   {
     roundId: t.u64(),
@@ -213,6 +284,15 @@ export const record_round_event = spacetimedb.reducer(
   }
 );
 
+/**
+ * Host-only: closes an active round and returns the room to `waiting`.
+ *
+ * Stamps `endedAt` and an optional `winnerIdentity` (left undefined for
+ * draws or aborts). The round row itself is kept for history — clients
+ * can replay it from the `round_event` stream. The parent room is moved
+ * back to `waiting` so the same lobby can immediately start another
+ * round without forcing everyone to rejoin.
+ */
 export const end_round = spacetimedb.reducer(
   { roundId: t.u64(), winnerIdentity: t.identity().optional() },
   (ctx, { roundId, winnerIdentity }) => {
