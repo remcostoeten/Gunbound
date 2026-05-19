@@ -6,12 +6,19 @@
     "dev": "bun --bun next dev",
     "build": "NODE_ENV=production next build",
     "start": "bun --bun next start",
-    "prepare-mobile-asset": "python3 scripts/prepare-mobile-asset.py"
+    "prepare-mobile-asset": "python3 scripts/prepare-mobile-asset.py",
+    "spacetime:start": "spacetime start",
+    "spacetime:dev": "spacetime dev --module-path server/spacetimedb --client-lang typescript --module-bindings-path src/features/game/spacetime/module_bindings",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/features/game/spacetime/module_bindings --module-path server/spacetimedb",
+    "spacetime:publish": "spacetime publish gunbound --module-path server/spacetimedb --yes",
+    "spacetime:publish:local": "spacetime publish gunbound --server local --module-path server/spacetimedb --yes",
+    "spacetime:logs": "spacetime logs gunbound"
   },
   "dependencies": {
     "next": "^15.3.5",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "spacetimedb": "^2.2.0",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
