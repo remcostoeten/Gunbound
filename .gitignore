@@ -3,3 +3,13 @@ node_modules
 npm-debug.log*
 dist
 .vercel
+
+# Design notes and working specs
+specs/
+
+# Scratch assets (AI-generated drafts, pasted images, editor leftovers)
+nvim
+public/ChatGPT Image*
+public/Gemini_Generated_Image*
+public/arory.png
+public/pasted file.png
