@@ -857,6 +857,16 @@
   border: 1px solid #6a3a00;
 }
 .gb-player-name { color: #d83a55; font-size: 13px; }
+.gb-lv {
+  display: inline-flex; align-items: center;
+  height: 14px; padding: 0 5px;
+  background: linear-gradient(180deg, #4cd2ff, #0d72b8);
+  color: #06223d; font-size: 9px; font-weight: 800;
+  letter-spacing: 0.4px;
+  border-radius: 3px;
+  border: 1px solid #06335f;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.35);
+}
 .gb-player-art {
   position: relative;
   height: 120px;
@@ -898,6 +908,26 @@
   font-size: 9px; color: #555; font-weight: 700;
 }
 .gb-stat-f10 { grid-column: 2; justify-self: end; color: #888; font-size: 10px; }
+
+.gb-live-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 5px 6px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.55), rgba(174,210,240,0.55));
+  border: 1px solid rgba(10,62,122,0.35);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+}
+.gb-live-stat {
+  display: flex; align-items: baseline; gap: 4px;
+  font-size: 11px; color: #06335f;
+  min-width: 0;
+}
+.gb-live-stat-icon { font-size: 12px; line-height: 1; }
+.gb-live-stat b { font-size: 13px; font-weight: 900; color: #0a3e7a; }
+.gb-live-stat small { font-size: 9px; font-weight: 700; color: #4a6a8a; }
 
 .gb-buddy {
   display: grid; grid-template-rows: auto 1fr;

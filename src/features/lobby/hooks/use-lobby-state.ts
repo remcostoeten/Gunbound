@@ -12,7 +12,7 @@ export type LobbyToast = {
 let toastSeq = 0;
 let chatSeq = 1000;
 
-export function useLobbyState() {
+export function useLobbyState(selfName?: string | null) {
   const [channel, setChannel] = useState(3);
   const [activeRoom, setActiveRoom] = useState<LobbyRoom | null>(null);
   const [creating, setCreating] = useState(false);
@@ -29,8 +29,9 @@ export function useLobbyState() {
   const sendChat = useCallback((text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
-    setMessages((m) => [...m, { id: ++chatSeq, author: "You", text: trimmed, tone: "self" }]);
-  }, []);
+    const author = selfName?.trim() || "You";
+    setMessages((m) => [...m, { id: ++chatSeq, author, text: trimmed, tone: "self" }]);
+  }, [selfName]);
 
   const selectChannel = useCallback((n: number) => {
     setChannel(n);

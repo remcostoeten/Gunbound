@@ -34,10 +34,11 @@ function toLobbyRoom(view: LobbyRoomView): LobbyRoom {
 }
 
 export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
-  const s = useLobbyState();
-  const { rooms: roomViews, joinRoomByCode, quickJoin } = useLobbyRooms();
   const connection = useSpacetimeDB();
   const { player } = useCurrentPlayer();
+  const selfName = player?.name?.trim() || username || null;
+  const s = useLobbyState(selfName);
+  const { rooms: roomViews, joinRoomByCode, quickJoin } = useLobbyRooms();
 
   const rooms = useMemo(() => roomViews.map(toLobbyRoom), [roomViews]);
 
