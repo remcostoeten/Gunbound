@@ -1,0 +1,466 @@
+---
+title: Cross-Device Account Recovery
+description: Persistent identity, encrypted credentials, and login flow
+---
+
+## Overview
+
+Gunbound accounts are permanent and recoverable on any device. After registration, the player's SpacetimeDB token is encrypted with a password-derived key and stored in a public database table. On a new device, the player provides their username and password, and the encrypted token is recovered and decrypted locally.
+
+**No email required. No server sees the password.**
+
+## Architecture
+
+The system relies on three components:
+
+1. **SpacetimeDB Identity**: Assigned on first connection, persists in database
+2. **Credential Table**: Public table storing encrypted tokens (salt=username)
+3. **Player Table**: Personal data linked to identity (name, stats, etc.)
+
+```
+┌─────────────────────────────┐
+│     Device A (Signup)       │
+├─────────────────────────────┤
+│ 1. User: "alice", pw: "123" │
+│ 2. Generate SpacetimeDB     │
+│    identity + token         │
+│ 3. Encrypt token with       │
+│    PBKDF2(pw, salt="alice") │
+│ 4. Store in credential      │
+│    table (public)           │
+│ 5. localStorage: token      │
+└─────────┬───────────────────┘
+          │
+          ▼
+┌─────────────────────────────┐
+│   SpacetimeDB Server        │
+├─────────────────────────────┤
+│ credential (public):        │
+│ - username: "alice" (PK)    │
+│ - identity: 0xABCD...      │
+│ - encryptedToken: {...}    │
+│                             │
+│ player:                     │
+│ - identity: 0xABCD...      │
+│ - name: "alice"             │
+│ - score: 100                │
+│ - xp: 500                   │
+└────┬────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────┐
+│     Device B (Login)        │
+├─────────────────────────────┤
+│ 1. User: "alice", pw: "123" │
+│ 2. Read credential table    │
+│    (find "alice")           │
+│ 3. Decrypt token with       │
+│    same PBKDF2(pw, salt)    │
+│ 4. Get plaintext token      │
+│ 5. localStorage: token      │
+│ 6. Reload → SpacetimeDB     │
+│    connection rebuilt with  │
+│    recovered identity       │
+└─────────────────────────────┘
+```
+
+## Registration Flow
+
+### Step 1: Initial Connection
+
+When the user first opens the app, SpacetimeDB creates a session with a temporary identity:
+
+```typescript
+// src/app/page.tsx
+<GunboundSpacetimeProvider>
+  <HomeScreen />
+</GunboundSpacetimeProvider>
+```
+
+The provider reads the token from localStorage. Since it's empty, a new session is created:
+
+```typescript
+const builder = DbConnection.builder()
+  .withUri(SPACETIMEDB_URI)
+  .withDatabaseName(MODULE_NAME)
+  .withToken(undefined)  // No token yet
+  .onConnect(onConnect);
+```
+
+The server's `clientConnected` lifecycle creates a player row:
+
+```typescript
+// server/spacetimedb/src/index.ts
+spacetimedb.clientConnected((ctx) => {
+  // Create player row on first connection
+  const existing = ctx.db.player.identity.find(ctx.sender);
+  if (!existing) {
+    ctx.db.player.insert({
+      identity: ctx.sender,
+      name: `Player_${ctx.sender.toHexString().slice(0, 8)}`,
+      mobileType: null,
+      score: 0n,
+      xp: 0n,
+      createdAt: ctx.timestamp,
+      updatedAt: ctx.timestamp,
+    });
+  }
+});
+```
+
+At this point, the user has a valid SpacetimeDB identity but it's not yet persistent (token isn't saved).
+
+### Step 2: User Signs Up
+
+The user navigates to the auth screen and enters username + password:
+
+```typescript
+// src/features/auth/components/auth-window.tsx
+async function submit(e: FormEvent) {
+  e.preventDefault();
+  setError(null);
+
+  if (!username.trim()) return setError("ENTER A USERNAME");
+  if (!pw) return setError("ENTER YOUR PASSWORD");
+  if (isRegister && pw !== pw2) return setError("PASSWORDS DO NOT MATCH");
+  if (!isConnected) return setError("CONNECTING — TRY AGAIN IN A MOMENT");
+
+  try {
+    if (isRegister) {
+      const result = await register(username, pw);
+      onAuthed(result.username);  // Show confirmation, stay in app
+    }
+  } catch (err) {
+    setError(messageFromError(err));
+  }
+}
+```
+
+### Step 3: Encrypt and Store Token
+
+The `register` hook orchestrates encryption and storage:
+
+```typescript
+// src/features/auth/hooks/use-credential-auth.ts
+const register = useCallback(
+  async (username: string, password: string): Promise<RegisterResult> => {
+    const validated = validateCredentials(username, password);
+    const conn = connection.getConnection();
+    if (!conn) throw new Error("not connected to server");
+
+    // 1. Get current SpacetimeDB token
+    const currentToken = readStoredToken();
+    if (!currentToken) throw new Error("no active session token to register");
+
+    // 2. Encrypt token with password
+    const encryptedToken = await encryptToken(
+      currentToken,
+      validated.password,
+      validated.username  // salt = username
+    );
+
+    // 3. Call server reducer to store encrypted token
+    await conn.reducers.registerCredential({
+      username: validated.username,
+      encryptedToken
+    });
+
+    // 4. Store plaintext token in localStorage
+    writeStoredToken(currentToken);
+
+    return { username: validated.username };
+  },
+  [connection]
+);
+```
+
+The encryption happens locally using WebCrypto:
+
+```typescript
+// src/features/auth/crypto/token-cipher.ts
+export async function encryptToken(
+  plaintextToken: string,
+  password: string,
+  salt: string
+): Promise<string> {
+  // 1. Derive key from password + username
+  const key = await deriveKey(password, salt, PBKDF2_ITERATIONS);
+
+  // 2. Generate random IV
+  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH_BYTES));
+
+  // 3. Encrypt token with AES-GCM
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: bytesToArrayBuffer(iv) },
+    key,
+    new TextEncoder().encode(plaintextToken)
+  );
+
+  // 4. Bundle for storage
+  const bundle: EncryptedBundle = {
+    v: 1,
+    iter: PBKDF2_ITERATIONS,
+    salt,
+    iv: bytesToBase64(iv),
+    ct: bytesToBase64(new Uint8Array(ciphertext))
+  };
+
+  return JSON.stringify(bundle);
+}
+```
+
+### Step 4: Server Stores Credential
+
+The `registerCredential` reducer validates and inserts the row:
+
+```typescript
+// server/spacetimedb/src/index.ts
+export const register_credential = spacetimedb.reducer(
+  { username: t.string(), encryptedToken: t.string() },
+  (ctx, { username, encryptedToken }) => {
+    // Validate username pattern
+    if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) {
+      throw new SenderError('invalid username');
+    }
+
+    // Check uniqueness
+    if (ctx.db.credential.username.find(username)) {
+      throw new SenderError('username already registered');
+    }
+
+    // Insert encrypted token
+    ctx.db.credential.insert({
+      username,
+      identity: ctx.sender,  // Link to player identity
+      encryptedToken,        // Encrypted blob
+      createdAt: ctx.timestamp,
+      updatedAt: ctx.timestamp
+    });
+
+    // Also set player's display name
+    const player = ctx.db.player.identity.find(ctx.sender);
+    if (player) {
+      ctx.db.player.identity.update({
+        ...player,
+        name: username,
+        updatedAt: ctx.timestamp
+      });
+    }
+  }
+);
+```
+
+Now the player has:
+- A `credential` row with encrypted token (public visibility)
+- A `player` row with name and stats (linked by identity)
+- The plaintext token in localStorage
+
+## Login Flow (New Device)
+
+### Step 1: Open App, See Login Screen
+
+When the user opens the app on a new device, localStorage is empty:
+
+```typescript
+const token = readStoredToken();  // null
+```
+
+SpacetimeDB creates a new temporary identity for this device. The app shows the auth screen.
+
+### Step 2: User Enters Username + Password
+
+```typescript
+// src/features/auth/components/auth-window.tsx
+async function submit(e: FormEvent) {
+  // ...
+  try {
+    const result = await login(username, pw);
+    // The stored token has changed; reload so the SpacetimeDB connection
+    // is rebuilt with the recovered identity.
+    sessionStorage.setItem("gunbound:post-login", result.username);
+    window.location.reload();
+  } catch (err) {
+    setError(messageFromError(err));
+  }
+}
+```
+
+### Step 3: Client Reads Encrypted Credential
+
+The `login` hook reads the credential table:
+
+```typescript
+// src/features/auth/hooks/use-credential-auth.ts
+const login = useCallback(
+  async (username: string, password: string): Promise<LoginResult> => {
+    const validated = validateCredentials(username, password);
+
+    // 1. Find credential row by username
+    const row = credentialRows.find(r => r.username === validated.username);
+    if (!row) throw new Error("no account with that username");
+
+    // 2. Decrypt token using password
+    let token: string;
+    try {
+      token = await decryptToken(row.encryptedToken, validated.password);
+    } catch (e) {
+      if (e instanceof InvalidPasswordError) throw e;
+      throw new Error("could not decrypt account");
+    }
+
+    // 3. Store plaintext token
+    writeStoredToken(token);
+
+    return { username: validated.username };
+  },
+  [credentialRows]
+);
+```
+
+The credential table is public, so any client can read it:
+
+```typescript
+const [credentialRows] = useTable(tables.credential);
+```
+
+This finds the row for the given username and decrypts it.
+
+### Step 4: Decrypt Token Locally
+
+The decryption uses the same PBKDF2 key derivation:
+
+```typescript
+// src/features/auth/crypto/token-cipher.ts
+export async function decryptToken(
+  encrypted: string,
+  password: string
+): Promise<string> {
+  // 1. Parse the encrypted bundle
+  const bundle = parseBundle(encrypted);
+
+  // 2. Derive the same key using stored salt (username)
+  const key = await deriveKey(password, bundle.salt, bundle.iter);
+
+  // 3. Decrypt
+  const iv = base64ToBytes(bundle.iv);
+  const ct = base64ToBytes(bundle.ct);
+  let plaintextBuffer: ArrayBuffer;
+  try {
+    plaintextBuffer = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: bytesToArrayBuffer(iv) },
+      key,
+      bytesToArrayBuffer(ct)
+    );
+  } catch {
+    // Auth tag verification failed
+    throw new InvalidPasswordError();
+  }
+
+  return new TextDecoder().decode(plaintextBuffer);
+}
+```
+
+**Key point**: If the password is wrong, the AES-GCM auth tag fails and an exception is thrown. The server doesn't need to verify the password — the cryptography itself proves correctness.
+
+### Step 5: Reload and Rebuild Connection
+
+After successful decryption and storing the token:
+
+```typescript
+sessionStorage.setItem("gunbound:post-login", result.username);
+window.location.reload();
+```
+
+The page reloads. The provider now reads the stored token from localStorage:
+
+```typescript
+const token = readStoredToken();  // "0x123abc..." — the recovered token
+
+const builder = DbConnection.builder()
+  .withUri(SPACETIMEDB_URI)
+  .withDatabaseName(MODULE_NAME)
+  .withToken(token)  // ← Use recovered token
+  .onConnect(onConnect);
+```
+
+SpacetimeDB validates the token signature and establishes the connection with the **original identity** (from Device A). All player data, stats, and game state are now available.
+
+### Step 6: Post-Login Detection
+
+The home screen detects the post-login flag set during reload:
+
+```typescript
+// src/features/home/home-screen.tsx
+useEffect(() => {
+  if (typeof window === "undefined") return;
+  const pending = window.sessionStorage.getItem(POST_LOGIN_KEY);
+  if (!pending) return;
+  window.sessionStorage.removeItem(POST_LOGIN_KEY);
+  setUsername(pending);
+  setStage("lobby");  // Skip intro + auth, go straight to lobby
+  setFading(true);
+}, []);
+```
+
+The user is automatically taken to the lobby with their recovered account.
+
+## Identity Persistence
+
+The key insight: **SpacetimeDB identities are opaque cryptographic credentials that persist across sessions**.
+
+When you login with a recovered token, SpacetimeDB:
+1. Validates the token signature
+2. Extracts the embedded identity
+3. Establishes a connection with that same identity
+4. All rows linked to that identity are now visible
+
+This is why all stats, room membership, and chat messages persist — they're all linked to the `identity` field in the database.
+
+## Token Expiration
+
+SpacetimeDB tokens are valid for the lifetime of the session. If a token expires (e.g., server restart), the user must login again. The token storage key is `gunbound:spacetime:token`.
+
+## Security Properties
+
+1. **Password never sent to server** — Only encrypted bundle is transmitted
+2. **Server doesn't know password** — Can't decrypt on behalf of user
+3. **Server can't recover plaintext token** — Encrypted blob is opaque
+4. **Different passwords produce different keys** — Can't decrypt another user's token even with access to their credential row
+5. **Auth tag validates integrity** — Tampered bundle is rejected during decryption
+
+## Known Limitations
+
+1. **No email recovery**: If password is forgotten, account is lost (add email + OTP flow in future)
+2. **No password change**: Would require re-encrypting stored token (implement `update_credential_token` reducer)
+3. **No 2FA**: Authentication is single-factor (password only)
+4. **Username enumeration**: Attacker can read the public credential table to find registered usernames (acceptable for a game)
+5. **Brute-force risk**: No rate limiting on decryption attempts (server should limit login attempts per IP)
+
+## Future Improvements
+
+### Email-based Recovery
+1. Add `email` field to `player` table
+2. On login failure, send password reset email
+3. Email link with OTP → generate new temporary password → decrypt token
+
+### Password Change
+1. Implement `update_credential_token` reducer
+2. User provides old password + new password
+3. Decrypt with old password to verify identity
+4. Re-encrypt token with new password
+5. Update credential row
+
+### 2FA
+1. Add TOTP secret to player table (encrypted)
+2. Prompt for 2FA code on login (before decryption)
+3. Verify code before allowing token recovery
+
+### Rate Limiting
+1. Server tracks failed login attempts per IP
+2. After N failures, return 429 Too Many Requests
+3. Exponential backoff to prevent brute-force
+
+### Biometric Login
+1. Store credential row ID in secure storage
+2. On return visit, decrypt with biometric + password (stored biometrically)
+3. Skip credential lookup if available

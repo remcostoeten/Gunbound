@@ -1,0 +1,347 @@
+---
+title: Authentication & Security
+description: Token encryption, password derivation, and credential management
+---
+
+## Overview
+
+Gunbound uses a password-encrypted credential system. The SpacetimeDB session token is encrypted with a key derived from the user's password and stored in a public database table. On login, the user provides the password, and the encrypted token is decrypted client-side.
+
+**Key principle**: The server never sees the plaintext password or unencrypted token. Only the user knows both.
+
+## Token Encryption Pipeline
+
+### Registration
+
+1. User signs up with username + password
+2. Client generates a random SpacetimeDB session token (obtained on first connection)
+3. Encryption key derived from password:
+   - Algorithm: PBKDF2-SHA256
+   - Iterations: 150,000
+   - Salt: username (as bytes)
+   - Output: 256-bit key
+4. Token encrypted with AES-256-GCM:
+   - IV: random 96 bits
+   - Auth tag: 128 bits (automatic)
+5. Encrypted bundle stored in `credential` table
+
+### Bundle Format
+
+The encrypted token is a JSON bundle:
+
+```json
+{
+  "v": 1,
+  "iter": 150000,
+  "salt": "alice",
+  "iv": "K7m2+QxD3J8CgPwQ",
+  "ct": "abcd1234...encrypted_token_here...efgh5678"
+}
+```
+
+- `v` (version): Format version for future upgrades
+- `iter`: PBKDF2 iteration count (stored for future compatibility if we increase it)
+- `salt`: Username (readable, used for key derivation)
+- `iv`: Initialization vector (base64, random per encryption)
+- `ct`: Ciphertext (base64, encrypted token blob)
+
+### Login
+
+1. User enters username + password
+2. Client reads encrypted bundle from `credential` table (public)
+3. Derive same encryption key:
+   - Same PBKDF2 parameters (iter=150000, salt=username)
+   - Same password
+4. Decrypt with AES-256-GCM:
+   - If auth tag fails → `InvalidPasswordError`
+   - If successful → plaintext token
+5. Store token in localStorage
+6. Reload page to rebuild SpacetimeDB connection
+
+## Cryptographic Details
+
+### PBKDF2 Key Derivation
+
+**Parameters:**
+- Function: PBKDF2 with SHA-256
+- Iterations: 150,000 (OWASP 2023 recommendation for password hashing)
+- Salt: username (UTF-8 bytes)
+- Output length: 256 bits (32 bytes)
+
+**Code:**
+
+```typescript
+// src/features/auth/crypto/token-cipher.ts
+async function deriveKey(password: string, salt: string, iterations: number): Promise<CryptoKey> {
+  const enc = new TextEncoder();
+  const baseKey = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: enc.encode(salt),
+      iterations,
+      hash: "SHA-256"
+    },
+    baseKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+```
+
+**Security notes:**
+- 150,000 iterations makes brute-force attacks computationally expensive
+- Salt (username) prevents rainbow tables
+- Different usernames → different keys → can't decrypt another user's token even with their password
+
+### AES-256-GCM Encryption
+
+**Parameters:**
+- Cipher: AES-256-GCM (Galois/Counter Mode)
+- Key length: 256 bits (from PBKDF2)
+- IV length: 96 bits (12 bytes, random per message)
+- Auth tag: 128 bits (automatic, validates ciphertext integrity)
+
+**Code:**
+
+```typescript
+const enc = new TextEncoder();
+const key = await deriveKey(password, salt, PBKDF2_ITERATIONS);
+const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH_BYTES));  // 12 random bytes
+
+const ciphertext = await crypto.subtle.encrypt(
+  { name: "AES-GCM", iv: bytesToArrayBuffer(iv) },
+  key,
+  enc.encode(plaintextToken)  // SpacetimeDB token
+);
+
+// Bundle for storage
+const bundle: EncryptedBundle = {
+  v: 1,
+  iter: PBKDF2_ITERATIONS,
+  salt,
+  iv: bytesToBase64(iv),
+  ct: bytesToBase64(new Uint8Array(ciphertext))
+};
+```
+
+**Security notes:**
+- GCM mode provides authenticated encryption (detects tampering)
+- Random IV per encryption ensures same plaintext produces different ciphertext
+- Auth tag verification prevents decryption if bundle is corrupted or tampered with
+
+### Decryption with Auth Failure
+
+```typescript
+export async function decryptToken(encrypted: string, password: string): Promise<string> {
+  const bundle = parseBundle(encrypted);
+  const key = await deriveKey(password, bundle.salt, bundle.iter);
+  const iv = base64ToBytes(bundle.iv);
+  const ct = base64ToBytes(bundle.ct);
+
+  let plaintextBuffer: ArrayBuffer;
+  try {
+    plaintextBuffer = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: bytesToArrayBuffer(iv) },
+      key,
+      bytesToArrayBuffer(ct)
+    );
+  } catch {
+    // Auth tag verification failed — wrong password
+    throw new InvalidPasswordError();
+  }
+
+  return new TextDecoder().decode(plaintextBuffer);
+}
+```
+
+Any wrong password or corrupted bundle → decryption throws → caught as `InvalidPasswordError`.
+
+## Server-side Registration
+
+When the client calls the `register_credential` reducer with a username and encrypted token:
+
+```typescript
+// server/spacetimedb/src/index.ts
+export const register_credential = spacetimedb.reducer(
+  { username: t.string(), encryptedToken: t.string() },
+  (ctx, { username, encryptedToken }) => {
+    // Validate username pattern
+    if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) {
+      throw new SenderError('invalid username');
+    }
+
+    // Check uniqueness
+    if (ctx.db.credential.username.find(username)) {
+      throw new SenderError('username already registered');
+    }
+
+    // Validate token doesn't exceed max encrypted size
+    if (encryptedToken.length > 2048) {
+      throw new SenderError('token too large');
+    }
+
+    // Insert row
+    ctx.db.credential.insert({
+      username,
+      identity: ctx.sender,  // Auto-filled by reducer context
+      encryptedToken,
+      createdAt: ctx.timestamp,
+      updatedAt: ctx.timestamp
+    });
+
+    // Also set the player's display name
+    const player = ctx.db.player.identity.find(ctx.sender);
+    if (player) {
+      ctx.db.player.identity.update({
+        ...player,
+        name: username,
+        updatedAt: ctx.timestamp
+      });
+    }
+  }
+);
+```
+
+**Key points:**
+- Server validates username format (3-20 alphanumeric + underscore)
+- Server checks uniqueness (prevents duplicate accounts)
+- Server stores encrypted blob as-is (doesn't decrypt)
+- Server links credential to the caller's `identity` (via `ctx.sender`)
+- Server also sets the player's `name` for display in UI
+
+## Client-side Hook
+
+The `useCredentialAuth` hook orchestrates the flow:
+
+```typescript
+// src/features/auth/hooks/use-credential-auth.ts
+export function useCredentialAuth(): UseCredentialAuthResult {
+  const connection = useSpacetimeDB();
+  const [credentialRows] = useTable(tables.credential);
+
+  const register = useCallback(
+    async (username: string, password: string): Promise<RegisterResult> => {
+      const validated = validateCredentials(username, password);
+      const conn = connection.getConnection();
+
+      const currentToken = readStoredToken();
+      const encryptedToken = await encryptToken(
+        currentToken,
+        validated.password,
+        validated.username
+      );
+
+      await conn.reducers.registerCredential({
+        username: validated.username,
+        encryptedToken
+      });
+
+      return { username: validated.username };
+    },
+    [connection]
+  );
+
+  const login = useCallback(
+    async (username: string, password: string): Promise<LoginResult> => {
+      const validated = validateCredentials(username, password);
+
+      const row = credentialRows.find(r => r.username === validated.username);
+      if (!row) throw new Error('no account with that username');
+
+      let token: string;
+      try {
+        token = await decryptToken(row.encryptedToken, validated.password);
+      } catch (e) {
+        if (e instanceof InvalidPasswordError) throw e;
+        throw new Error('could not decrypt account');
+      }
+
+      writeStoredToken(token);
+      return { username: validated.username };
+    },
+    [credentialRows]
+  );
+
+  return { state, register, login, isConnected };
+}
+
+function validateCredentials(username: string, password: string): {
+  if (!USERNAME_PATTERN.test(username.trim())) {
+    throw new Error('Username must be 3-20 characters: letters, digits, underscore');
+  }
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    throw new Error(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`);
+  }
+  return { username: username.trim(), password };
+}
+```
+
+**Flow:**
+- `register`: Encrypt current token with password, call server reducer, return username
+- `login`: Find credential row, decrypt with password, store token, return username
+
+## Password Requirements
+
+- **Minimum length**: 8 characters
+- **Allowed characters**: Any (no restrictions)
+- **Username**: 3-20 alphanumeric + underscore
+
+These are enforced on the client during form validation and on the server in the reducer.
+
+## Token Storage
+
+The plaintext SpacetimeDB token is stored in localStorage:
+
+```typescript
+// src/features/game/spacetime/token-storage.ts
+const TOKEN_KEY = 'gunbound:spacetime:token';
+
+export function readStoredToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(TOKEN_KEY);
+}
+
+export function writeStoredToken(token: string): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function deleteStoredToken(): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(TOKEN_KEY);
+}
+```
+
+**Security notes:**
+- Token is unencrypted in localStorage (but localStorage is same-origin only)
+- If localStorage is compromised, attacker has the token (but not the password)
+- Token expires when the SpacetimeDB session is revoked
+
+## WebCrypto API
+
+All cryptographic operations use the browser's WebCrypto API (`crypto.subtle`):
+
+```typescript
+// Check availability
+if (typeof crypto === 'undefined' || !crypto.subtle) {
+  throw new Error('WebCrypto not available');
+}
+```
+
+WebCrypto is available in all modern browsers and provides hardware acceleration for cryptographic operations.
+
+## Future Improvements
+
+1. **Password change**: Implement `update_credential_token` reducer to allow users to change passwords
+2. **Email recovery**: Add email verification for account recovery (currently requires saving password)
+3. **2FA**: Add optional two-factor authentication
+4. **Rate limiting**: Server should rate-limit login attempts per IP/username to prevent brute-force
+5. **Secure credential display**: Show password requirements/strength indicator in UI

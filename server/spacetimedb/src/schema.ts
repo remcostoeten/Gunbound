@@ -13,14 +13,23 @@ export const Player = table(
     name: 'player',
     public: true,
     indexes: [
-      { accessor: 'player_is_online', algorithm: 'btree', columns: ['isOnline'] }
+      { accessor: 'player_is_online', algorithm: 'btree', columns: ['isOnline'] },
+      { accessor: 'player_level', algorithm: 'btree', columns: ['level'] }
     ]
   },
   {
     identity: t.identity().primaryKey(),
     name: t.string(),
     isOnline: t.bool(),
-    lastSeen: t.timestamp()
+    lastSeen: t.timestamp(),
+    xp: t.u64(),
+    level: t.u32(),
+    loginStreak: t.u32(),
+    longestStreak: t.u32(),
+    lastLoginDay: t.u64(),
+    totalWins: t.u32(),
+    totalLosses: t.u32(),
+    totalRoundsPlayed: t.u32()
   }
 );
 
@@ -77,6 +86,8 @@ export const RoomMember = table(
     id: t.u64().primaryKey().autoInc(),
     roomId: t.u64(),
     identity: t.identity(),
+    mobileType: t.string(),
+    isReady: t.bool(),
     joinedAt: t.timestamp()
   }
 );
@@ -144,12 +155,86 @@ export const RoundEvent = table(
   }
 );
 
+export const RoundStat = table(
+  {
+    name: 'round_stat',
+    public: true,
+    indexes: [
+      { accessor: 'round_stat_round_id', algorithm: 'btree', columns: ['roundId'] },
+      { accessor: 'round_stat_player_identity', algorithm: 'btree', columns: ['playerIdentity'] }
+    ]
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    roundId: t.u64(),
+    playerIdentity: t.identity(),
+    damageDealt: t.u32(),
+    shotsFired: t.u32(),
+    directHits: t.u32(),
+    xpAwarded: t.u32()
+  }
+);
+
+export const ChatMessage = table(
+  {
+    name: 'chat_message',
+    public: true,
+    indexes: [
+      { accessor: 'chat_message_room_id', algorithm: 'btree', columns: ['roomId'] }
+    ]
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    roomId: t.u64(),
+    senderIdentity: t.identity(),
+    message: t.string(),
+    createdAt: t.timestamp()
+  }
+);
+
+/**
+ * Account credentials for cross-device login.
+ *
+ * Each row binds a chosen `username` to the player's SpacetimeDB `identity`.
+ * `encryptedToken` is the player's SpacetimeDB session token, encrypted on
+ * the client with AES-GCM using a key derived from their password via PBKDF2
+ * (salt = username). The server stores only the ciphertext; passwords and
+ * plaintext tokens never reach the server.
+ *
+ * To log in on a new device, the client subscribes to the row matching the
+ * typed username, decrypts the token locally with the typed password, and
+ * installs the result in localStorage. A wrong password fails AES-GCM tag
+ * verification on the client and is rejected without any server roundtrip.
+ *
+ * Public so any client can fetch any user's encrypted blob during login —
+ * the encryption is the actual access control.
+ */
+export const Credential = table(
+  {
+    name: 'credential',
+    public: true,
+    indexes: [
+      { accessor: 'credential_identity', algorithm: 'btree', columns: ['identity'] }
+    ]
+  },
+  {
+    username: t.string().primaryKey(),
+    identity: t.identity(),
+    encryptedToken: t.string(),
+    createdAt: t.timestamp(),
+    updatedAt: t.timestamp()
+  }
+);
+
 const spacetimedb = schema({
   player: Player,
   room: Room,
   roomMember: RoomMember,
   round: Round,
-  roundEvent: RoundEvent
+  roundEvent: RoundEvent,
+  roundStat: RoundStat,
+  chatMessage: ChatMessage,
+  credential: Credential
 });
 
 export default spacetimedb;

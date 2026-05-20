@@ -29,16 +29,11 @@ export function AimIndicator(): React.JSX.Element {
         <div className="aim-card-copy">
           <span className="aim-kicker">{player.title} Command</span>
           <span className="aim-headline">{turnGuide.headline}</span>
-          <span className="aim-detail">{turnGuide.detail}</span>
         </div>
         <div className="aim-card-phase">
           <span className="aim-phase-label">{turnGuide.phaseLabel}</span>
           <span className="aim-phase-timer">{turnGuide.timerLabel}</span>
         </div>
-      </div>
-
-      <div className="aim-phase-steps">
-        {turnGuide.phaseSteps.map(renderPhaseStep)}
       </div>
 
       <div className="aim-status-grid">
@@ -70,14 +65,6 @@ export function AimIndicator(): React.JSX.Element {
       <div className="aim-command-row">
         {turnGuide.commands.map(renderCommand)}
       </div>
-    </div>
-  );
-}
-
-function renderPhaseStep(step: ReturnType<typeof createTurnGuide>["phaseSteps"][number]): React.JSX.Element {
-  return (
-    <div key={step.label} className={"aim-phase-step " + step.state}>
-      <span>{step.label}</span>
     </div>
   );
 }

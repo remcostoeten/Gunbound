@@ -109,10 +109,6 @@ export function Hud(): React.JSX.Element {
             <div className="phase-meter-fill" style={{ width: getPhaseWidth(phaseTimer, phaseDuration) }} />
           </div>
           <div className="turn-meta-row subtle">
-            <span>{turnGuide.headline}</span>
-            <span>Charges {currentPlayer.mobile.specialCharges}</span>
-          </div>
-          <div className="turn-meta-row subtle">
             <span>Supply Boxes {landedBoxes}</span>
             <span>Power {String(turnGuide.powerPercent).padStart(2, "0")}%</span>
           </div>

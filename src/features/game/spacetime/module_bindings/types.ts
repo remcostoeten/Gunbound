@@ -10,11 +10,37 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const ChatMessage = __t.object("ChatMessage", {
+  id: __t.u64(),
+  roomId: __t.u64(),
+  senderIdentity: __t.identity(),
+  message: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type ChatMessage = __Infer<typeof ChatMessage>;
+
+export const Credential = __t.object("Credential", {
+  username: __t.string(),
+  identity: __t.identity(),
+  encryptedToken: __t.string(),
+  createdAt: __t.timestamp(),
+  updatedAt: __t.timestamp(),
+});
+export type Credential = __Infer<typeof Credential>;
+
 export const Player = __t.object("Player", {
   identity: __t.identity(),
   name: __t.string(),
   isOnline: __t.bool(),
   lastSeen: __t.timestamp(),
+  xp: __t.u64(),
+  level: __t.u32(),
+  loginStreak: __t.u32(),
+  longestStreak: __t.u32(),
+  lastLoginDay: __t.u64(),
+  totalWins: __t.u32(),
+  totalLosses: __t.u32(),
+  totalRoundsPlayed: __t.u32(),
 });
 export type Player = __Infer<typeof Player>;
 
@@ -32,6 +58,8 @@ export const RoomMember = __t.object("RoomMember", {
   id: __t.u64(),
   roomId: __t.u64(),
   identity: __t.identity(),
+  mobileType: __t.string(),
+  isReady: __t.bool(),
   joinedAt: __t.timestamp(),
 });
 export type RoomMember = __Infer<typeof RoomMember>;
@@ -57,4 +85,15 @@ export const RoundEvent = __t.object("RoundEvent", {
   createdAt: __t.timestamp(),
 });
 export type RoundEvent = __Infer<typeof RoundEvent>;
+
+export const RoundStat = __t.object("RoundStat", {
+  id: __t.u64(),
+  roundId: __t.u64(),
+  playerIdentity: __t.identity(),
+  damageDealt: __t.u32(),
+  shotsFired: __t.u32(),
+  directHits: __t.u32(),
+  xpAwarded: __t.u32(),
+});
+export type RoundStat = __Infer<typeof RoundStat>;
 

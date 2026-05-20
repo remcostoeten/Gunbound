@@ -15,4 +15,12 @@ export default __t.row({
   name: __t.string(),
   isOnline: __t.bool().name("is_online"),
   lastSeen: __t.timestamp().name("last_seen"),
+  xp: __t.u64(),
+  level: __t.u32(),
+  loginStreak: __t.u32().name("login_streak"),
+  longestStreak: __t.u32().name("longest_streak"),
+  lastLoginDay: __t.u64().name("last_login_day"),
+  totalWins: __t.u32().name("total_wins"),
+  totalLosses: __t.u32().name("total_losses"),
+  totalRoundsPlayed: __t.u32().name("total_rounds_played"),
 });

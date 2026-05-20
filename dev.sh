@@ -319,13 +319,13 @@ while true; do
     1) run_server_cmd "Next.js dev" "bun --bun next dev"; continue ;;
     2) run_cmd "Production build" "NODE_ENV=production bun --bun next build" ;;
     3) run_server_cmd "Start production" "bun --bun next start"; continue ;;
-    4) run_cmd "spacetime:dev" "spacetime dev --module-path server/spacetimedb --client-lang typescript --module-bindings-path src/features/game/spacetime/module_bindings" ;;
+    4) run_cmd "spacetime:dev" "spacetime dev gunbound --server http://127.0.0.1:3001 --module-path server/spacetimedb --client-lang typescript --module-bindings-path src/features/game/spacetime/module_bindings" ;;
     5) run_cmd "spacetime:build" "spacetime build --module-path server/spacetimedb" ;;
-    6) run_cmd "spacetime:start" "spacetime start" ;;
+    6) run_cmd "spacetime:start" "spacetime start --listen-addr 0.0.0.0:3001" ;;
     7) run_cmd "spacetime:generate" "spacetime generate --lang typescript --out-dir src/features/game/spacetime/module_bindings --module-path server/spacetimedb" ;;
     8) run_cmd "spacetime:publish" "spacetime publish gunbound --module-path server/spacetimedb --yes" ;;
-    9) run_cmd "spacetime:publish:local" "spacetime publish gunbound --server local --module-path server/spacetimedb --yes" ;;
-    0) run_cmd "spacetime:logs" "spacetime logs gunbound" ;;
+    9) run_cmd "spacetime:publish:local" "spacetime publish gunbound --server http://127.0.0.1:3001 --module-path server/spacetimedb --yes" ;;
+    0) run_cmd "spacetime:logs" "spacetime logs gunbound --server http://127.0.0.1:3001" ;;
     m) run_cmd "prepare-mobile-asset" "python3 scripts/prepare-mobile-asset.py" ;;
     b) run_cmd "bun install" "bun install" ;;
     q|Q) echo -e "\n${DIM}bye${RESET}\n"; exit 0 ;;

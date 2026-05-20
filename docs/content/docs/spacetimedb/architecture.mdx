@@ -1,0 +1,270 @@
+---
+title: Architecture & Design
+description: Schema design, tables, and data organization
+---
+
+## Tables
+
+### Player
+Represents a logged-in player and their persistent identity.
+
+```typescript
+// server/spacetimedb/src/schema.ts
+export const Player = table(
+  { name: 'player', indexes: [{ name: 'player_name', algorithm: 'btree', columns: ['name'] }] },
+  {
+    identity: t.identity().primaryKey(),
+    name: t.string(),
+    mobileType: t.string().optional(),
+    score: t.u64(),
+    xp: t.u64(),
+    createdAt: t.timestamp(),
+    updatedAt: t.timestamp(),
+  }
+);
+```
+
+**Key points:**
+- `identity` (PK) is the SpacetimeDB-assigned credential. Each client gets a unique identity on first connection.
+- `name` is set during registration and is used to display player names in UI.
+- `mobileType` tracks the selected combat unit (e.g., "armor", "mage", "frog").
+- `score` and `xp` are player stats, persisted and accumulated across sessions.
+
+### Credential
+Public table storing encrypted session tokens for cross-device login.
+
+```typescript
+export const Credential = table(
+  { 
+    name: 'credential', 
+    public: true,
+    indexes: [{ name: 'credential_identity', algorithm: 'btree', columns: ['identity'] }]
+  },
+  {
+    username: t.string().primaryKey(),
+    identity: t.identity(),
+    encryptedToken: t.string(),
+    createdAt: t.timestamp(),
+    updatedAt: t.timestamp(),
+  }
+);
+```
+
+**Key points:**
+- `public: true` means any client (logged in or not) can read all rows.
+- `encryptedToken` is a JSON bundle: `{ v: 1, iter: 150000, salt: "username", iv: "base64", ct: "base64" }`
+- Salt is the username; password is known only to user.
+- This table is the trust anchor for account recovery.
+
+### Room
+Represents a matchmaking lobby or active game session.
+
+```typescript
+export const Room = table(
+  { 
+    name: 'room',
+    indexes: [{ name: 'room_status', algorithm: 'btree', columns: ['status'] }]
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    hostIdentity: t.identity(),
+    code: t.string(),
+    status: t.string(), // "waiting", "in_round", "ended"
+    memberCount: t.u32(),
+    capacity: t.u32(),
+    seed: t.u64(),
+    createdAt: t.timestamp(),
+    updatedAt: t.timestamp(),
+  }
+);
+```
+
+**Key points:**
+- `hostIdentity` is the player who created the room. Host can start the round.
+- `code` is a player-friendly room code (e.g., "A3F5K") for joining.
+- `status` drives the lobby UI state machine (show "waiting for players" vs. "in round").
+- `seed` is RNG state for deterministic turn simulation.
+
+### RoomMember
+Join table linking players to rooms.
+
+```typescript
+export const RoomMember = table(
+  { 
+    name: 'room_member',
+    indexes: [
+      { name: 'room_member_room_id', algorithm: 'btree', columns: ['roomId'] },
+      { name: 'room_member_identity', algorithm: 'btree', columns: ['identity'] }
+    ]
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    roomId: t.u64(),
+    identity: t.identity(),
+    mobileType: t.string(),
+    isReady: t.bool(),
+    joinedAt: t.timestamp(),
+  }
+);
+```
+
+**Key points:**
+- Each row represents one player in a room.
+- `isReady` is toggled by the player to signal readiness before round start.
+- `mobileType` is copied from Player on join (required for `start_round` to work).
+
+### ChatMessage
+Persistent chat messages within a room.
+
+```typescript
+export const ChatMessage = table(
+  { 
+    name: 'chat_message',
+    indexes: [{ name: 'chat_message_room_id', algorithm: 'btree', columns: ['roomId'] }]
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    roomId: t.u64(),
+    identity: t.identity(),
+    message: t.string(),
+    createdAt: t.timestamp(),
+  }
+);
+```
+
+**Key points:**
+- Messages are append-only; no editing or deletion.
+- Indexed by `roomId` for efficient per-room queries.
+
+### RoundStat
+Game statistics recorded after each round ends.
+
+```typescript
+export const RoundStat = table(
+  { 
+    name: 'round_stat',
+    indexes: [{ name: 'round_stat_room_id', algorithm: 'btree', columns: ['roomId'] }]
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    roomId: t.u64(),
+    identity: t.identity(),
+    mobileType: t.string(),
+    damageDealt: t.u32(),
+    damageTaken: t.u32(),
+    kills: t.u32(),
+    deaths: t.u32(),
+    recordedAt: t.timestamp(),
+  }
+);
+```
+
+**Key points:**
+- Created when a player submits round statistics (after battle ends).
+- Tracks per-mobile performance metrics.
+
+## Design Patterns
+
+### Identity as Foreign Key
+SpacetimeDB identities are used as foreign keys throughout the schema:
+
+```typescript
+hostIdentity: t.identity(),      // Player who owns this room
+identity: t.identity(),           // Player in room/chat/stat
+```
+
+To resolve an identity to a player name, query the `player` table:
+
+```typescript
+const player = players.find(p => p.identity.toHexString() === identity.toHexString());
+const name = player?.name ?? 'Unknown';
+```
+
+### Status-Driven State Machines
+Room status transitions are explicit:
+
+```
+"waiting" → "in_round" → "ended"
+```
+
+The client observes the room's `status` field and reacts:
+- `status === "in_round"` → transition to battle screen
+- `status === "ended"` → return to lobby
+
+### Encrypted Trust Anchor
+The `credential` table is the single source of truth for account recovery. Because it's public:
+1. User can read their own encrypted token from any device
+2. User decrypts locally using password (only they know)
+3. Server never sees plaintext password or unencrypted token
+4. Server validates identity via SpacetimeDB's native auth (token signature)
+
+### Auto-increment IDs
+Room IDs, message IDs, etc. use auto-increment u64:
+
+```typescript
+id: t.u64().primaryKey().autoInc(),
+```
+
+When inserting, provide `0n` as placeholder:
+
+```typescript
+ctx.db.room.insert({
+  id: 0n,  // Placeholder; server auto-generates
+  hostIdentity: ctx.sender,
+  code: 'ABC12',
+  // ...
+});
+
+// Return the inserted row to get the actual ID:
+const inserted = ctx.db.room.insert({ id: 0n, ... });
+const actualId = inserted.id;
+```
+
+## Indexes
+
+Strategic indexes enable fast queries:
+
+| Table | Index | Purpose |
+|-------|-------|---------|
+| `player` | `name` | Look up player by username |
+| `credential` | `identity` | Verify identity has registered credentials |
+| `room` | `status` | Find active rooms by state |
+| `room_member` | `room_id` | List members in a room |
+| `room_member` | `identity` | Find rooms a player is in |
+| `chat_message` | `room_id` | Fetch chat history for room |
+| `round_stat` | `room_id` | Load round statistics for room |
+
+**Index naming convention**: `{table}_{column}` to avoid conflicts across the module.
+
+## Subscription Model
+
+The client uses a single high-level subscription:
+
+```typescript
+conn.subscriptionBuilder().subscribeToAll();
+```
+
+This subscribes to all public tables. The server then pushes real-time updates as:
+1. Reducer calls mutate tables
+2. Server broadcasts changes to all connected clients
+3. Client's `useTable()` hooks re-render with new data
+
+No manual query building needed for basic use cases.
+
+## Null Safety
+
+Optional fields use `.optional()`:
+
+```typescript
+mobileType: t.string().optional(),  // Can be null
+```
+
+In TypeScript, the field type is `string | null`.
+
+Check before use:
+
+```typescript
+if (player.mobileType) {
+  // Use player.mobileType (string)
+}
+```

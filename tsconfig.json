@@ -37,6 +37,8 @@
   ],
   "exclude": [
     "node_modules",
-    "server"
+    "server",
+    "UI_TO_IMPLEMENT",
+    "bounce-drop-intro"
   ]
 }

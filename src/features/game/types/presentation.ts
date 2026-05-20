@@ -1,7 +1,7 @@
 import type { ExplosionVisual } from "@/features/game/types/effects";
 import type { Player } from "@/features/game/types/entities";
 import type { ProjectileState } from "@/features/game/types/combat";
-import type { GamePhase, GameScene, PlayerId, Vec2 } from "@/features/game/types/shared";
+import type { GamePhase, GameScene, MapType, PlayerId, TerrainTheme, Vec2 } from "@/features/game/types/shared";
 
 export type CameraMode = "overview" | "player" | "projectile" | "impact";
 
@@ -71,4 +71,69 @@ export type TurnGuide = {
   commands: TurnGuideCommand[];
   weaponSlots: TurnGuideWeaponSlot[];
   phaseSteps: TurnGuidePhaseStep[];
+};
+
+export type MapDecorLayer = "background" | "midground" | "foreground" | "terrain";
+
+export type MapDecorGroupName = "backgroundLandmarks" | "foregroundProps" | "materialAccents";
+
+export type MapDecorPoint = {
+  x: number;
+  y: number;
+};
+
+export type MapDecorBase = {
+  id: string;
+  layer: MapDecorLayer;
+  fill: string;
+  stroke: string | null;
+  alpha: number;
+  parallax: number;
+  rotation: number;
+};
+
+export type MapDecorEllipse = MapDecorBase & {
+  primitive: "ellipse";
+  center: MapDecorPoint;
+  radiusX: number;
+  radiusY: number;
+};
+
+export type MapDecorRect = MapDecorBase & {
+  primitive: "rect";
+  origin: MapDecorPoint;
+  width: number;
+  height: number;
+  radius: number;
+};
+
+export type MapDecorPolygon = MapDecorBase & {
+  primitive: "polygon";
+  points: MapDecorPoint[];
+};
+
+export type MapDecorLine = MapDecorBase & {
+  primitive: "line";
+  points: MapDecorPoint[];
+  width: number;
+};
+
+export type MapDecorPrimitive = MapDecorEllipse | MapDecorRect | MapDecorPolygon | MapDecorLine;
+
+export type MapDecorPlan = {
+  map: MapType;
+  theme: TerrainTheme;
+  seed: number;
+  backgroundLandmarks: MapDecorPrimitive[];
+  foregroundProps: MapDecorPrimitive[];
+  materialAccents: MapDecorPrimitive[];
+};
+
+export type MapDecorInput = {
+  map: MapType;
+  theme: TerrainTheme;
+  seed: string | number;
+  width: number;
+  height: number;
+  terrainHeights?: number[];
 };

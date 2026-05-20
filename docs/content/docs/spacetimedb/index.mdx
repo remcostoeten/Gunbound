@@ -1,0 +1,87 @@
+---
+title: SpacetimeDB Overview
+description: Real-time multiplayer database for Gunbound
+---
+
+SpacetimeDB powers Gunbound's real-time multiplayer backend. It handles player identity, room management, game state, and live subscription updates.
+
+## Key Concepts
+
+**Identity-based Architecture**: Every player has a permanent `Identity` in SpacetimeDB — a cryptographic credential that persists across sessions and devices.
+
+**Live Subscriptions**: The client subscribes to database tables and receives real-time updates whenever data changes. No polling required.
+
+**Server-side Reducers**: All state mutations happen through deterministic reducer functions on the server. Think of them as transactional stored procedures.
+
+**Token-based Persistence**: After login, the SpacetimeDB session token is stored encrypted in localStorage using a password-derived key. This allows cross-device account recovery without email.
+
+## Architecture Diagram
+
+```
+┌─────────────────┐
+│  Browser Client │
+│  (React + TS)   │
+└────────┬────────┘
+         │ Token (localStorage)
+         │
+         ├─────────────────────────────────────┐
+         │                                     │
+    ┌────▼──────┐                 ┌───────────▼─────┐
+    │ Subscriptions│                │ Reducer Calls   │
+    │ (read)      │                │ (write)         │
+    └────┬────────┘                └────────┬────────┘
+         │                                  │
+         └──────────────┬───────────────────┘
+                        │
+                  ┌─────▼──────────┐
+                  │ SpacetimeDB    │
+                  │ Server Module  │
+                  ├─────────────────┤
+                  │ Tables:         │
+                  │ - player        │
+                  │ - room          │
+                  │ - room_member   │
+                  │ - credential    │
+                  │ - chat_message  │
+                  │ - round_stat    │
+                  │                 │
+                  │ Reducers:       │
+                  │ - register_cred │
+                  │ - create_room   │
+                  │ - join_room     │
+                  │ - send_chat     │
+                  │ - start_round   │
+                  └─────────────────┘
+```
+
+## Workflow
+
+### 1. First Time Sign Up
+- User enters username + password
+- Client derives encryption key from password (PBKDF2, 150k iterations)
+- Current SpacetimeDB token encrypted with key
+- Encrypted bundle stored in `credential` table (public, anyone can read)
+- Client's localStorage updated with original token
+
+### 2. Login
+- User enters username + password on new device
+- Client reads encrypted bundle from `credential` table
+- Derives same encryption key from password
+- Decrypts to recover original SpacetimeDB token
+- localStorage updated, page reloads with recovered identity
+
+### 3. Real-time Game State
+- Client subscribes to `room`, `room_member`, `chat_message`, `round_stat`
+- Reducer calls mutate tables on server
+- Server broadcasts changes to all subscribed clients
+- UI updates automatically as data arrives
+
+## Table of Contents
+
+- [Architecture & Design](/docs/spacetimedb/architecture) — Schema, tables, and design patterns
+- [Authentication & Security](/docs/spacetimedb/auth) — Token encryption, PBKDF2, AES-GCM
+- [Real-time Subscriptions](/docs/spacetimedb/subscriptions) — useTable hooks, filtered queries
+- [Reducers & Mutations](/docs/spacetimedb/reducers) — Server-side state changes
+- [Client Integration](/docs/spacetimedb/client) — React hooks and provider setup
+- [Account Recovery](/docs/spacetimedb/account-recovery) — Cross-device login flow
+- [Caveats & Limitations](/docs/spacetimedb/caveats) — Known issues and constraints

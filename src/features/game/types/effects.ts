@@ -1,10 +1,11 @@
 import type { ProjectileState } from "@/features/game/types/combat";
 import type { Player, TerrainState } from "@/features/game/types/entities";
-import type { GamePhase, GameScene, PlayerId, Vec2, WeaponType } from "@/features/game/types/shared";
+import type { GamePhase, GameScene, MobileType, PlayerId, Vec2, WeaponType } from "@/features/game/types/shared";
 
 export type ExplosionVisual = {
   point: Vec2;
   radius: number;
+  mobileType: MobileType;
   timer: number;
   duration: number;
 };
@@ -149,6 +150,7 @@ export type VisualEffectsState = {
   fireShake: number;
   previousBounces: number;
   lastWeapon: WeaponType;
+  lastMobileType: MobileType;
 };
 
 export type VisualEffectsInput = {

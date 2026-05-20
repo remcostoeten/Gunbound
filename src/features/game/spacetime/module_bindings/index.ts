@@ -37,24 +37,62 @@ import {
 import CreateRoomReducer from "./create_room_reducer";
 import EndRoundReducer from "./end_round_reducer";
 import JoinRoomByCodeReducer from "./join_room_by_code_reducer";
+import KickFromRoomReducer from "./kick_from_room_reducer";
 import LeaveRoomReducer from "./leave_room_reducer";
 import RecordRoundEventReducer from "./record_round_event_reducer";
+import RegisterCredentialReducer from "./register_credential_reducer";
+import SelectMobileReducer from "./select_mobile_reducer";
+import SendChatReducer from "./send_chat_reducer";
 import SetPlayerNameReducer from "./set_player_name_reducer";
+import SetReadyReducer from "./set_ready_reducer";
 import StartRoundReducer from "./start_round_reducer";
+import SubmitRoundStatsReducer from "./submit_round_stats_reducer";
+import UpdateCredentialTokenReducer from "./update_credential_token_reducer";
 
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import ChatMessageRow from "./chat_message_table";
+import CredentialRow from "./credential_table";
 import PlayerRow from "./player_table";
 import RoomRow from "./room_table";
 import RoomMemberRow from "./room_member_table";
 import RoundRow from "./round_table";
 import RoundEventRow from "./round_event_table";
+import RoundStatRow from "./round_stat_table";
 
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  chatMessage: __table({
+    name: 'chat_message',
+    indexes: [
+      { accessor: 'id', name: 'chat_message_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'chat_message_room_id', name: 'chat_message_room_id_idx_btree', algorithm: 'btree', columns: [
+        'roomId',
+      ] },
+    ],
+    constraints: [
+      { name: 'chat_message_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, ChatMessageRow),
+  credential: __table({
+    name: 'credential',
+    indexes: [
+      { accessor: 'credential_identity', name: 'credential_identity_idx_btree', algorithm: 'btree', columns: [
+        'identity',
+      ] },
+      { accessor: 'username', name: 'credential_username_idx_btree', algorithm: 'btree', columns: [
+        'username',
+      ] },
+    ],
+    constraints: [
+      { name: 'credential_username_key', constraint: 'unique', columns: ['username'] },
+    ],
+  }, CredentialRow),
   player: __table({
     name: 'player',
     indexes: [
@@ -63,6 +101,9 @@ const tablesSchema = __schema({
       ] },
       { accessor: 'player_is_online', name: 'player_is_online_idx_btree', algorithm: 'btree', columns: [
         'isOnline',
+      ] },
+      { accessor: 'player_level', name: 'player_level_idx_btree', algorithm: 'btree', columns: [
+        'level',
       ] },
     ],
     constraints: [
@@ -134,6 +175,23 @@ const tablesSchema = __schema({
       { name: 'round_event_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, RoundEventRow),
+  roundStat: __table({
+    name: 'round_stat',
+    indexes: [
+      { accessor: 'id', name: 'round_stat_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'round_stat_player_identity', name: 'round_stat_player_identity_idx_btree', algorithm: 'btree', columns: [
+        'playerIdentity',
+      ] },
+      { accessor: 'round_stat_round_id', name: 'round_stat_round_id_idx_btree', algorithm: 'btree', columns: [
+        'roundId',
+      ] },
+    ],
+    constraints: [
+      { name: 'round_stat_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, RoundStatRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
@@ -141,10 +199,17 @@ const reducersSchema = __reducers(
   __reducerSchema("create_room", CreateRoomReducer),
   __reducerSchema("end_round", EndRoundReducer),
   __reducerSchema("join_room_by_code", JoinRoomByCodeReducer),
+  __reducerSchema("kick_from_room", KickFromRoomReducer),
   __reducerSchema("leave_room", LeaveRoomReducer),
   __reducerSchema("record_round_event", RecordRoundEventReducer),
+  __reducerSchema("register_credential", RegisterCredentialReducer),
+  __reducerSchema("select_mobile", SelectMobileReducer),
+  __reducerSchema("send_chat", SendChatReducer),
   __reducerSchema("set_player_name", SetPlayerNameReducer),
+  __reducerSchema("set_ready", SetReadyReducer),
   __reducerSchema("start_round", StartRoundReducer),
+  __reducerSchema("submit_round_stats", SubmitRoundStatsReducer),
+  __reducerSchema("update_credential_token", UpdateCredentialTokenReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
