@@ -113,6 +113,52 @@ export const RoomMember = table(
 - `isReady` is toggled by the player to signal readiness before round start.
 - `mobileType` is copied from Player on join (required for `start_round` to work).
 
+### AppSetting
+Runtime feature flags controlled by reducers.
+
+```typescript
+export const AppSetting = table(
+  { name: 'app_setting', public: true },
+  {
+    key: t.string().primaryKey(),
+    value: t.string(),
+    updatedBy: t.identity().optional(),
+    updatedAt: t.timestamp(),
+  }
+);
+```
+
+**Key points:**
+- Settings are public so clients can subscribe to runtime flags.
+- Sensitive writes go through reducers, never direct client mutation.
+- `empty_data_enabled` replaces the old `NEXT_PUBLIC_EMPTY_DATA` build-time flag.
+- Values are strings so the table can hold multiple setting types without schema churn.
+
+### Admin Players
+`Player.isAdmin` marks identities allowed to call admin reducers.
+
+Bootstrap admin grants are based on credential usernames, not mutable display names. The
+server grants admin to users registered as `remco` or `remcostoeten`.
+
+```typescript
+const BOOTSTRAP_ADMIN_USERNAMES = new Set(['remco', 'remcostoeten']);
+```
+
+Admin-only reducers call `assertAdmin(ctx)` before mutating shared settings:
+
+```typescript
+export const set_empty_data_enabled = spacetimedb.reducer(
+  { enabled: t.bool() },
+  (ctx, { enabled }) => {
+    assertAdmin(ctx);
+    upsertEmptyDataSetting(ctx, enabled);
+  }
+);
+```
+
+Clients read the current setting with a normal subscription and admins call
+`setEmptyDataEnabled` through the generated reducer binding.
+
 ### ChatMessage
 Persistent chat messages within a room.
 

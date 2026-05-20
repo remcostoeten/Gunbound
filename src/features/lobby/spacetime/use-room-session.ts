@@ -3,10 +3,10 @@
 import { useCallback, useMemo } from "react";
 import { useSpacetimeDB, useTable } from "spacetimedb/react";
 
+import { parseMobileType } from "@/features/game/mobiles/mobile-factory";
 import { tables } from "@/features/game/spacetime";
 import type { Room, RoomMember } from "@/features/game/spacetime";
-
-const DEFAULT_MOBILE = "armor";
+import type { MobileType } from "@/features/game/types/shared";
 
 export type RoomChatMessage = {
   id: bigint;
@@ -21,7 +21,7 @@ export type RoomMemberView = {
   id: bigint;
   identityHex: string;
   name: string;
-  mobileType: string;
+  mobileType: MobileType | undefined;
   isReady: boolean;
   isHost: boolean;
   isSelf: boolean;
@@ -36,45 +36,47 @@ type UseRoomSessionResult = {
   isLoaded: boolean;
   sendChat(text: string): Promise<void>;
   setReady(ready: boolean): Promise<void>;
-  selectMobile(mobileType: string): Promise<void>;
+  selectMobile(mobileType: MobileType): Promise<void>;
   startRound(): Promise<void>;
   leave(): Promise<void>;
 };
 
-export function useRoomSession(roomId: bigint | undefined): UseRoomSessionResult {
+export function useRoomSession(
+  roomId: bigint | undefined,
+): UseRoomSessionResult {
   const connection = useSpacetimeDB();
   const identityHex = connection.identity?.toHexString();
 
   const roomQuery = useMemo(() => {
     if (roomId === undefined) return tables.room;
-    return tables.room.where(r => r.id.eq(roomId));
+    return tables.room.where((r) => r.id.eq(roomId));
   }, [roomId]);
 
   const [roomRows, roomReady] = useTable(roomQuery, {
-    enabled: roomId !== undefined
+    enabled: roomId !== undefined,
   });
 
   const room = useMemo<Room | undefined>(() => {
     if (roomId === undefined) return undefined;
-    return roomRows.find(r => r.id === roomId);
+    return roomRows.find((r) => r.id === roomId);
   }, [roomRows, roomId]);
 
   const memberQuery = useMemo(() => {
     if (roomId === undefined) return tables.roomMember;
-    return tables.roomMember.where(m => m.roomId.eq(roomId));
+    return tables.roomMember.where((m) => m.roomId.eq(roomId));
   }, [roomId]);
 
   const [memberRows, membersReady] = useTable(memberQuery, {
-    enabled: roomId !== undefined
+    enabled: roomId !== undefined,
   });
 
   const chatQuery = useMemo(() => {
     if (roomId === undefined) return tables.chatMessage;
-    return tables.chatMessage.where(m => m.roomId.eq(roomId));
+    return tables.chatMessage.where((m) => m.roomId.eq(roomId));
   }, [roomId]);
 
   const [chatRows, chatReady] = useTable(chatQuery, {
-    enabled: roomId !== undefined
+    enabled: roomId !== undefined,
   });
 
   const [allPlayers] = useTable(tables.player);
@@ -88,7 +90,7 @@ export function useRoomSession(roomId: bigint | undefined): UseRoomSessionResult
   const members = useMemo<RoomMemberView[]>(() => {
     if (!room) return [];
     return [...memberRows]
-      .filter(m => m.roomId === room.id)
+      .filter((m) => m.roomId === room.id)
       .sort((a, b) => {
         const ax = a.joinedAt.microsSinceUnixEpoch;
         const bx = b.joinedAt.microsSinceUnixEpoch;
@@ -103,21 +105,23 @@ export function useRoomSession(roomId: bigint | undefined): UseRoomSessionResult
           id: m.id,
           identityHex: hex,
           name: name && name.length > 0 ? name : `Player-${hex.slice(0, 4)}`,
-          mobileType: m.mobileType,
+          mobileType: parseMobileType(m.mobileType),
           isReady: m.isReady,
           isHost: hex === room.hostIdentity.toHexString(),
-          isSelf: hex === identityHex
+          isSelf: hex === identityHex,
         };
       });
   }, [memberRows, room, playerNameByHex, identityHex]);
 
-  const self = useMemo(() => members.find(m => m.isSelf), [members]);
-  const isHost = Boolean(room && identityHex && room.hostIdentity.toHexString() === identityHex);
+  const self = useMemo(() => members.find((m) => m.isSelf), [members]);
+  const isHost = Boolean(
+    room && identityHex && room.hostIdentity.toHexString() === identityHex,
+  );
 
   const chat = useMemo<RoomChatMessage[]>(() => {
     if (!room) return [];
     return [...chatRows]
-      .filter(m => m.roomId === room.id)
+      .filter((m) => m.roomId === room.id)
       .sort((a, b) => {
         const ax = a.createdAt.microsSinceUnixEpoch;
         const bx = b.createdAt.microsSinceUnixEpoch;
@@ -125,16 +129,17 @@ export function useRoomSession(roomId: bigint | undefined): UseRoomSessionResult
         if (ax < bx) return -1;
         return 0;
       })
-      .map<RoomChatMessage>(m => {
+      .map<RoomChatMessage>((m) => {
         const hex = m.senderIdentity.toHexString();
         const name = playerNameByHex.get(hex);
         return {
           id: m.id,
           authorHex: hex,
-          authorName: name && name.length > 0 ? name : `Player-${hex.slice(0, 4)}`,
+          authorName:
+            name && name.length > 0 ? name : `Player-${hex.slice(0, 4)}`,
           text: m.message,
           createdAtMicros: m.createdAt.microsSinceUnixEpoch,
-          isSelf: hex === identityHex
+          isSelf: hex === identityHex,
         };
       });
   }, [chatRows, room, playerNameByHex, identityHex]);
@@ -147,7 +152,7 @@ export function useRoomSession(roomId: bigint | undefined): UseRoomSessionResult
       if (trimmed.length === 0) return;
       await conn.reducers.sendChat({ roomId: room.id, message: trimmed });
     },
-    [connection, room]
+    [connection, room],
   );
 
   const setReady = useCallback(
@@ -156,16 +161,16 @@ export function useRoomSession(roomId: bigint | undefined): UseRoomSessionResult
       if (!conn || !room) return;
       await conn.reducers.setReady({ roomId: room.id, isReady: ready });
     },
-    [connection, room]
+    [connection, room],
   );
 
   const selectMobile = useCallback(
-    async (mobileType: string) => {
+    async (mobileType: MobileType) => {
       const conn = connection.getConnection();
       if (!conn || !room) return;
       await conn.reducers.selectMobile({ roomId: room.id, mobileType });
     },
-    [connection, room]
+    [connection, room],
   );
 
   const startRound = useCallback(async () => {
@@ -193,8 +198,6 @@ export function useRoomSession(roomId: bigint | undefined): UseRoomSessionResult
     setReady,
     selectMobile,
     startRound,
-    leave
+    leave,
   };
 }
-
-export { DEFAULT_MOBILE };

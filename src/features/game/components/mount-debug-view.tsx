@@ -150,7 +150,7 @@ export function MountDebugView(): React.JSX.Element {
 
     const position = positions[type];
     const mobileSource = getMobileSpriteSource(type);
-    const frame = getMobileSpriteFrame(visualTime + debugMobileTypes.indexOf(type) * 0.13, 6.5);
+    const frame = getMobileSpriteFrame(visualTime + debugMobileTypes.indexOf(type) * 0.13, 6.5, mobileSource.frameCount);
     const scale = type === activeMobile ? 1.45 : 1.16;
     const destinationWidth = mobileSource.width * mobileSource.battleScale * scale;
     const destinationHeight = mobileSource.height * mobileSource.battleScale * scale;

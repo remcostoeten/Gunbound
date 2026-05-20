@@ -1,7 +1,7 @@
 import type { ExplosionVisual } from "@/features/game/types/effects";
 import type { Player } from "@/features/game/types/entities";
 import type { ProjectileState } from "@/features/game/types/combat";
-import type { GamePhase, GameScene, MapType, PlayerId, TerrainTheme, Vec2 } from "@/features/game/types/shared";
+import type { GamePhase, GameScene, MapType, MobileType, PlayerId, TerrainTheme, Vec2, WeaponType } from "@/features/game/types/shared";
 
 export type CameraMode = "overview" | "player" | "projectile" | "impact";
 
@@ -50,6 +50,8 @@ export type TurnGuideCommand = {
 
 export type TurnGuideWeaponSlot = {
   slotLabel: string;
+  mobileType: MobileType;
+  weaponType: WeaponType;
   weaponLabel: string;
   detailLabel: string;
   selected: boolean;

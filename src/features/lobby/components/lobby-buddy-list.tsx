@@ -1,5 +1,6 @@
 "use client";
 
+import { Facehash } from "facehash";
 import { useLobbyData } from "../data";
 
 type Props = { onBuddyClick: (name: string) => void };
@@ -23,13 +24,20 @@ export function LobbyBuddyList({ onBuddyClick }: Props) {
           {buddies.map((b) => (
             <li key={b.name}>
               <button className="gb-buddy-row gb-buddy-btn" onClick={() => onBuddyClick(b.name)}>
+                <Facehash name={b.name} size={24} variant="gradient" showInitial={false} className="gb-buddy-face" />
                 <span
                   className="gb-flag"
                   style={{
                     background: `linear-gradient(180deg, ${b.flagColors[0]} 50%, ${b.flagColors[1]} 50%)`,
                   }}
                 >
-                  {b.flag}
+                  <img
+                    src={`/flags/${b.flag.toLowerCase()}.svg`}
+                    alt={b.flag}
+                    width={20}
+                    height={14}
+                    className="gb-flag-img"
+                  />
                 </span>
                 <span className="gb-buddy-name" style={{ color: b.nameColor }}>{b.name}</span>
                 {b.tag && <span className="gb-buddy-tag">{b.tag}</span>}

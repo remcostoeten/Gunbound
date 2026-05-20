@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { Chakra_Petch, Press_Start_2P } from "next/font/google";
 import "./globals.css";
+import "./styles/intro.css";
+import "./styles/lobby.css";
+import "./styles/auth.css";
+import "./styles/game.css";
 
 const pressStart = Press_Start_2P({
   subsets: ["latin"],
@@ -16,7 +20,11 @@ const chakraPetch = Chakra_Petch({
 
 export const metadata: Metadata = {
   title: "Gunbound Local",
-  description: "Local hot-seat artillery game"
+  description: "Local hot-seat artillery game",
+  icons: {
+    icon: "/favicon.svg",
+    apple: "/favicon.svg"
+  }
 };
 
 type RootLayoutProps = Readonly<{

@@ -57,7 +57,7 @@ export function getMobileSpriteSource(type: MobileType): SpriteSource {
     return {
       width: 64,
       height: 64,
-      frameCount: 4,
+      frameCount: 5,
       path: "/mobiles/generated/dragon-sheet.png",
       previewScale: 1.08,
       previewTranslateX: -2,
@@ -75,7 +75,7 @@ export function getMobileSpriteSource(type: MobileType): SpriteSource {
     return {
       width: 64,
       height: 64,
-      frameCount: 4,
+      frameCount: 5,
       path: "/mobiles/generated/trico-sheet.png",
       previewScale: 1.08,
       previewTranslateX: -1,
@@ -214,8 +214,8 @@ export function getMobileSpriteSource(type: MobileType): SpriteSource {
   };
 }
 
-export function getMobileSpriteFrame(time: number, speed: number): number {
-  const frame = Math.floor(time * speed) % 4;
+export function getMobileSpriteFrame(time: number, speed: number, frameCount = 4): number {
+  const frame = Math.floor(time * speed) % frameCount;
   if (frame < 0) {
     return 0;
   }

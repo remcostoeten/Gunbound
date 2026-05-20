@@ -5,6 +5,7 @@ import { createAudioEventTracker, deriveAudioEvents } from "@/features/game/engi
 import { useGameStore } from "@/features/game/store/game-store";
 import type { AudioCue, AudioEventTracker } from "@/features/game/engine/audio-events";
 import type { GameState } from "@/features/game/types/state";
+import { getAudioVolume, subscribeAudioSettings } from "@/lib/audio-settings";
 
 type AudioPool = {
   context: AudioContext | null;
@@ -14,18 +15,44 @@ type AudioPool = {
   sounds: Record<string, HTMLAudioElement>;
 };
 
+const BASE_SFX_GAIN = 0.14;
+const BASE_MUSIC_GAIN = 0.08;
+const BASE_BG_MUSIC_VOLUME = 0.12;
+
 const SOUND_PATHS: Record<string, string> = {
   "match-intro": "/sounds/anos-de-gunbound.mp3",
   "super-shot": "/sounds/super-shot.mp3",
   great: "/sounds/great.mp3",
-  "muy-bien": "/sounds/muy-bien.mp3",
-  adios: "/sounds/adios.mp3",
-  bien: "/sounds/bien.mp3",
-  hola: "/sounds/hola.mp3",
-  gracias: "/sounds/gracias.mp3",
-  ayuda: "/sounds/ayuda.mp3",
-  "dios-mio": "/sounds/dios-mio.mp3",
-  noobie: "/sounds/noobie.mp3",
+  "muy-bien": "/sounds/fantastic.mp3",
+  adios: "/sounds/bye-m.mp3",
+  bien: "/sounds/turn.mp3",
+  hola: "/sounds/hi-m.mp3",
+  gracias: "/sounds/thanks-m.mp3",
+  ayuda: "/sounds/help-m.mp3",
+  "dios-mio": "/sounds/omg-m.mp3",
+  noobie: "/sounds/noob-m.mp3",
+  "critical-hit": "/sounds/critical-hit.mp3",
+  "critical-oh-yes": "/sounds/critical-oh-yes.mp3",
+  "critical-yes": "/sounds/critical-yes.mp3",
+  gold: "/sounds/gold.mp3",
+  "level-up": "/sounds/level-up.mp3",
+  lose: "/sounds/lose.mp3",
+  win: "/sounds/win.mp3",
+  unbelievable: "/sounds/unbelievable.mp3",
+  "bye-f": "/sounds/bye-f.mp3",
+  "help-f": "/sounds/help-f.mp3",
+  "hi-f": "/sounds/hi-f.mp3",
+  "nice-shot-f": "/sounds/nice-shot-f.mp3",
+  "nice-shot-m": "/sounds/nice-shot-m.mp3",
+  "nice-try-f": "/sounds/nice-try-f.mp3",
+  "nice-try-m": "/sounds/nice-try-m.mp3",
+  "noob-f": "/sounds/noob-f.mp3",
+  "omg-f": "/sounds/omg-f.mp3",
+  "sorry-f": "/sounds/sorry-f.mp3",
+  "sorry-m": "/sounds/sorry-m.mp3",
+  "thanks-f": "/sounds/thanks-f.mp3",
+  "v-nice-shot-f": "/sounds/v-nice-shot-f.mp3",
+  "v-nice-shot-m": "/sounds/v-nice-shot-m.mp3",
 };
 
 export const lobbyMatchStartAudioEvent = "gunbound:lobby-match-start";
@@ -59,6 +86,14 @@ export function useGunboundSfx(): void {
       window.removeEventListener("pointerdown", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
     };
+  }, []);
+
+  useEffect(function bindAudioSettings(): () => void {
+    function syncAudioVolumes(): void {
+      applyAudioVolumes(poolRef.current);
+    }
+
+    return subscribeAudioSettings(syncAudioVolumes);
   }, []);
 
   useEffect(function startLobbyMusicImmediately(): void {
@@ -109,16 +144,17 @@ function ensureAudio(pool: AudioPool): void {
     if (pool.context.state === "suspended") {
       void pool.context.resume();
     }
+    applyAudioVolumes(pool);
     return;
   }
 
   const context = new window.AudioContext();
   const gain = context.createGain();
-  gain.gain.value = 0.14;
+  gain.gain.value = BASE_SFX_GAIN * getAudioVolume("sfx");
   gain.connect(context.destination);
 
   const musicGain = context.createGain();
-  musicGain.gain.value = 0.08;
+  musicGain.gain.value = BASE_MUSIC_GAIN * getAudioVolume("music");
   musicGain.connect(context.destination);
 
   pool.context = context;
@@ -145,7 +181,7 @@ function startLobbyMusic(pool: AudioPool): void {
   const audio = new Audio("/sounds/lounge.mp3");
   audio.loop = true;
   audio.preload = "auto";
-  audio.volume = 0.12;
+  audio.volume = BASE_BG_MUSIC_VOLUME * getAudioVolume("music");
   void audio
     .play()
     .then(function handleLobbyMusicStarted(): void {
@@ -172,7 +208,7 @@ function resumeLobbyMusicIfNeeded(pool: AudioPool): void {
 function playSfx(pool: AudioPool, name: string): void {
   if (!pool.sounds[name]) return;
   const clone = pool.sounds[name].cloneNode() as HTMLAudioElement;
-  clone.volume = getSfxVolume(name);
+  clone.volume = getSfxVolume(name) * getAudioVolume("sfx");
   clone.play().catch(() => {});
 }
 
@@ -195,6 +231,8 @@ function syncAudioState(
   const gain = pool.gain;
 
   if (context === null || gain === null) return;
+
+  applyAudioVolumes(pool);
 
   routeSceneState(pool, state.scene, prevSceneRef, lobbyStartedRef, lobbyMatchStartCueAtRef, windAmbientNodeRef, context, gain);
 
@@ -303,6 +341,20 @@ function routeAudioCues(
       playSfx(pool, "adios");
     }
     index += 1;
+  }
+}
+
+function applyAudioVolumes(pool: AudioPool): void {
+  if (pool.gain !== null) {
+    pool.gain.gain.value = BASE_SFX_GAIN * getAudioVolume("sfx");
+  }
+
+  if (pool.musicGain !== null) {
+    pool.musicGain.gain.value = BASE_MUSIC_GAIN * getAudioVolume("music");
+  }
+
+  if (pool.bgMusic !== null) {
+    pool.bgMusic.volume = BASE_BG_MUSIC_VOLUME * getAudioVolume("music");
   }
 }
 

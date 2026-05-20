@@ -37,7 +37,8 @@ export function Hud(): React.JSX.Element {
         <div className="hud-card">
           <span className="player-name">{players[0].name}</span>
           <div className="hud-player-identity">
-            <span className={"hud-accent-chip accent-" + players[0].accent} />
+            <img className="hud-accent-chip" src={"/badges/accent-" + players[0].accent + ".svg"} alt="" width={12} height={12} />
+            <img className="hud-title-badge" src={"/badges/badge-" + players[0].title.toLowerCase() + ".svg"} alt="" width={16} height={16} />
             <span>{players[0].title}</span>
           </div>
           <div className="hud-player-row">
@@ -70,7 +71,8 @@ export function Hud(): React.JSX.Element {
         <div className="hud-card right">
           <span className="player-name">{players[1].name}</span>
           <div className="hud-player-identity">
-            <span className={"hud-accent-chip accent-" + players[1].accent} />
+            <img className="hud-accent-chip" src={"/badges/accent-" + players[1].accent + ".svg"} alt="" width={12} height={12} />
+            <img className="hud-title-badge" src={"/badges/badge-" + players[1].title.toLowerCase() + ".svg"} alt="" width={16} height={16} />
             <span>{players[1].title}</span>
           </div>
           <div className="hud-player-row">

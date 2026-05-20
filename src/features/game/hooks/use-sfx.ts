@@ -2,11 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import { useGameStore } from "@/features/game/store/game-store";
+import { getAudioVolume, subscribeAudioSettings } from "@/lib/audio-settings";
 
 type AudioHandles = {
   context: AudioContext | null;
   gain: GainNode | null;
 };
+
+const BASE_SFX_GAIN = 0.14;
 
 export function useSfx(): void {
   const audioRef = useRef<AudioHandles>({
@@ -19,6 +22,7 @@ export function useSfx(): void {
   const explosionTimerRef = useRef(0);
   const rafRef = useRef(0);
   useEffect(bindAudioBootstrap, []);
+  useEffect(bindAudioSettings, []);
   useEffect(startPolling, []);
 
   function bindAudioBootstrap(): CleanupHandler {
@@ -33,6 +37,12 @@ export function useSfx(): void {
       window.removeEventListener("pointerdown", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
     };
+  }
+
+  function bindAudioSettings(): CleanupHandler {
+    return subscribeAudioSettings(function syncSfxVolume(): void {
+      applyAudioSettings(audioRef.current);
+    });
   }
 
   function startPolling(): CleanupHandler {
@@ -58,15 +68,24 @@ function ensureAudio(handles: AudioHandles): void {
     if (handles.context.state === "suspended") {
       void handles.context.resume();
     }
+    applyAudioSettings(handles);
     return;
   }
 
   const context = new window.AudioContext();
   const gain = context.createGain();
-  gain.gain.value = 0.14;
+  gain.gain.value = BASE_SFX_GAIN * getAudioVolume("sfx");
   gain.connect(context.destination);
   handles.context = context;
   handles.gain = gain;
+}
+
+function applyAudioSettings(handles: AudioHandles): void {
+  if (handles.gain === null) {
+    return;
+  }
+
+  handles.gain.gain.value = BASE_SFX_GAIN * getAudioVolume("sfx");
 }
 
 function syncAudioState(

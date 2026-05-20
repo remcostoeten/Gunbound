@@ -1,0 +1,137 @@
+---
+title: Mobile Architecture
+description: How Gunbound defines, validates, and selects mobiles across game and lobby code.
+---
+
+The mobile system has one domain boundary: game code owns the valid mobiles, while lobby
+and SpacetimeDB code pass mobile selections around. Keep string values from the database at
+the edge, then validate them before exposing them as game-facing types.
+
+## Core Files
+
+| File | Responsibility |
+| --- | --- |
+| `src/features/game/types/shared.ts` | Defines the `MobileType` union used by game code. |
+| `src/features/game/constants/mobile-presentation.ts` | Holds display metadata for every mobile. |
+| `src/features/game/mobiles/mobile-factory.ts` | Provides the mobile catalog, defaults, random selection, and validation helpers. |
+| `src/features/lobby/spacetime/use-room-session.ts` | Maps raw SpacetimeDB room rows into lobby view models. |
+| `src/features/lobby/components/lobby-room-modal.tsx` | Uses the factory default when a player has not selected a mobile yet. |
+
+## Why A Factory Exists
+
+The database stores mobile selections as strings because SpacetimeDB bindings expose
+`RoomMember.mobileType` as `string`. The game should not treat every string as a valid
+mobile. The factory gives the app one place to answer these questions:
+
+- What mobiles exist?
+- What mobile should a new player receive by default?
+- How do we pick a random mobile?
+- Is this raw string a valid `MobileType`?
+
+## Factory API
+
+Use the factory instead of hardcoding `"armor"` or duplicating mobile arrays in lobby code.
+
+```typescript
+import {
+  DEFAULT_MOBILE,
+  getRandomMobileType,
+  isMobileType,
+  listAvailableMobiles,
+  parseMobileType,
+} from "@/features/game/mobiles/mobile-factory";
+
+const fallback = DEFAULT_MOBILE;
+const random = getRandomMobileType();
+const options = listAvailableMobiles();
+
+if (isMobileType(rawValue)) {
+  // rawValue is narrowed to MobileType here.
+}
+
+const mobile = parseMobileType(rawValue);
+```
+
+`parseMobileType` returns `MobileType | undefined`. Use `undefined` to represent an empty,
+missing, or invalid selection in client view models.
+
+## Selection Flow
+
+When a player opens a room, the lobby checks the current room member row. If the row has no
+valid mobile, the modal selects the shared default from the factory.
+
+```typescript
+import { DEFAULT_MOBILE } from "@/features/game/mobiles/mobile-factory";
+
+if (session.self.mobileType === undefined) {
+  await session.selectMobile(DEFAULT_MOBILE);
+}
+```
+
+This keeps the lobby behavior stable while removing the local `DEFAULT_MOBILE = "armor"`
+constant from room session code.
+
+## Database Boundary
+
+SpacetimeDB rows still arrive with `mobileType: string`. The lobby session hook validates
+that raw value before returning `RoomMemberView`.
+
+```typescript
+import { parseMobileType } from "@/features/game/mobiles/mobile-factory";
+
+const memberView = {
+  id: row.id,
+  mobileType: parseMobileType(row.mobileType),
+};
+```
+
+The resulting type is:
+
+```typescript
+type RoomMemberView = {
+  mobileType: MobileType | undefined;
+};
+```
+
+That is intentional. A player can be unselected, or the database can contain a stale value
+from an older mobile list. Both cases should be handled explicitly.
+
+## Ready Checks
+
+Because invalid or missing mobile selections become `undefined`, readiness checks should
+test for a real mobile instead of checking string length.
+
+```typescript
+const everyoneReady =
+  session.members.length === room.capacity &&
+  session.members.every((member) => (
+    member.isReady && member.mobileType !== undefined
+  ));
+```
+
+## Adding A Mobile
+
+To add a new mobile:
+
+1. Add the literal to `MobileType` in `src/features/game/types/shared.ts`.
+2. Add its presentation entry to `mobilePresentationMap`.
+3. Add it to `mobilePresentationOptions`.
+4. Use `listAvailableMobiles()` anywhere the UI needs a catalog.
+5. Let `parseMobileType()` protect lobby and SpacetimeDB boundaries.
+
+Do not add a second lobby-specific mobile array. If a screen needs mobile options, it should
+come from the factory or the presentation options derived from the same game catalog.
+
+## Random Defaults
+
+Use `getRandomMobileType()` only at the moment you need a new choice.
+
+```typescript
+import { getRandomMobileType } from "@/features/game/mobiles/mobile-factory";
+
+await session.selectMobile(getRandomMobileType());
+```
+
+Avoid storing a random mobile in a top-level module constant. That would make the value depend
+on when the module was evaluated rather than on a clear player action or room event.
+

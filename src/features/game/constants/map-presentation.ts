@@ -4,6 +4,7 @@ export type MapPresentation = {
   value: MapType;
   label: string;
   description: string;
+  previewImage: string;
   theme: TerrainTheme;
 };
 
@@ -12,24 +13,28 @@ const mapPresentationList: MapPresentation[] = [
     value: "rolling",
     label: "Rolling Meadow",
     description: "Balanced hills with steady firing lanes and soft cover.",
+    previewImage: "/maps/rolling-meadow.png",
     theme: "meadow"
   },
   {
     value: "canyon",
     label: "Sunset Canyon",
     description: "Wide basin with steep side walls and punishing low ground.",
+    previewImage: "/maps/sunset-canyon.png",
     theme: "sunset"
   },
   {
     value: "crater",
     label: "Moon Crater",
     description: "Central bowl that drags both players into close artillery exchanges.",
+    previewImage: "/maps/moon-crater.png",
     theme: "midnight"
   },
   {
     value: "ridge",
     label: "Ridge Line",
     description: "Jagged peaks and shelves that reward angle control.",
+    previewImage: "/maps/ridge-line.png",
     theme: "sunset"
   }
 ];

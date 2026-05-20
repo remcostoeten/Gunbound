@@ -3,9 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "next build",
-    "dev": "next dev",
-    "start": "next start",
+    "build": "NODE_ENV=production && bun --bun next build",
+    "dev": "bun --bun next dev",
+    "start": "bun --bun next start",
     "types:check": "fumadocs-mdx && next typegen && tsc --noEmit",
     "postinstall": "fumadocs-mdx"
   },
@@ -43,3 +43,4 @@
     "@types/hast": "^3.0.4"
   }
 }
+

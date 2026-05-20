@@ -31,6 +31,19 @@ import {
 import { selectHistory } from "@/features/game/store/selectors/history-selectors";
 import type { MatchConfig } from "@/features/game/types/state";
 import type { MapType, MobileType, PlayerAccent, PlayerTitle } from "@/features/game/types/shared";
+import { getBattleImmersive, subscribeDisplaySettings } from "@/lib/display-settings";
+import { registerTrack, playTrack, stopAll } from "@/lib/music-bus";
+
+const BATTLE_TRACKS = [
+    { id: "battle-01", src: "/audio/battle/01-Waterfall.mp3" },
+    { id: "battle-02", src: "/audio/battle/02-Dual fight.mp3" },
+    { id: "battle-03", src: "/audio/battle/03-Spirit's dance.mp3" },
+    { id: "battle-04", src: "/audio/battle/04-Space odyssey.mp3" },
+    { id: "battle-05", src: "/audio/battle/05-Waiting room.mp3" },
+    { id: "battle-06", src: "/audio/battle/06-Machin factory.mp3" },
+    { id: "battle-07", src: "/audio/battle/07-Chatting room.mp3" },
+    { id: "battle-08", src: "/audio/battle/08-Reggae party.mp3" },
+];
 
 const TITLE_OPTIONS: PlayerTitle[] = ["Captain", "Raider", "Engineer", "Oracle"];
 const ACCENT_OPTIONS: PlayerAccent[] = ["sky", "coral", "mint", "gold"];
@@ -160,10 +173,26 @@ export function GameShell() {
     const [showLobbyEntry, setShowLobbyEntry] = useState(true);
     const [matchStarting, setMatchStarting] = useState(false);
     const [showLobbyAudioNotice, setShowLobbyAudioNotice] = useState(false);
+    const [battleImmersive, setBattleImmersiveState] = useState(function initialBattleImmersive(): boolean {
+        return getBattleImmersive();
+    });
     const matchStartTimeoutRef = useRef<number | null>(null);
     const lobbyEntryTimeoutRef = useRef<number | null>(null);
     const hasShownLobbyEntryRef = useRef(false);
     useGunboundSfx();
+
+    useEffect(function manageBattleBgm(): void {
+        BATTLE_TRACKS.forEach((t) => registerTrack(t.id, t.src, 0.45));
+    }, []);
+
+    useEffect(function syncBattleBgm(): void {
+        if (scene === "playing") {
+            const pick = BATTLE_TRACKS[Math.floor(Math.random() * BATTLE_TRACKS.length)];
+            playTrack(pick.id);
+        } else {
+            stopAll();
+        }
+    }, [scene]);
 
     useEffect(function resetPendingMatchStart(): void {
         if (scene !== "start") {
@@ -253,8 +282,16 @@ export function GameShell() {
         }
     }, [scene]);
 
+    useEffect(function bindBattleImmersiveSetting(): () => void {
+        function syncBattleImmersive(): void {
+            setBattleImmersiveState(getBattleImmersive());
+        }
+
+        return subscribeDisplaySettings(syncBattleImmersive);
+    }, []);
+
     return (
-        <main className="game-shell">
+        <main className={battleImmersive ? "game-shell game-shell--immersive" : "game-shell"}>
             <GameCanvas />
             {scene === "playing" ? <Hud /> : null}
             {scene === "playing" ? <HistoryPanel /> : null}
@@ -730,11 +767,12 @@ function renderChannelScreen(
                                     className="channel-chat-row"
                                 >
                                     <div className="channel-chat-meta">
-                                        <span
-                                            className={
-                                                "channel-chat-accent accent-" +
-                                                message.accent
-                                            }
+                                        <img
+                                            className="channel-chat-accent"
+                                            src={"/badges/accent-" + message.accent + ".svg"}
+                                            alt=""
+                                            width={8}
+                                            height={8}
                                         />
                                         <span className="channel-chat-author">
                                             {message.author}
@@ -920,7 +958,8 @@ function renderLobbyPlayer(
                 </div>
             </div>
             <div className="lobby-player-identity">
-                <span className={"lobby-player-accent-chip accent-" + accent} />
+                <img className="lobby-player-accent-chip" src={"/badges/accent-" + accent + ".svg"} alt="" width={12} height={12} />
+                <img className="lobby-title-badge" src={"/badges/badge-" + title.toLowerCase() + ".svg"} alt="" width={16} height={16} />
                 <span className="lobby-player-title-preview">
                     {title} {name.trim() || "Player " + String(slot)}
                 </span>

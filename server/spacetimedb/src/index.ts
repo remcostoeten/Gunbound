@@ -1,7 +1,10 @@
 import spacetimedb from './schema';
 import { t, SenderError } from 'spacetimedb/server';
+import type { InferSchema, ReducerCtx } from 'spacetimedb/server';
 
 export { default } from './schema';
+
+type ModuleContext = ReducerCtx<InferSchema<typeof spacetimedb>>;
 
 const ROOM_STATUS_WAITING = 'waiting';
 const ROOM_STATUS_IN_ROUND = 'in_round';
@@ -13,6 +16,8 @@ const ROUND_STATUS_FINISHED = 'finished';
 const ROOM_MAX_MEMBERS = 2;
 const CHAT_MESSAGE_MAX_LENGTH = 200;
 const MICROS_PER_DAY = 86_400n * 1_000_000n;
+const EMPTY_DATA_SETTING_KEY = 'empty_data_enabled';
+const BOOTSTRAP_ADMIN_USERNAMES = new Set(['remco', 'remcostoeten']);
 
 const VALID_MOBILE_TYPES = new Set([
   'armor', 'knight', 'dragon', 'snow', 'trico', 'aduko',
@@ -21,6 +26,54 @@ const VALID_MOBILE_TYPES = new Set([
 
 const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/;
 const ENCRYPTED_TOKEN_MAX_LENGTH = 2048;
+
+function isBootstrapAdminUsername(username: string): boolean {
+  return BOOTSTRAP_ADMIN_USERNAMES.has(username.trim().toLowerCase());
+}
+
+function hasBootstrapAdminCredential(ctx: ModuleContext, identity: { toHexString(): string }): boolean {
+  const target = identity.toHexString();
+  for (const credential of ctx.db.credential.iter()) {
+    if (
+      credential.identity.toHexString() === target &&
+      isBootstrapAdminUsername(credential.username)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isAdmin(ctx: ModuleContext): boolean {
+  const player = ctx.db.player.identity.find(ctx.sender);
+  return player?.isAdmin === true || hasBootstrapAdminCredential(ctx, ctx.sender);
+}
+
+function assertAdmin(ctx: ModuleContext): void {
+  if (!isAdmin(ctx)) throw new SenderError('admin privileges required');
+}
+
+function upsertEmptyDataSetting(ctx: ModuleContext, enabled: boolean): void {
+  const value = enabled ? 'true' : 'false';
+  const existing = ctx.db.appSetting.key.find(EMPTY_DATA_SETTING_KEY);
+
+  if (existing) {
+    ctx.db.appSetting.key.update({
+      ...existing,
+      value,
+      updatedBy: ctx.sender,
+      updatedAt: ctx.timestamp
+    });
+    return;
+  }
+
+  ctx.db.appSetting.insert({
+    key: EMPTY_DATA_SETTING_KEY,
+    value,
+    updatedBy: ctx.sender,
+    updatedAt: ctx.timestamp
+  });
+}
 
 function isqrt(n: bigint): bigint {
   if (n <= 0n) return 0n;
@@ -41,7 +94,16 @@ function computeRoundXp(isWinner: boolean, isDraw: boolean, damageDealt: number,
   return base + damageBonus + accuracyBonus;
 }
 
-export const init = spacetimedb.init(_ctx => {});
+export const init = spacetimedb.init(ctx => {
+  if (!ctx.db.appSetting.key.find(EMPTY_DATA_SETTING_KEY)) {
+    ctx.db.appSetting.insert({
+      key: EMPTY_DATA_SETTING_KEY,
+      value: 'false',
+      updatedBy: undefined,
+      updatedAt: ctx.timestamp
+    });
+  }
+});
 
 /**
  * Upserts the `player` row for the connecting identity.
@@ -74,7 +136,8 @@ export const onClientConnected = spacetimedb.clientConnected(ctx => {
       longestStreak,
       lastLoginDay: currentDay,
       xp,
-      level
+      level,
+      isAdmin: existing.isAdmin || hasBootstrapAdminCredential(ctx, ctx.sender)
     });
     return;
   }
@@ -91,7 +154,8 @@ export const onClientConnected = spacetimedb.clientConnected(ctx => {
     lastLoginDay: currentDay,
     totalWins: 0,
     totalLosses: 0,
-    totalRoundsPlayed: 0
+    totalRoundsPlayed: 0,
+    isAdmin: hasBootstrapAdminCredential(ctx, ctx.sender)
   });
 });
 
@@ -145,8 +209,23 @@ export const set_player_name = spacetimedb.reducer(
       lastLoginDay: currentDay,
       totalWins: 0,
       totalLosses: 0,
-      totalRoundsPlayed: 0
+      totalRoundsPlayed: 0,
+      isAdmin: hasBootstrapAdminCredential(ctx, ctx.sender)
     });
+  }
+);
+
+/**
+ * Admin-only: toggles whether lobby fixture data should be hidden.
+ *
+ * This replaces the old client-side `NEXT_PUBLIC_EMPTY_DATA` flag with
+ * runtime server state so an admin can change it without rebuilding.
+ */
+export const set_empty_data_enabled = spacetimedb.reducer(
+  { enabled: t.bool() },
+  (ctx, { enabled }) => {
+    assertAdmin(ctx);
+    upsertEmptyDataSetting(ctx, enabled);
   }
 );
 
@@ -631,8 +710,12 @@ export const register_credential = spacetimedb.reducer(
     });
 
     const player = ctx.db.player.identity.find(ctx.sender);
-    if (player && player.name === '') {
-      ctx.db.player.identity.update({ ...player, name: trimmed });
+    if (player) {
+      ctx.db.player.identity.update({
+        ...player,
+        name: player.name === '' ? trimmed : player.name,
+        isAdmin: player.isAdmin || isBootstrapAdminUsername(trimmed)
+      });
     }
   }
 );

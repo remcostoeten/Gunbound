@@ -1,5 +1,6 @@
 "use client";
 
+import { Facehash } from "facehash";
 import { useLobbyData } from "../data";
 import { useCurrentPlayer } from "@/features/game/spacetime";
 
@@ -32,14 +33,16 @@ export function LobbyPlayerCard() {
         <div className="gb-player-art gb-player-art-empty">
           <div className="gb-player-art-glow" />
           <div className="gb-empty-tile">
-            <span className="gb-empty-glyph">🎮</span>
+            <Facehash name={name} size={70} variant="gradient" />
             <span className="gb-empty-sub">No profile yet</span>
           </div>
         </div>
       ) : (
         <div className="gb-player-art">
           <div className="gb-player-art-glow" />
-          <div className="gb-player-art-mascot">{base.mascot ?? "🎮"}</div>
+          <div className="gb-player-art-mascot">
+            <Facehash name={name} size={70} variant="gradient" />
+          </div>
         </div>
       )}
       <div className="gb-stats">

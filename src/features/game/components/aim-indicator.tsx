@@ -1,6 +1,7 @@
 "use client";
 
 import { createTurnGuide } from "@/features/game/engine/action-guide";
+import { getWeaponIconPath } from "@/features/game/constants/weapon-icons";
 import { useGameState } from "@/features/game/hooks/use-game-state";
 import {
   selectCharging,
@@ -27,7 +28,10 @@ export function AimIndicator(): React.JSX.Element {
     <div className={"aim-card tone-" + turnGuide.tone}>
       <div className="aim-card-top">
         <div className="aim-card-copy">
-          <span className="aim-kicker">{player.title} Command</span>
+          <span className="aim-kicker">
+            <img className="aim-title-badge" src={"/badges/badge-" + player.title.toLowerCase() + ".svg"} alt="" width={16} height={16} />
+            {player.title} Command
+          </span>
           <span className="aim-headline">{turnGuide.headline}</span>
         </div>
         <div className="aim-card-phase">
@@ -73,8 +77,17 @@ function renderWeaponSlot(slot: ReturnType<typeof createTurnGuide>["weaponSlots"
   return (
     <div key={slot.slotLabel} className={getWeaponSlotClassName(slot.selected, slot.available)}>
       <span className="aim-shot-slot">{slot.slotLabel}</span>
-      <span className="aim-shot-name">{slot.weaponLabel}</span>
-      <span className="aim-shot-detail">{slot.detailLabel}</span>
+      <span className="aim-shot-icon-frame" aria-hidden="true">
+        <img
+          className="aim-shot-icon"
+          src={getWeaponIconPath(slot.mobileType, slot.weaponType)}
+          alt=""
+        />
+      </span>
+      <span className="aim-shot-copy">
+        <span className="aim-shot-name">{slot.weaponLabel}</span>
+        <span className="aim-shot-detail">{slot.detailLabel}</span>
+      </span>
     </div>
   );
 }

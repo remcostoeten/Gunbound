@@ -10,6 +10,14 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const AppSetting = __t.object("AppSetting", {
+  key: __t.string(),
+  value: __t.string(),
+  updatedBy: __t.option(__t.identity()),
+  updatedAt: __t.timestamp(),
+});
+export type AppSetting = __Infer<typeof AppSetting>;
+
 export const ChatMessage = __t.object("ChatMessage", {
   id: __t.u64(),
   roomId: __t.u64(),
@@ -41,6 +49,7 @@ export const Player = __t.object("Player", {
   totalWins: __t.u32(),
   totalLosses: __t.u32(),
   totalRoundsPlayed: __t.u32(),
+  isAdmin: __t.option(__t.bool()),
 });
 export type Player = __Infer<typeof Player>;
 
