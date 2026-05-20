@@ -1,0 +1,99 @@
+"use client";
+
+import { useCallback, useMemo } from "react";
+import { useSpacetimeDB, useTable } from "spacetimedb/react";
+
+import { tables } from "@/features/game/spacetime";
+import { generateRoomCode, generateSeed } from "./generate-code";
+
+const ROOM_STATUS_ENDED = "ended";
+const ROOM_CAPACITY = 2;
+
+export type LobbyRoomView = {
+  id: bigint;
+  code: string;
+  status: "waiting" | "in_round";
+  hostIdentityHex: string;
+  hostName: string;
+  memberCount: number;
+  capacity: number;
+  createdAtMicros: bigint;
+};
+
+type CreateOptions = { code?: string };
+
+export function useLobbyRooms() {
+  const connection = useSpacetimeDB();
+  const [allRooms, roomsReady] = useTable(tables.room);
+  const [allMembers] = useTable(tables.roomMember);
+  const [allPlayers] = useTable(tables.player);
+
+  const rooms = useMemo<LobbyRoomView[]>(() => {
+    const memberCount = new Map<string, number>();
+    for (const m of allMembers) {
+      const key = m.roomId.toString();
+      memberCount.set(key, (memberCount.get(key) ?? 0) + 1);
+    }
+
+    const playerNameByHex = new Map<string, string>();
+    for (const p of allPlayers) {
+      playerNameByHex.set(p.identity.toHexString(), p.name);
+    }
+
+    return allRooms
+      .filter(r => r.status !== ROOM_STATUS_ENDED)
+      .sort((a, b) => {
+        const ax = a.createdAt.microsSinceUnixEpoch;
+        const bx = b.createdAt.microsSinceUnixEpoch;
+        if (bx > ax) return 1;
+        if (bx < ax) return -1;
+        return 0;
+      })
+      .map(r => {
+        const hex = r.hostIdentity.toHexString();
+        const name = playerNameByHex.get(hex) ?? "";
+        return {
+          id: r.id,
+          code: r.code,
+          status: r.status === "in_round" ? "in_round" : "waiting",
+          hostIdentityHex: hex,
+          hostName: name.length > 0 ? name : `Host-${hex.slice(0, 4)}`,
+          memberCount: memberCount.get(r.id.toString()) ?? 0,
+          capacity: ROOM_CAPACITY,
+          createdAtMicros: r.createdAt.microsSinceUnixEpoch
+        } satisfies LobbyRoomView;
+      });
+  }, [allRooms, allMembers, allPlayers]);
+
+  const createRoom = useCallback(
+    async (options: CreateOptions = {}): Promise<string> => {
+      const conn = connection.getConnection();
+      if (!conn) throw new Error("not connected");
+      const code = (options.code ?? generateRoomCode()).trim().toUpperCase();
+      await conn.reducers.createRoom({ code, seed: generateSeed() });
+      return code;
+    },
+    [connection]
+  );
+
+  const joinRoomByCode = useCallback(
+    async (code: string): Promise<void> => {
+      const conn = connection.getConnection();
+      if (!conn) throw new Error("not connected");
+      await conn.reducers.joinRoomByCode({ code: code.trim().toUpperCase() });
+    },
+    [connection]
+  );
+
+  const quickJoin = useCallback(async (): Promise<LobbyRoomView | null> => {
+    const candidates = rooms.filter(
+      r => r.status === "waiting" && r.memberCount < r.capacity
+    );
+    if (candidates.length === 0) return null;
+    const target = candidates[Math.floor(Math.random() * candidates.length)];
+    await joinRoomByCode(target.code);
+    return target;
+  }, [rooms, joinRoomByCode]);
+
+  return { rooms, roomsReady, createRoom, joinRoomByCode, quickJoin };
+}

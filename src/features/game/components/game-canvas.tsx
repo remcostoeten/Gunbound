@@ -3,6 +3,8 @@
 import { useEffect, useRef } from "react";
 import { createCameraRig, getCameraFrame, stepCameraRig } from "@/features/game/engine/camera";
 import { createVisualEffectsState, stepVisualEffectsState } from "@/features/game/engine/effects";
+import { createMapDecor } from "@/features/game/engine/map-decor";
+import { createProjectileRenderStyle, getProjectileImpactStyle, getProjectileTrailStyle } from "@/features/game/engine/projectile-presentation";
 import { getSkyPalette, getTerrainPalette } from "@/features/game/engine/terrain-theme";
 import { getMobileSpriteFrame, getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
 import { getLaunchRadians, getMuzzlePosition } from "@/features/game/engine/physics";
@@ -29,14 +31,21 @@ import type {
   VisualEffectsState,
   WindLeaf
 } from "@/features/game/types/effects";
-import type { CameraFrame } from "@/features/game/types/presentation";
-import type { MobileType, PlayerAccent, TerrainTheme, Vec2, WeaponType } from "@/features/game/types/shared";
+import type { CameraFrame, MapDecorPlan, MapDecorPrimitive } from "@/features/game/types/presentation";
+import type { MobileType, PlayerAccent, TerrainTheme, Vec2 } from "@/features/game/types/shared";
 
 type SpriteCache = {
   armor: HTMLImageElement | null;
   knight: HTMLImageElement | null;
   dragon: HTMLImageElement | null;
   snow: HTMLImageElement | null;
+  trico: HTMLImageElement | null;
+  aduko: HTMLImageElement | null;
+  mage: HTMLImageElement | null;
+  nak: HTMLImageElement | null;
+  turtle: HTMLImageElement | null;
+  frog: HTMLImageElement | null;
+  sate: HTMLImageElement | null;
   dragonRider: HTMLImageElement | null;
 };
 
@@ -48,6 +57,11 @@ type ExplosionSpriteSpec = {
 };
 
 type ExplosionSpriteCache = Record<ExplosionSpriteSheet, HTMLImageElement | null>;
+
+type MapDecorCache = {
+  key: string;
+  plan: MapDecorPlan | null;
+};
 
 const explosionSpriteSpecs: Record<ExplosionSpriteSheet, ExplosionSpriteSpec> = {
   "aduka-thor": {
@@ -100,11 +114,22 @@ export function GameCanvas(): React.JSX.Element {
   const visualTimeRef = useRef(0);
   const cameraRigRef = useRef(createCameraRig());
   const visualEffectsRef = useRef<VisualEffectsState>(createVisualEffectsState());
+  const mapDecorRef = useRef<MapDecorCache>({
+    key: "",
+    plan: null
+  });
   const spriteCacheRef = useRef<SpriteCache>({
     armor: null,
     knight: null,
     dragon: null,
     snow: null,
+    trico: null,
+    aduko: null,
+    mage: null,
+    nak: null,
+    turtle: null,
+    frog: null,
+    sate: null,
     dragonRider: null
   });
   const explosionSpriteCacheRef = useRef<ExplosionSpriteCache>(createExplosionSpriteCache());
@@ -149,6 +174,7 @@ export function GameCanvas(): React.JSX.Element {
       visualTime: visualTimeRef.current
     });
     const visualEffects = visualEffectsRef.current;
+    const mapDecor = getMapDecorPlan(mapDecorRef.current, state.terrain);
     cameraRigRef.current = stepCameraRig(cameraRigRef.current, {
       scene: state.scene,
       phase: state.phase,
@@ -163,10 +189,14 @@ export function GameCanvas(): React.JSX.Element {
     context.save();
     applyCameraFrame(context, cameraFrame);
 
-    drawBackground(context, state.terrain?.theme || "meadow", visualTimeRef.current);
+    drawBackground(context, state.terrain?.theme || "meadow", visualTimeRef.current, mapDecor);
 
     if (state.terrain !== null) {
       drawTerrain(context, state.terrain);
+      if (mapDecor !== null) {
+        drawMapDecorPrimitives(context, mapDecor.materialAccents, visualTimeRef.current);
+        drawMapDecorPrimitives(context, mapDecor.foregroundProps, visualTimeRef.current);
+      }
       drawGrass(context, state.terrain, visualTimeRef.current, state.wind, visualEffects.grass);
     }
 
@@ -176,7 +206,7 @@ export function GameCanvas(): React.JSX.Element {
       drawAimGuide(context, state.players[state.turn - 1], state.wind, state.power, state.charging, state.terrain);
     }
 
-    drawProjectileTrail(context, visualEffects.trail, visualEffects.lastWeapon);
+    drawProjectileTrail(context, visualEffects.trail, visualEffects.lastMobileType, visualEffects.lastWeapon);
     drawWindLeaves(context, visualEffects.leaves);
     drawPlayers(context, state.players, state.turn, visualTimeRef.current, spriteCacheRef.current);
 
@@ -211,9 +241,34 @@ export function GameCanvas(): React.JSX.Element {
   }
 }
 
+function getMapDecorPlan(cache: MapDecorCache, terrain: TerrainState | null): MapDecorPlan | null {
+  if (terrain === null) {
+    cache.key = "";
+    cache.plan = null;
+    return null;
+  }
+
+  const key = terrain.mapType + ":" + terrain.theme + ":" + String(terrain.seed) + ":" + String(terrain.heights.length);
+  if (cache.key === key && cache.plan !== null) {
+    return cache.plan;
+  }
+
+  cache.key = key;
+  cache.plan = createMapDecor({
+    map: terrain.mapType,
+    theme: terrain.theme,
+    seed: terrain.seed,
+    width: terrain.width,
+    height: terrain.height,
+    terrainHeights: terrain.heights
+  });
+
+  return cache.plan;
+}
+
 // ---- Drawing helpers ----
 
-function drawBackground(context: CanvasRenderingContext2D, theme: TerrainTheme, visualTime: number): void {
+function drawBackground(context: CanvasRenderingContext2D, theme: TerrainTheme, visualTime: number, mapDecor: MapDecorPlan | null): void {
   const palette = getSkyPalette(theme);
   const gradient = context.createLinearGradient(0, 0, 0, worldHeight);
   gradient.addColorStop(0, palette.skyTop);
@@ -228,6 +283,9 @@ function drawBackground(context: CanvasRenderingContext2D, theme: TerrainTheme, 
   drawCloud(context, 985 + Math.sin(visualTime * 0.11 + 2.2) * 14, 100, 1.04, palette.cloudAlpha * 0.9);
   drawCloud(context, 1120 + Math.sin(visualTime * 0.19 + 0.7) * 8, 172, 0.82, palette.cloudAlpha * 0.72);
   drawBackMountains(context, theme);
+  if (mapDecor !== null) {
+    drawMapDecorPrimitives(context, mapDecor.backgroundLandmarks, visualTime);
+  }
   drawFrontMountains(context, theme);
 }
 
@@ -251,6 +309,104 @@ function drawTerrain(context: CanvasRenderingContext2D, terrain: TerrainState): 
   context.strokeStyle = "rgba(57, 31, 18, 0.35)";
   context.lineWidth = 1;
   context.stroke();
+}
+
+function drawMapDecorPrimitives(context: CanvasRenderingContext2D, primitives: MapDecorPrimitive[], visualTime: number): void {
+  let index = 0;
+
+  while (index < primitives.length) {
+    drawMapDecorPrimitive(context, primitives[index], visualTime);
+    index += 1;
+  }
+}
+
+function drawMapDecorPrimitive(context: CanvasRenderingContext2D, primitive: MapDecorPrimitive, visualTime: number): void {
+  const offset = getMapDecorOffset(primitive, visualTime);
+  context.save();
+  context.globalAlpha = primitive.alpha;
+
+  if (primitive.primitive === "ellipse") {
+    context.translate(primitive.center.x + offset.x, primitive.center.y + offset.y);
+    context.rotate(primitive.rotation);
+    context.fillStyle = primitive.fill;
+    context.beginPath();
+    context.ellipse(0, 0, primitive.radiusX, primitive.radiusY, 0, 0, Math.PI * 2);
+    context.fill();
+    strokeMapDecorPrimitive(context, primitive.stroke);
+    context.restore();
+    return;
+  }
+
+  if (primitive.primitive === "rect") {
+    const centerX = primitive.origin.x + primitive.width * 0.5 + offset.x;
+    const centerY = primitive.origin.y + primitive.height * 0.5 + offset.y;
+    context.translate(centerX, centerY);
+    context.rotate(primitive.rotation);
+    context.fillStyle = primitive.fill;
+    roundRect(context, -primitive.width * 0.5, -primitive.height * 0.5, primitive.width, primitive.height, primitive.radius);
+    context.fill();
+    strokeMapDecorPrimitive(context, primitive.stroke);
+    context.restore();
+    return;
+  }
+
+  if (primitive.primitive === "polygon") {
+    context.fillStyle = primitive.fill;
+    context.beginPath();
+    drawMapDecorPath(context, primitive.points, offset);
+    context.closePath();
+    context.fill();
+    strokeMapDecorPrimitive(context, primitive.stroke);
+    context.restore();
+    return;
+  }
+
+  context.strokeStyle = primitive.fill;
+  context.lineWidth = primitive.width;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.beginPath();
+  drawMapDecorPath(context, primitive.points, offset);
+  context.stroke();
+  if (primitive.stroke !== null) {
+    context.strokeStyle = primitive.stroke;
+    context.lineWidth = Math.max(1, primitive.width * 0.35);
+    context.stroke();
+  }
+  context.restore();
+}
+
+function drawMapDecorPath(context: CanvasRenderingContext2D, points: Vec2[], offset: Vec2): void {
+  let index = 0;
+
+  while (index < points.length) {
+    const point = points[index];
+    if (index === 0) {
+      context.moveTo(point.x + offset.x, point.y + offset.y);
+    } else {
+      context.lineTo(point.x + offset.x, point.y + offset.y);
+    }
+    index += 1;
+  }
+}
+
+function strokeMapDecorPrimitive(context: CanvasRenderingContext2D, stroke: string | null): void {
+  if (stroke === null) {
+    return;
+  }
+
+  context.strokeStyle = stroke;
+  context.lineWidth = 2;
+  context.stroke();
+}
+
+function getMapDecorOffset(primitive: MapDecorPrimitive, visualTime: number): Vec2 {
+  const drift = (1 - primitive.parallax) * 8;
+
+  return {
+    x: Math.sin(visualTime * 0.18 + primitive.parallax * 9) * drift,
+    y: Math.cos(visualTime * 0.14 + primitive.parallax * 5) * drift * 0.28
+  };
 }
 
 function drawGrass(context: CanvasRenderingContext2D, terrain: TerrainState, visualTime: number, wind: { x: number; y: number }, grass: GrassTuft[]): void {
@@ -332,24 +488,133 @@ function getTurretAngle(player: Player): number {
 }
 
 function drawProjectile(context: CanvasRenderingContext2D, projectile: ProjectileState): void {
-  const isSecondary = projectile.weapon === "secondary";
-  const color = isSecondary ? "#ffe7a5" : "#ffffff";
-  const glowColor = isSecondary ? "rgba(255, 211, 97, 0.85)" : "rgba(255, 255, 255, 0.75)";
+  const style = createProjectileRenderStyle(projectile);
+  const body = style.body;
 
-  context.shadowBlur = 20;
-  context.shadowColor = glowColor;
-  context.fillStyle = color;
-  context.beginPath();
-  context.arc(projectile.position.x, projectile.position.y, projectile.radius + 1, 0, Math.PI * 2);
+  context.save();
+  context.translate(projectile.position.x, projectile.position.y);
+  context.rotate(style.angle);
+  context.shadowBlur = body.glowRadius;
+  context.shadowColor = body.glow;
+  context.fillStyle = body.fill;
+  context.strokeStyle = body.stroke;
+  context.lineWidth = body.strokeWidth;
+
+  drawProjectileBody(context, body.shape, style.radius, body.aspectRatio);
   context.fill();
+  context.stroke();
 
-  context.shadowBlur = 8;
-  context.fillStyle = isSecondary ? "#fff5d4" : "#ffffff";
+  context.shadowBlur = body.glowRadius * 0.45;
+  context.fillStyle = body.core;
   context.beginPath();
-  context.arc(projectile.position.x, projectile.position.y, projectile.radius * 0.5, 0, Math.PI * 2);
+  context.ellipse(style.radius * 0.18, -style.radius * 0.1, style.radius * 0.42, style.radius * 0.28, 0, 0, Math.PI * 2);
   context.fill();
+  context.restore();
+}
 
-  context.shadowBlur = 0;
+function drawProjectileBody(context: CanvasRenderingContext2D, shape: ReturnType<typeof createProjectileRenderStyle>["body"]["shape"], radius: number, aspectRatio: number): void {
+  context.beginPath();
+
+  if (shape === "bolt") {
+    context.moveTo(radius * 1.45, 0);
+    context.lineTo(-radius * 0.2, -radius * 0.7);
+    context.lineTo(-radius * 0.55, -radius * 0.08);
+    context.lineTo(-radius * 1.35, -radius * 0.42);
+    context.lineTo(-radius * 0.25, radius * 0.7);
+    context.lineTo(radius * 0.05, radius * 0.06);
+    context.closePath();
+    return;
+  }
+
+  if (shape === "drill") {
+    context.moveTo(radius * 1.55, 0);
+    context.lineTo(-radius * 0.25, -radius * 0.72);
+    context.lineTo(-radius * 1.25, 0);
+    context.lineTo(-radius * 0.25, radius * 0.72);
+    context.closePath();
+    return;
+  }
+
+  if (shape === "droplet") {
+    context.moveTo(radius * 1.15, 0);
+    context.quadraticCurveTo(radius * 0.1, -radius * 1.05, -radius * 0.88, -radius * 0.34);
+    context.quadraticCurveTo(-radius * 1.22, radius * 0.72, radius * 0.28, radius * 0.92);
+    context.quadraticCurveTo(radius * 0.98, radius * 0.56, radius * 1.15, 0);
+    context.closePath();
+    return;
+  }
+
+  if (shape === "seed") {
+    context.ellipse(0, 0, radius * aspectRatio, radius * 0.72, -0.18, 0, Math.PI * 2);
+    return;
+  }
+
+  if (shape === "shell") {
+    context.roundRect(-radius * aspectRatio * 0.75, -radius * 0.72, radius * aspectRatio * 1.5, radius * 1.44, radius * 0.45);
+    return;
+  }
+
+  context.ellipse(0, 0, radius * aspectRatio, radius, 0, 0, Math.PI * 2);
+}
+
+function getProjectileStyle(mobileType: MobileType, isSecondary: boolean): { outer: string; inner: string; glow: string; trail: string } {
+  if (mobileType === "aduko") {
+    return isSecondary
+      ? { outer: "#d9d3ff", inner: "#ffffff", glow: "rgba(161, 145, 255, 0.9)", trail: "170, 155, 255" }
+      : { outer: "#bfeeff", inner: "#ffffff", glow: "rgba(109, 215, 255, 0.85)", trail: "120, 220, 255" };
+  }
+
+  if (mobileType === "trico") {
+    return isSecondary
+      ? { outer: "#9cff7e", inner: "#f2ffe9", glow: "rgba(128, 255, 102, 0.88)", trail: "142, 255, 112" }
+      : { outer: "#ffd56e", inner: "#fff7d4", glow: "rgba(255, 209, 86, 0.82)", trail: "255, 215, 105" };
+  }
+
+  if (mobileType === "mage") {
+    return isSecondary
+      ? { outer: "#c084fc", inner: "#f3e8ff", glow: "rgba(168, 85, 247, 0.9)", trail: "192, 132, 252" }
+      : { outer: "#a78bfa", inner: "#ede9fe", glow: "rgba(139, 92, 246, 0.85)", trail: "167, 139, 250" };
+  }
+
+  if (mobileType === "nak") {
+    return isSecondary
+      ? { outer: "#d97706", inner: "#fef3c7", glow: "rgba(217, 119, 6, 0.88)", trail: "217, 119, 6" }
+      : { outer: "#f59e0b", inner: "#fffbeb", glow: "rgba(245, 158, 11, 0.82)", trail: "245, 158, 11" };
+  }
+
+  if (mobileType === "turtle") {
+    return isSecondary
+      ? { outer: "#166534", inner: "#dcfce7", glow: "rgba(22, 101, 52, 0.9)", trail: "34, 197, 94" }
+      : { outer: "#16a34a", inner: "#f0fdf4", glow: "rgba(22, 163, 74, 0.85)", trail: "74, 222, 128" };
+  }
+
+  if (mobileType === "frog") {
+    return isSecondary
+      ? { outer: "#65a30d", inner: "#f7fee7", glow: "rgba(101, 163, 13, 0.9)", trail: "132, 204, 22" }
+      : { outer: "#84cc16", inner: "#f7fee7", glow: "rgba(132, 204, 22, 0.85)", trail: "163, 230, 53" };
+  }
+
+  if (mobileType === "sate") {
+    return isSecondary
+      ? { outer: "#1d4ed8", inner: "#dbeafe", glow: "rgba(29, 78, 216, 0.9)", trail: "59, 130, 246" }
+      : { outer: "#3b82f6", inner: "#eff6ff", glow: "rgba(59, 130, 246, 0.85)", trail: "147, 197, 253" };
+  }
+
+  if (mobileType === "armor") {
+    return isSecondary
+      ? { outer: "#e2e8f0", inner: "#f8fafc", glow: "rgba(148, 163, 184, 0.88)", trail: "203, 213, 225" }
+      : { outer: "#f1f5f9", inner: "#ffffff", glow: "rgba(226, 232, 240, 0.8)", trail: "241, 245, 249" };
+  }
+
+  if (mobileType === "snow") {
+    return isSecondary
+      ? { outer: "#bae6fd", inner: "#f0f9ff", glow: "rgba(186, 230, 253, 0.9)", trail: "186, 230, 253" }
+      : { outer: "#e0f2fe", inner: "#ffffff", glow: "rgba(224, 242, 254, 0.85)", trail: "224, 242, 254" };
+  }
+
+  return isSecondary
+    ? { outer: "#ffe7a5", inner: "#fff5d4", glow: "rgba(255, 211, 97, 0.85)", trail: "255, 211, 97" }
+    : { outer: "#ffffff", inner: "#ffffff", glow: "rgba(255, 255, 255, 0.75)", trail: "255, 250, 220" };
 }
 
 function getBonusShortLabel(type: BonusBox["type"]): string {
@@ -364,6 +629,13 @@ function loadMobileSprites(spriteCache: SpriteCache): void {
   if (spriteCache.knight === null) spriteCache.knight = createMobileSpriteImage("knight");
   if (spriteCache.dragon === null) spriteCache.dragon = createMobileSpriteImage("dragon");
   if (spriteCache.snow === null) spriteCache.snow = createMobileSpriteImage("snow");
+  if (spriteCache.trico === null) spriteCache.trico = createMobileSpriteImage("trico");
+  if (spriteCache.aduko === null) spriteCache.aduko = createMobileSpriteImage("aduko");
+  if (spriteCache.mage === null) spriteCache.mage = createMobileSpriteImage("mage");
+  if (spriteCache.nak === null) spriteCache.nak = createMobileSpriteImage("nak");
+  if (spriteCache.turtle === null) spriteCache.turtle = createMobileSpriteImage("turtle");
+  if (spriteCache.frog === null) spriteCache.frog = createMobileSpriteImage("frog");
+  if (spriteCache.sate === null) spriteCache.sate = createMobileSpriteImage("sate");
   if (spriteCache.dragonRider === null) spriteCache.dragonRider = createRiderSpriteImage("dragon");
 }
 
@@ -527,6 +799,34 @@ function getCachedSprite(spriteCache: SpriteCache, type: MobileType): HTMLImageE
     return spriteCache.dragon;
   }
 
+  if (type === "trico") {
+    return spriteCache.trico;
+  }
+
+  if (type === "aduko") {
+    return spriteCache.aduko;
+  }
+
+  if (type === "mage") {
+    return spriteCache.mage;
+  }
+
+  if (type === "nak") {
+    return spriteCache.nak;
+  }
+
+  if (type === "turtle") {
+    return spriteCache.turtle;
+  }
+
+  if (type === "frog") {
+    return spriteCache.frog;
+  }
+
+  if (type === "sate") {
+    return spriteCache.sate;
+  }
+
   return spriteCache.snow;
 }
 
@@ -539,7 +839,12 @@ function getCachedRiderSprite(spriteCache: SpriteCache, type: MobileType): HTMLI
 }
 
 function drawFallbackMobile(context: CanvasRenderingContext2D, player: Player): void {
-  if (player.mobile.type === "armor" || player.mobile.type === "snow") {
+  if (
+    player.mobile.type === "armor" ||
+    player.mobile.type === "snow" ||
+    player.mobile.type === "turtle" ||
+    player.mobile.type === "sate"
+  ) {
     drawArmorMobile(context, player, "#62c3ff");
   } else {
     drawKnightMobile(context, player, "#ff9262");
@@ -562,17 +867,17 @@ function applyCameraFrame(context: CanvasRenderingContext2D, cameraFrame: Camera
   context.translate(-cameraFrame.offset.x, -cameraFrame.offset.y);
 }
 
-function drawProjectileTrail(context: CanvasRenderingContext2D, trail: Vec2[], weaponType: WeaponType): void {
+function drawProjectileTrail(context: CanvasRenderingContext2D, trail: Vec2[], mobileType: MobileType, weaponType: "primary" | "secondary"): void {
   if (trail.length < 2) return;
-  const color = weaponType === "secondary" ? "255, 211, 97" : "255, 250, 220";
+  const style = getProjectileTrailStyle(mobileType, weaponType);
   let index = 0;
   while (index < trail.length) {
     const point = trail[index];
     const alpha = (index + 1) / trail.length;
-    const radius = 1 + alpha * 4;
-    context.shadowBlur = 6 * alpha;
-    context.shadowColor = "rgba(" + color + ", " + String(alpha * 0.5) + ")";
-    context.fillStyle = "rgba(" + color + ", " + String(alpha * 0.5) + ")";
+    const radius = 1 + alpha * style.width;
+    context.shadowBlur = 8 * alpha;
+    context.shadowColor = style.glow;
+    context.fillStyle = colorWithAlpha(index % 2 === 0 ? style.color : style.accent, alpha * style.alpha);
     context.beginPath();
     context.arc(point.x, point.y, radius, 0, Math.PI * 2);
     context.fill();
@@ -599,42 +904,60 @@ function drawExplosionVisual(context: CanvasRenderingContext2D, explosionVisual:
   if (explosionVisual === null) return;
   const progress = 1 - explosionVisual.timer / explosionVisual.duration;
   const alpha = 1 - progress;
+  const impact = getProjectileImpactStyle(explosionVisual.mobileType, explosionVisual.radius >= 54 ? "secondary" : "primary");
 
-  const flashRadius = explosionVisual.radius * (0.2 + progress * 0.5);
+  const flashRadius = explosionVisual.radius * impact.radiusScale * (0.2 + progress * 0.5);
   const flashGradient = context.createRadialGradient(explosionVisual.point.x, explosionVisual.point.y, 0, explosionVisual.point.x, explosionVisual.point.y, flashRadius);
   flashGradient.addColorStop(0, "rgba(255, 255, 255, " + String(alpha * 0.95) + ")");
-  flashGradient.addColorStop(0.3, "rgba(255, 242, 183, " + String(alpha * 0.85) + ")");
-  flashGradient.addColorStop(0.7, "rgba(255, 190, 80, " + String(alpha * 0.5) + ")");
-  flashGradient.addColorStop(1, "rgba(255, 190, 80, 0)");
+  flashGradient.addColorStop(0.3, colorWithAlpha(impact.flash, alpha * 0.85));
+  flashGradient.addColorStop(0.7, colorWithAlpha(impact.ring, alpha * 0.5));
+  flashGradient.addColorStop(1, colorWithAlpha(impact.ring, 0));
   context.fillStyle = flashGradient;
   context.beginPath();
   context.arc(explosionVisual.point.x, explosionVisual.point.y, flashRadius, 0, Math.PI * 2);
   context.fill();
 
-  const smokeRadius = explosionVisual.radius * (0.6 + progress * 0.8);
+  const smokeRadius = explosionVisual.radius * impact.radiusScale * (0.6 + progress * 0.8);
   const smokeGradient = context.createRadialGradient(explosionVisual.point.x, explosionVisual.point.y, 0, explosionVisual.point.x, explosionVisual.point.y, smokeRadius);
-  smokeGradient.addColorStop(0, "rgba(255, 200, 100, " + String(alpha * 0.6) + ")");
-  smokeGradient.addColorStop(0.4, "rgba(180, 110, 50, " + String(alpha * 0.5) + ")");
-  smokeGradient.addColorStop(0.8, "rgba(100, 65, 40, " + String(alpha * 0.3) + ")");
-  smokeGradient.addColorStop(1, "rgba(100, 65, 40, 0)");
+  smokeGradient.addColorStop(0, colorWithAlpha(impact.flash, alpha * 0.38));
+  smokeGradient.addColorStop(0.45, colorWithAlpha(impact.smoke, alpha * 0.48));
+  smokeGradient.addColorStop(0.82, colorWithAlpha(impact.craterTint, alpha * 0.3));
+  smokeGradient.addColorStop(1, colorWithAlpha(impact.craterTint, 0));
   context.fillStyle = smokeGradient;
   context.beginPath();
   context.arc(explosionVisual.point.x, explosionVisual.point.y, smokeRadius, 0, Math.PI * 2);
   context.fill();
 
-  const ringRadius = explosionVisual.radius * (0.4 + progress * 1.0);
-  context.strokeStyle = "rgba(255, 252, 229, " + String(alpha * 0.8) + ")";
+  const ringRadius = explosionVisual.radius * impact.radiusScale * (0.4 + progress * 1.0);
+  context.strokeStyle = colorWithAlpha(impact.flash, alpha * 0.8);
   context.lineWidth = 6 * alpha + 1;
   context.beginPath();
   context.arc(explosionVisual.point.x, explosionVisual.point.y, ringRadius, 0, Math.PI * 2);
   context.stroke();
 
-  const outerRingRadius = explosionVisual.radius * (0.5 + progress * 1.1);
-  context.strokeStyle = "rgba(200, 140, 80, " + String(alpha * 0.35) + ")";
+  const outerRingRadius = explosionVisual.radius * impact.radiusScale * (0.5 + progress * 1.1);
+  context.strokeStyle = colorWithAlpha(impact.ring, alpha * 0.35);
   context.lineWidth = 3 * alpha + 1;
   context.beginPath();
   context.arc(explosionVisual.point.x, explosionVisual.point.y, outerRingRadius, 0, Math.PI * 2);
   context.stroke();
+}
+
+function colorWithAlpha(color: string, alpha: number): string {
+  if (color.startsWith("#") && color.length === 7) {
+    const red = Number.parseInt(color.slice(1, 3), 16);
+    const green = Number.parseInt(color.slice(3, 5), 16);
+    const blue = Number.parseInt(color.slice(5, 7), 16);
+    return "rgba(" + String(red) + ", " + String(green) + ", " + String(blue) + ", " + String(alpha) + ")";
+  }
+
+  if (color === "#d9d3ff") return "rgba(217, 211, 255, " + String(alpha) + ")";
+  if (color === "#bfeeff") return "rgba(191, 238, 255, " + String(alpha) + ")";
+  if (color === "#9cff7e") return "rgba(156, 255, 126, " + String(alpha) + ")";
+  if (color === "#ffd56e") return "rgba(255, 213, 110, " + String(alpha) + ")";
+  if (color === "#ffe7a5") return "rgba(255, 231, 165, " + String(alpha) + ")";
+  if (color === "#fff5d4") return "rgba(255, 245, 212, " + String(alpha) + ")";
+  return "rgba(255, 255, 255, " + String(alpha) + ")";
 }
 
 function drawExplosionSprites(context: CanvasRenderingContext2D, sprites: ExplosionSpriteEffect[], spriteCache: ExplosionSpriteCache): void {

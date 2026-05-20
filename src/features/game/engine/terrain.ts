@@ -1,20 +1,22 @@
+import { getMapPresentation } from "@/features/game/constants/map-presentation";
 import { getTerrainPalette } from "@/features/game/engine/terrain-theme";
 import { randomRange } from "@/features/game/engine/random";
 import type { TerrainState } from "@/features/game/types/entities";
-import type { TerrainTheme, Vec2 } from "@/features/game/types/shared";
+import type { MapType, TerrainTheme, Vec2 } from "@/features/game/types/shared";
 
 export type TerrainRoll = {
   terrain: TerrainState;
   state: number;
 };
 
-export function createTerrain(seed: number, width: number, height: number): TerrainRoll {
-  const generated = generateHeightMap(seed, width, height);
+export function createTerrain(seed: number, width: number, height: number, mapType: MapType): TerrainRoll {
+  const generated = generateHeightMap(seed, width, height, mapType);
   const terrain: TerrainState = {
     width,
     height,
     seed,
-    theme: getTerrainTheme(seed),
+    theme: getTerrainTheme(mapType),
+    mapType,
     heights: generated.heights,
     mask: createMask(width, height, generated.heights),
     canvas: null
@@ -29,7 +31,23 @@ export function createTerrain(seed: number, width: number, height: number): Terr
   };
 }
 
-export function generateHeightMap(seed: number, width: number, height: number): { heights: number[]; state: number } {
+export function generateHeightMap(seed: number, width: number, height: number, mapType: MapType): { heights: number[]; state: number } {
+  if (mapType === "canyon") {
+    return generateCanyonHeightMap(seed, width, height);
+  }
+
+  if (mapType === "crater") {
+    return generateCraterHeightMap(seed, width, height);
+  }
+
+  if (mapType === "ridge") {
+    return generateRidgeHeightMap(seed, width, height);
+  }
+
+  return generateRollingHeightMap(seed, width, height);
+}
+
+function generateRollingHeightMap(seed: number, width: number, height: number): { heights: number[]; state: number } {
   const sampleCount = 257;
   const samples = new Array<number>(sampleCount);
   const baseHeight = height * 0.62;
@@ -71,6 +89,101 @@ export function generateHeightMap(seed: number, width: number, height: number): 
 
   return {
     heights: resampleHeights(samples, width, height),
+    state: randomState
+  };
+}
+
+function generateCanyonHeightMap(seed: number, width: number, height: number): { heights: number[]; state: number } {
+  const heights = new Array<number>(width);
+  let randomState = seed;
+  const leftLip = width * 0.26;
+  const rightLip = width * 0.74;
+  let x = 0;
+
+  while (x < width) {
+    const position = x / Math.max(1, width - 1);
+    const distanceFromCenter = Math.abs(position - 0.5) / 0.5;
+    const basinStrength = Math.max(0, 1 - distanceFromCenter);
+    const canyonFloor = height * 0.8 - basinStrength * height * 0.22;
+    const rimLift = Math.max(0, 1 - Math.abs(x - leftLip) / (width * 0.13)) + Math.max(0, 1 - Math.abs(x - rightLip) / (width * 0.13));
+    const wave = Math.sin(position * Math.PI * 3.5) * height * 0.02;
+    const jitter = randomRange(randomState, -height * 0.018, height * 0.018);
+
+    heights[x] = clamp(
+      Math.round(canyonFloor - rimLift * height * 0.2 + wave + jitter.value),
+      Math.round(height * 0.26),
+      Math.round(height * 0.84)
+    );
+    randomState = jitter.state;
+    x += 1;
+  }
+
+  smoothHeights(heights, 2);
+
+  return {
+    heights,
+    state: randomState
+  };
+}
+
+function generateCraterHeightMap(seed: number, width: number, height: number): { heights: number[]; state: number } {
+  const heights = new Array<number>(width);
+  let randomState = seed;
+  const center = width * 0.5;
+  const craterRadius = width * 0.25;
+  let x = 0;
+
+  while (x < width) {
+    const distance = Math.abs(x - center);
+    const normalized = distance / craterRadius;
+    const bowlDepth = normalized < 1 ? (1 - normalized * normalized) * height * 0.18 : 0;
+    const rimRise = normalized > 0.85 && normalized < 1.35 ? (1 - Math.abs(normalized - 1.1) / 0.25) * height * 0.12 : 0;
+    const outerWave = Math.sin((x / width) * Math.PI * 5.5) * height * 0.018;
+    const jitter = randomRange(randomState, -height * 0.014, height * 0.014);
+    const baseHeight = height * 0.67;
+
+    heights[x] = clamp(
+      Math.round(baseHeight - bowlDepth - rimRise + outerWave + jitter.value),
+      Math.round(height * 0.24),
+      Math.round(height * 0.82)
+    );
+    randomState = jitter.state;
+    x += 1;
+  }
+
+  smoothHeights(heights, 2);
+
+  return {
+    heights,
+    state: randomState
+  };
+}
+
+function generateRidgeHeightMap(seed: number, width: number, height: number): { heights: number[]; state: number } {
+  const heights = new Array<number>(width);
+  let randomState = seed;
+  let x = 0;
+
+  while (x < width) {
+    const position = x / Math.max(1, width - 1);
+    const primary = Math.sin(position * Math.PI * 2.2) * height * 0.1;
+    const secondary = Math.sin(position * Math.PI * 7.4 + 0.8) * height * 0.055;
+    const saw = ((x % 84) / 84) * height * 0.03;
+    const jitter = randomRange(randomState, -height * 0.016, height * 0.016);
+
+    heights[x] = clamp(
+      Math.round(height * 0.56 + primary + secondary - saw + jitter.value),
+      Math.round(height * 0.22),
+      Math.round(height * 0.8)
+    );
+    randomState = jitter.state;
+    x += 1;
+  }
+
+  smoothHeights(heights, 1);
+
+  return {
+    heights,
     state: randomState
   };
 }
@@ -184,17 +297,30 @@ export function redrawTerrainCanvas(terrain: TerrainState): void {
   context.putImageData(imageData, 0, 0);
 }
 
-export function getTerrainTheme(seed: number): TerrainTheme {
-  const roll = Math.abs(seed) % 3;
-  if (roll === 0) {
-    return "meadow";
-  }
+function smoothHeights(heights: number[], passes: number): void {
+  let pass = 0;
 
-  if (roll === 1) {
-    return "sunset";
-  }
+  while (pass < passes) {
+    const next = heights.slice();
+    let index = 1;
 
-  return "midnight";
+    while (index < heights.length - 1) {
+      next[index] = Math.round(heights[index - 1] * 0.25 + heights[index] * 0.5 + heights[index + 1] * 0.25);
+      index += 1;
+    }
+
+    index = 1;
+    while (index < heights.length - 1) {
+      heights[index] = next[index];
+      index += 1;
+    }
+
+    pass += 1;
+  }
+}
+
+export function getTerrainTheme(mapType: MapType): TerrainTheme {
+  return getMapPresentation(mapType).theme;
 }
 
 export function paintTerrainPixel(data: Uint8ClampedArray, terrain: TerrainState, x: number, y: number, pixel: number): void {
@@ -316,6 +442,7 @@ export function carveCrater(terrain: TerrainState, center: Vec2, radius: number)
     height: terrain.height,
     seed: terrain.seed,
     theme: terrain.theme,
+    mapType: terrain.mapType,
     heights: terrain.heights,
     mask: terrain.mask,
     canvas: terrain.canvas

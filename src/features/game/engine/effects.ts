@@ -35,7 +35,8 @@ export function createVisualEffectsState(): VisualEffectsState {
     bounceSparks: [],
     fireShake: 0,
     previousBounces: 0,
-    lastWeapon: "primary"
+    lastWeapon: "primary",
+    lastMobileType: "armor"
   };
 }
 
@@ -69,6 +70,7 @@ function syncProjectileEffects(
         muzzleFlash: {
           point: projectile.position,
           radius: 48,
+          mobileType: projectile.mobileType,
           timer: 0.25,
           duration: 0.25
         },
@@ -113,7 +115,8 @@ function syncProjectileEffects(
         ...nextState,
         shellCasings,
         smokePuffs,
-        lastWeapon: projectile.weapon
+        lastWeapon: projectile.weapon,
+        lastMobileType: projectile.mobileType
       };
     }
 
@@ -193,6 +196,14 @@ function createExplosionSpriteEffect(explosion: ExplosionVisual, hasDamage: bool
 
 function selectExplosionSpriteSheet(explosion: ExplosionVisual, hasDamage: boolean): ExplosionSpriteSheet {
   const seed = Math.abs(Math.floor(explosion.point.x * 7 + explosion.point.y * 11 + explosion.radius * 13));
+  if (explosion.mobileType === "aduko") {
+    return explosion.radius >= 56 ? "aduka-thor" : "jd-lightning";
+  }
+
+  if (explosion.mobileType === "trico" && hasDamage) {
+    return seed % 2 === 0 ? "gum" : "nak";
+  }
+
   if (hasDamage && explosion.radius >= 78) {
     return seed % 2 === 0 ? "armor-secondary" : "jd-secondary";
   }
@@ -520,6 +531,7 @@ function tickMuzzleFlash(state: VisualEffectsState, delta: number): VisualEffect
     muzzleFlash: {
       point: muzzleFlash.point,
       radius: muzzleFlash.radius,
+      mobileType: muzzleFlash.mobileType,
       timer: nextTimer,
       duration: muzzleFlash.duration
     }

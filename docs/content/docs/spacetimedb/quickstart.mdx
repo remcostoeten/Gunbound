@@ -1,0 +1,293 @@
+---
+title: Quick Start Guide
+description: Get up to speed with SpacetimeDB in 5 minutes
+---
+
+## Prerequisites
+
+- Node.js 18+
+- SpacetimeDB CLI: `brew install spacetimedb` (or [download](https://spacetimedb.com))
+- Bun: `npm install -g bun`
+
+## 1. Start Local SpacetimeDB
+
+```bash
+spacetime start
+```
+
+This starts the SpacetimeDB server on `http://localhost:3000`.
+
+## 2. Publish the Module
+
+```bash
+cd gunbound
+bun run spacetime:publish:local
+```
+
+This compiles the TypeScript schema and reducers and publishes them to the local server.
+
+## 3. Regenerate Client Bindings
+
+```bash
+bun run spacetime:generate
+```
+
+This creates TypeScript types in `src/features/game/spacetime/module_bindings/`.
+
+## 4. Start the Dev Server
+
+```bash
+bun run dev
+```
+
+Open `http://localhost:5173` in your browser.
+
+## 5. Sign Up
+
+1. Click through the intro screen
+2. Enter username (3-20 alphanumeric + underscore)
+3. Enter password (8+ chars)
+4. Confirm password
+5. Click "CREATE"
+
+You're now registered with an encrypted credential row in SpacetimeDB.
+
+## 6. Test Cross-Device Login
+
+1. Open a private/incognito window (separate localStorage)
+2. Go to `http://localhost:5173`
+3. Click "LOGIN"
+4. Enter your username + password
+5. Your account data is recovered from the credential table
+
+## Making Changes
+
+### Add a New Reducer
+
+1. Edit `server/spacetimedb/src/index.ts`:
+
+```typescript
+export const my_new_reducer = spacetimedb.reducer(
+  { message: t.string() },
+  (ctx, { message }) => {
+    console.log('Server received:', message);
+  }
+);
+```
+
+2. Publish:
+
+```bash
+bun run spacetime:publish:local
+```
+
+3. Regenerate bindings:
+
+```bash
+bun run spacetime:generate
+```
+
+4. Call from client:
+
+```typescript
+await conn.reducers.myNewReducer({ message: 'hello' });
+```
+
+### Add a New Table Column
+
+1. Edit `server/spacetimedb/src/schema.ts`:
+
+```typescript
+export const Player = table(
+  { ... },
+  {
+    identity: t.identity().primaryKey(),
+    name: t.string(),
+    level: t.u32(),  // ← New column
+    // ...
+  }
+);
+```
+
+2. Publish with `--clear-database` (dev only):
+
+```bash
+spacetime publish gunbound --clear-database -y --module-path server/spacetimedb
+```
+
+3. Regenerate:
+
+```bash
+bun run spacetime:generate
+```
+
+## Common Tasks
+
+### View Server Logs
+
+```bash
+spacetime logs gunbound -f
+```
+
+### Check What Tables Exist
+
+```bash
+bun run spacetime:generate  # Look in src/features/game/spacetime/module_bindings/
+```
+
+### Subscribe to Table Updates in Browser
+
+```typescript
+const [players] = useTable(tables.player);
+useEffect(() => {
+  console.log('Players:', players);
+}, [players]);
+```
+
+### Call a Reducer
+
+```typescript
+const conn = useSpacetimeDB().getConnection();
+await conn.reducers.yourReducerName({ arg: 'value' });
+```
+
+### Get Current Player
+
+```typescript
+const connection = useSpacetimeDB();
+const identity = connection.getConnection()?.identity;
+const [players] = useTable(tables.player);
+
+const me = players.find(p =>
+  p.identity.toHexString() === identity?.toHexString()
+);
+```
+
+### Create a Custom Hook
+
+```typescript
+// src/features/myfeature/use-my-hook.ts
+import { useTable } from 'spacetimedb/react';
+import { tables } from '@/features/game/spacetime';
+
+export function useMyData() {
+  const [rows] = useTable(tables.myTable);
+  
+  // Transform, filter, compose
+  const processed = rows.filter(...).map(...);
+  
+  return { data: processed };
+}
+```
+
+## Debugging
+
+### Check localStorage
+
+```javascript
+// Browser console
+localStorage.getItem('gunbound:spacetime:token');
+```
+
+### Monitor Network
+
+Open DevTools → Network → WS (WebSocket tab) to see real-time subscription updates.
+
+### Print Table Contents
+
+```bash
+# Server logs with custom reducer
+export const debug_table = spacetimedb.reducer(
+  { tableName: t.string() },
+  (ctx, { tableName }) => {
+    if (tableName === 'player') {
+      for (const row of ctx.db.player.iter()) {
+        console.log(row);
+      }
+    }
+  }
+);
+```
+
+## Troubleshooting
+
+### "Module not found" error
+
+Make sure SpacetimeDB is running:
+
+```bash
+spacetime start
+```
+
+And the module is published:
+
+```bash
+bun run spacetime:publish:local
+```
+
+### Type errors in client code
+
+Regenerate bindings:
+
+```bash
+bun run spacetime:generate
+```
+
+### Can't register account
+
+Check server logs:
+
+```bash
+spacetime logs gunbound
+```
+
+Possible reasons:
+- Invalid username (must be 3-20 alphanumeric + underscore)
+- Username already taken
+- Password too short (<8 chars)
+
+### Account not recovering on login
+
+1. Verify credential row exists:
+   - Open SpacetimeDB dashboard at `http://localhost:3000`
+   - Check the `credential` table
+2. Check browser console for decrypt errors
+3. Verify password is correct (case-sensitive)
+
+### Changes not appearing in browser
+
+1. Publish the module
+2. Regenerate bindings
+3. Hard refresh browser (Cmd+Shift+R or Ctrl+Shift+R)
+
+## Next Steps
+
+- Read [Architecture & Design](/docs/spacetimedb/architecture) to understand tables
+- Read [Reducers & Mutations](/docs/spacetimedb/reducers) to add server-side logic
+- Read [Real-time Subscriptions](/docs/spacetimedb/subscriptions) to use data in components
+- Read [Authentication & Security](/docs/spacetimedb/auth) for deep dive on token encryption
+- Read [Account Recovery](/docs/spacetimedb/account-recovery) for cross-device login flow
+- Read [Caveats & Limitations](/docs/spacetimedb/caveats) for known issues
+
+## Getting Help
+
+1. Check [Caveats & Limitations](/docs/spacetimedb/caveats) for common issues
+2. Review error messages in server logs (`spacetime logs gunbound`)
+3. Ask in the SpacetimeDB [Discord community](https://discord.gg/spacetimedb)
+
+## Scripts Reference
+
+```bash
+# Development
+bun run dev              # Start Next.js dev server
+spacetime start          # Start SpacetimeDB server
+
+# SpacetimeDB
+bun run spacetime:dev    # Start SpacetimeDB + watch for changes
+bun run spacetime:publish:local  # Publish to local server
+bun run spacetime:generate       # Generate TypeScript bindings
+
+# Building
+bun run build            # Production build
+bun run build:server     # Build SpacetimeDB module
+```

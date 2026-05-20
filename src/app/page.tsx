@@ -1,5 +1,5 @@
-import { GameShell } from "@/features/game/components/game-shell";
+import { HomeScreen } from "@/features/home/home-screen";
 
 export default function Page(): React.JSX.Element {
-  return <GameShell />;
+  return <HomeScreen />;
 }

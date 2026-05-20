@@ -1,0 +1,391 @@
+---
+title: Real-time Subscriptions
+description: useTable hooks, filtered queries, and reactive updates
+---
+
+## Overview
+
+Subscriptions are how the client receives real-time updates from SpacetimeDB. When the server mutates a table via a reducer, all subscribed clients are notified and re-render automatically.
+
+The client uses two mechanisms:
+1. **Broad subscription**: `subscribeToAll()` subscribes to all public tables
+2. **Filtered subscription**: `useTable()` React hook receives filtered rows from subscribed tables
+
+## Provider Setup
+
+The `GunboundSpacetimeProvider` sets up the connection and subscribes to all tables:
+
+```typescript
+// src/features/game/spacetime/provider.tsx
+export function GunboundSpacetimeProvider({ children }: { children: React.ReactNode }) {
+  const builder = useMemo(() => {
+    const token = readStoredToken();
+    return DbConnection.builder()
+      .withUri(SPACETIMEDB_URI)
+      .withDatabaseName(MODULE_NAME)
+      .withToken(token || undefined)
+      .onConnect(onConnect)
+      .onConnectError(onConnectError);
+  }, []);
+
+  return (
+    <SpacetimeDBProvider connectionBuilder={builder}>
+      {children}
+    </SpacetimeDBProvider>
+  );
+}
+```
+
+The provider wraps the entire app, ensuring the connection is available to all components.
+
+### Connection Lifecycle
+
+```typescript
+function onConnect(conn: DbConnection) {
+  // Subscribe to all public tables
+  conn.subscriptionBuilder().subscribeToAll();
+
+  // Handle subscription events
+  conn.subscriptionBuilder()
+    .onApplied(() => {
+      console.log('Initial subscription applied');
+    })
+    .onError((err) => {
+      console.error('Subscription error:', err);
+    });
+}
+
+function onConnectError(err: Error) {
+  console.error('Connection failed:', err);
+}
+```
+
+Once subscribed, all public table data flows to the client in real-time.
+
+## useTable Hook
+
+The `useTable` hook reads data from a subscribed table:
+
+```typescript
+const [rows, isLoading] = useTable(tables.player);
+```
+
+Returns a tuple:
+- `rows`: Array of row objects from the table
+- `isLoading`: Boolean indicating if subscription is still loading initial data
+
+### Basic Usage
+
+```typescript
+import { useTable } from 'spacetimedb/react';
+import { tables } from '@/features/game/spacetime';
+
+function PlayerList() {
+  const [players, isLoading] = useTable(tables.player);
+
+  if (isLoading) return <div>Loading players...</div>;
+
+  return (
+    <ul>
+      {players.map(p => (
+        <li key={p.identity.toHexString()}>{p.name} — Score: {p.score}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+### Filtering in JavaScript
+
+`useTable` always returns all rows from a table. Filter in JavaScript:
+
+```typescript
+const [allRooms, isLoading] = useTable(tables.room);
+
+// Filter to non-ended rooms
+const activeRooms = allRooms.filter(r => r.status !== 'ended');
+
+// Sort by creation time
+const sorted = activeRooms.sort((a, b) => {
+  const aTime = a.createdAt.microsSinceUnixEpoch;
+  const bTime = b.createdAt.microsSinceUnixEpoch;
+  if (bTime > aTime) return 1;
+  if (bTime < aTime) return -1;
+  return 0;
+});
+```
+
+### Lookup by Identity
+
+Identity values require hex string comparison:
+
+```typescript
+const [players] = useTable(tables.player);
+
+function findPlayer(identity: Identity): Player | undefined {
+  return players.find(p => p.identity.toHexString() === identity.toHexString());
+}
+```
+
+## Custom Hooks for Business Logic
+
+Rather than scattering `useTable` calls throughout the UI, create domain-specific hooks:
+
+### useLobbyRooms
+
+Lists rooms available to join:
+
+```typescript
+// src/features/lobby/spacetime/use-lobby-rooms.ts
+export function useLobbyRooms(): {
+  rooms: LobbyRoomView[];
+  createRoom(code?: string): Promise<void>;
+  joinRoomByCode(code: string): Promise<void>;
+  quickJoin(): Promise<void>;
+  isLoading: boolean;
+} {
+  const connection = useSpacetimeDB();
+  const [dbRooms, roomsLoading] = useTable(tables.room);
+  const [players] = useTable(tables.player);
+
+  // Filter to non-ended rooms
+  const activeRooms = dbRooms.filter(r => r.status !== 'ended');
+
+  // Transform to view model with resolved host names
+  const rooms: LobbyRoomView[] = activeRooms.map(room => {
+    const host = players.find(p => 
+      p.identity.toHexString() === room.hostIdentity.toHexString()
+    );
+    return {
+      id: room.id,
+      code: room.code,
+      status: room.status,
+      hostName: host?.name ?? 'Unknown',
+      memberCount: room.memberCount,
+      capacity: room.capacity,
+    };
+  });
+
+  const createRoom = useCallback(async (code?: string) => {
+    const conn = connection.getConnection();
+    if (!conn) throw new Error('not connected');
+
+    const roomCode = code || generateRoomCode();
+    await conn.reducers.createRoom({ code: roomCode });
+  }, [connection]);
+
+  const joinRoomByCode = useCallback(async (code: string) => {
+    const conn = connection.getConnection();
+    if (!conn) throw new Error('not connected');
+
+    await conn.reducers.joinRoomByCode({ code });
+  }, [connection]);
+
+  const quickJoin = useCallback(async () => {
+    if (rooms.length === 0) throw new Error('no available rooms');
+    await joinRoomByCode(rooms[0].code);
+  }, [rooms, joinRoomByCode]);
+
+  return { rooms, createRoom, joinRoomByCode, quickJoin, isLoading: roomsLoading };
+}
+```
+
+**Benefits:**
+- Encapsulates data fetching and filtering logic
+- Returns domain objects (`LobbyRoomView`) instead of raw rows
+- Provides convenience methods (`createRoom`, `joinRoomByCode`)
+- Handles identity resolution for display
+
+### useRoomSession
+
+Per-room subscription and actions:
+
+```typescript
+// src/features/lobby/spacetime/use-room-session.ts
+export function useRoomSession(roomId: bigint) {
+  const connection = useSpacetimeDB();
+  const [members, membersLoading] = useTable(tables.roomMember);
+  const [players] = useTable(tables.player);
+  const [messages] = useTable(tables.chatMessage);
+
+  // Filter to current room
+  const roomMembers = members.filter(m => m.roomId === roomId);
+  const roomChat = messages.filter(m => m.roomId === roomId);
+
+  // Resolve member names
+  const memberViews = roomMembers.map(m => {
+    const player = players.find(p => 
+      p.identity.toHexString() === m.identity.toHexString()
+    );
+    return {
+      identity: m.identity,
+      name: player?.name ?? 'Unknown',
+      isReady: m.isReady,
+      mobileType: m.mobileType,
+    };
+  });
+
+  // Resolve chat sender names
+  const chatViews = roomChat.map(msg => {
+    const player = players.find(p => 
+      p.identity.toHexString() === msg.identity.toHexString()
+    );
+    return {
+      id: msg.id,
+      senderName: player?.name ?? 'Unknown',
+      message: msg.message,
+      createdAt: msg.createdAt,
+    };
+  });
+
+  const sendChat = useCallback(async (message: string) => {
+    const conn = connection.getConnection();
+    if (!conn) throw new Error('not connected');
+
+    await conn.reducers.sendChat({ roomId, message });
+  }, [connection, roomId]);
+
+  const setReady = useCallback(async (ready: boolean) => {
+    const conn = connection.getConnection();
+    if (!conn) throw new Error('not connected');
+
+    await conn.reducers.setReady({ roomId, ready });
+  }, [connection, roomId]);
+
+  const selectMobile = useCallback(async (mobileType: string) => {
+    const conn = connection.getConnection();
+    if (!conn) throw new Error('not connected');
+
+    await conn.reducers.selectMobile({ roomId, mobileType });
+  }, [connection, roomId]);
+
+  const leave = useCallback(async () => {
+    const conn = connection.getConnection();
+    if (!conn) throw new Error('not connected');
+
+    await conn.reducers.leaveRoom({ roomId });
+  }, [connection, roomId]);
+
+  return {
+    members: memberViews,
+    chat: chatViews,
+    sendChat,
+    setReady,
+    selectMobile,
+    leave,
+    isLoading: membersLoading,
+  };
+}
+```
+
+This hook joins three tables (`room_member`, `player`, `chat_message`) and surfaces them as a cohesive room state.
+
+## Reactor Pattern
+
+Hooks automatically re-render when subscribed data changes:
+
+```typescript
+function LobbyRoom({ roomId }: { roomId: bigint }) {
+  const { members } = useRoomSession(roomId);
+
+  // This re-renders automatically when members array changes
+  return (
+    <ul>
+      {members.map(m => (
+        <li key={m.identity.toHexString()}>
+          {m.name} — {m.isReady ? '✓ Ready' : '○ Not Ready'}
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+When a member joins the room:
+1. Server updates `room_member` table via `joinRoomByCode` reducer
+2. SpacetimeDB broadcasts change to all subscribed clients
+3. `useRoomSession`'s `roomMembers` array updates
+4. `useRoomSession`'s returned `members` re-computed
+5. Component re-renders with new member list
+
+## Performance Considerations
+
+### Avoid Filtering in Hooks
+
+Instead of:
+
+```typescript
+// ❌ SLOW — new array on every render
+const myRooms = rooms.filter(r => r.hostIdentity === myIdentity);
+```
+
+Use `useMemo`:
+
+```typescript
+// ✅ FAST — memoized until rooms/myIdentity change
+const myRooms = useMemo(() => 
+  rooms.filter(r => r.hostIdentity.toHexString() === myIdentity.toHexString()),
+  [rooms, myIdentity]
+);
+```
+
+### Avoid Object Literals in Dependencies
+
+```typescript
+// ❌ BAD — filter recreated every render
+function Room({ roomId }: { roomId: bigint }) {
+  const [stats] = useTable(tables.roundStat);
+  const roomStats = stats.filter(s => s.roomId === roomId);
+  // ...
+}
+
+// ✅ GOOD — dependencies are stable
+const roomStats = useMemo(() => 
+  stats.filter(s => s.roomId === roomId),
+  [stats, roomId]
+);
+```
+
+### Subscribe Only to What You Need
+
+If you only need active rooms (not ended), the hook still receives all rooms. This is acceptable because:
+1. Filtering in JavaScript is fast
+2. The network overhead is minimal (binary encoding)
+3. The alternative (server-side filtering) is more complex
+
+For very large tables (thousands of rows), consider adding server-side views to reduce network bandwidth.
+
+## Subscription Lifecycle
+
+The subscription is established once when the provider mounts:
+
+```typescript
+useEffect(() => {
+  if (!connection) return;
+  
+  // Subscribe to all public tables once
+  connection.subscriptionBuilder().subscribeToAll();
+}, [connection]);
+```
+
+Subsequent component mounts don't re-subscribe; they reuse the existing subscription via the provider.
+
+## Debugging Subscriptions
+
+To debug what data the client is receiving:
+
+```typescript
+// Temporary debug hook
+function useDebugTable(table: any) {
+  const [rows, loading] = useTable(table);
+  useEffect(() => {
+    console.log(`Table ${table.name}:`, rows);
+  }, [rows]);
+  return [rows, loading];
+}
+
+// Usage:
+const [players] = useDebugTable(tables.player);
+```
+
+Check the browser's Network tab to see the subscription request and incoming updates.

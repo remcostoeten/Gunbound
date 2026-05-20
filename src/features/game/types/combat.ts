@@ -1,6 +1,7 @@
 import type { Player } from "@/features/game/types/entities";
 import type { MobileType, PlayerId, Vec2, WeaponType } from "@/features/game/types/shared";
 
+
 export type WeaponProfileDefinition = {
   name: string;
   baseSpeed: number;
@@ -32,10 +33,12 @@ export type ProjectileState = {
   velocity: Vec2;
   radius: number;
   owner: PlayerId;
+  mobileType: MobileType;
   weapon: WeaponType;
   damage: number;
   blastRadius: number;
   bouncesLeft: number;
+  tunnelingTicks: number;
   power: number;
   life: number;
   windScale: number;
@@ -47,6 +50,8 @@ export type ExplosionState = {
   damage: number;
   radius: number;
   owner: PlayerId;
+  mobileType: MobileType;
+  weapon: WeaponType;
 };
 
 export type CombatHit = {

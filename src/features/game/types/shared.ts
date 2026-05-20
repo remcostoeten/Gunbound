@@ -8,11 +8,24 @@ export type GameScene = "start" | "playing" | "end";
 
 export type WeaponType = "primary" | "secondary";
 
-export type MobileType = "armor" | "knight" | "dragon" | "snow";
+export type MobileType =
+  | "armor"
+  | "knight"
+  | "dragon"
+  | "snow"
+  | "trico"
+  | "aduko"
+  | "mage"
+  | "nak"
+  | "turtle"
+  | "frog"
+  | "sate";
 
 export type BonusType = "weapon" | "repair" | "double";
 
 export type TerrainTheme = "meadow" | "sunset" | "midnight";
+
+export type MapType = "rolling" | "canyon" | "crater" | "ridge";
 
 export type PlayerAccent = "sky" | "coral" | "mint" | "gold";
 

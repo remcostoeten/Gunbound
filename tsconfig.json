@@ -36,6 +36,9 @@
     "**/*.mts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "server",
+    "UI_TO_IMPLEMENT",
+    "bounce-drop-intro"
   ]
 }

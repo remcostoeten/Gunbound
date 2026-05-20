@@ -1,10 +1,11 @@
-import type { BonusType, MobileType, PlayerAccent, PlayerId, PlayerTitle, TerrainTheme, Vec2, WeaponType } from "@/features/game/types/shared";
+import type { BonusType, MapType, MobileType, PlayerAccent, PlayerId, PlayerTitle, TerrainTheme, Vec2, WeaponType } from "@/features/game/types/shared";
 
 export type TerrainState = {
   width: number;
   height: number;
   seed: number;
   theme: TerrainTheme;
+  mapType: MapType;
   heights: number[];
   mask: Uint8Array;
   canvas: HTMLCanvasElement | null;

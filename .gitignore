@@ -3,6 +3,11 @@ node_modules
 npm-debug.log*
 dist
 .vercel
+tsconfig.tsbuildinfo
+
+# SpacetimeDB local artifacts
+server/spacetime.local.json
+server/spacetimedb/dist/
 
 # Design notes and working specs
 specs/
