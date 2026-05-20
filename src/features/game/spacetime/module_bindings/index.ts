@@ -43,6 +43,7 @@ import RecordRoundEventReducer from "./record_round_event_reducer";
 import RegisterCredentialReducer from "./register_credential_reducer";
 import SelectMobileReducer from "./select_mobile_reducer";
 import SendChatReducer from "./send_chat_reducer";
+import SetEmptyDataEnabledReducer from "./set_empty_data_enabled_reducer";
 import SetPlayerNameReducer from "./set_player_name_reducer";
 import SetReadyReducer from "./set_ready_reducer";
 import StartRoundReducer from "./start_round_reducer";
@@ -52,6 +53,7 @@ import UpdateCredentialTokenReducer from "./update_credential_token_reducer";
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import AppSettingRow from "./app_setting_table";
 import ChatMessageRow from "./chat_message_table";
 import CredentialRow from "./credential_table";
 import PlayerRow from "./player_table";
@@ -65,6 +67,17 @@ import RoundStatRow from "./round_stat_table";
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  appSetting: __table({
+    name: 'app_setting',
+    indexes: [
+      { accessor: 'key', name: 'app_setting_key_idx_btree', algorithm: 'btree', columns: [
+        'key',
+      ] },
+    ],
+    constraints: [
+      { name: 'app_setting_key_key', constraint: 'unique', columns: ['key'] },
+    ],
+  }, AppSettingRow),
   chatMessage: __table({
     name: 'chat_message',
     indexes: [
@@ -205,6 +218,7 @@ const reducersSchema = __reducers(
   __reducerSchema("register_credential", RegisterCredentialReducer),
   __reducerSchema("select_mobile", SelectMobileReducer),
   __reducerSchema("send_chat", SendChatReducer),
+  __reducerSchema("set_empty_data_enabled", SetEmptyDataEnabledReducer),
   __reducerSchema("set_player_name", SetPlayerNameReducer),
   __reducerSchema("set_ready", SetReadyReducer),
   __reducerSchema("start_round", StartRoundReducer),

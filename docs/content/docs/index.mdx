@@ -1,13 +1,25 @@
 ---
-title: Hello World
-description: Your first document
+title: Gunbound Docs
+description: Practical notes for the realtime Gunbound stack.
 ---
 
-Welcome to the docs! You can start writing documents in `/content/docs`.
+Welcome to the field guide for the Gunbound realtime stack. These docs focus on the pieces
+that keep gameplay state moving: SpacetimeDB modules, auth, reducers, subscriptions, and the
+client-side patterns around them.
 
-## What is Next?
+## Start Here
 
 <Cards>
-  <Card title="Learn more about Next.js" href="https://nextjs.org/docs" />
-  <Card title="Learn more about Fumadocs" href="https://fumadocs.dev" />
+  <Card title="SpacetimeDB Overview" href="/docs/spacetimedb" description="The map for the database, server module, and realtime client flow." />
+  <Card title="Quickstart" href="/docs/spacetimedb/quickstart" description="Get the local module and client loop running with the shortest path." />
+  <Card title="Architecture" href="/docs/spacetimedb/architecture" description="Understand tables, reducers, identities, and subscriptions as one system." />
+  <Card title="Mobile Architecture" href="/docs/mobile-architecture" description="How mobile definitions, defaults, random picks, and validation flow through game and lobby code." />
+  <Card title="Caveats" href="/docs/spacetimedb/caveats" description="Known edges and operational notes before you ship changes." />
 </Cards>
+
+## Working Rhythm
+
+- Use reducers as the source of truth for gameplay mutations.
+- Keep subscription boundaries explicit so the client receives only what each screen needs.
+- Treat auth and account recovery as part of the game loop, not a separate afterthought.
+- When in doubt, open the AI helper and ask against the current docs corpus.

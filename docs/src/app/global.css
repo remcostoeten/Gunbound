@@ -6,7 +6,613 @@ html {
   scrollbar-gutter: stable;
 }
 
+body {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 12% 10%, color-mix(in oklab, var(--color-sky-300) 42%, transparent), transparent 28rem),
+    radial-gradient(circle at 88% 18%, color-mix(in oklab, var(--color-amber-300) 34%, transparent), transparent 24rem),
+    linear-gradient(180deg, color-mix(in oklab, var(--color-sky-50) 68%, white), white 42%);
+}
+
 html > body[data-scroll-locked] {
   margin-right: 0px !important;
   --removed-body-scroll-bar-size: 0px !important;
+}
+
+.gb-brand {
+  position: relative;
+  display: inline-flex;
+  min-width: 12.75rem;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.45rem;
+  isolation: isolate;
+}
+
+.gb-brand-mark {
+  display: inline-flex;
+  width: 8.05rem;
+  height: 2.15rem;
+  align-items: center;
+  overflow: hidden;
+}
+
+.gb-brand-letter {
+  width: 1.35rem;
+  height: 1.35rem;
+  object-fit: contain;
+  flex: 0 0 auto;
+  margin-left: -0.12rem;
+  filter: drop-shadow(0 2px 2px rgba(15, 23, 42, 0.18));
+  transform: translateY(calc((var(--letter-index) % 2) * -0.08rem));
+  transition: transform 180ms ease, filter 180ms ease;
+}
+
+.gb-brand:hover .gb-brand-letter {
+  transform: translateY(calc((var(--letter-index) % 2) * -0.08rem - 0.08rem)) rotate(-2deg);
+  filter: drop-shadow(0 4px 4px rgba(15, 23, 42, 0.2));
+}
+
+.gb-brand-word {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.gb-brand-docs {
+  margin-left: -0.2rem;
+  border: 1px solid rgba(14, 165, 233, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0.16rem 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  color: rgb(3, 105, 161);
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.1);
+}
+
+.dark .gb-brand-docs {
+  border-color: rgba(125, 211, 252, 0.18);
+  background: rgba(15, 23, 42, 0.68);
+  color: rgb(125, 211, 252);
+}
+
+.gb-brand-dragon {
+  --sprite-size: 2.25rem;
+  --sprite-frames: 4;
+  position: absolute;
+  top: -0.65rem;
+  left: 7.25rem;
+  z-index: -1;
+  width: var(--sprite-size);
+  height: var(--sprite-size);
+  background-image: url('/gunbound/dragon-sheet.png');
+  background-repeat: no-repeat;
+  background-size: calc(var(--sprite-size) * var(--sprite-frames)) var(--sprite-size);
+  image-rendering: pixelated;
+  filter: drop-shadow(0 6px 8px rgba(15, 23, 42, 0.22));
+  opacity: 0.92;
+  animation:
+    gb-sprite-cycle 0.68s steps(4) infinite,
+    gb-brand-dragon-flight 5.6s ease-in-out infinite;
+}
+
+.dark body {
+  background:
+    radial-gradient(circle at 18% 8%, rgba(14, 165, 233, 0.2), transparent 28rem),
+    radial-gradient(circle at 82% 16%, rgba(251, 191, 36, 0.14), transparent 25rem),
+    linear-gradient(180deg, #07111f, #09090b 48%);
+}
+
+.gb-home {
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.36), rgba(255, 255, 255, 0) 54%),
+    linear-gradient(115deg, rgba(34, 197, 94, 0.12), rgba(249, 115, 22, 0.08) 46%, rgba(14, 165, 233, 0.16));
+}
+
+.gb-home::before {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  content: '';
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.055) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(180deg, black, transparent 72%);
+}
+
+.gb-home::after {
+  position: absolute;
+  inset: auto -10% -34% -10%;
+  z-index: -1;
+  height: 46%;
+  content: '';
+  background:
+    radial-gradient(ellipse at 20% 20%, rgba(34, 197, 94, 0.34), transparent 34%),
+    radial-gradient(ellipse at 70% 40%, rgba(132, 204, 22, 0.28), transparent 36%),
+    linear-gradient(180deg, rgba(34, 197, 94, 0.15), rgba(21, 128, 61, 0.28));
+  border-radius: 50% 50% 0 0;
+}
+
+.gb-skyline {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+}
+
+.gb-skyline::before,
+.gb-skyline::after {
+  position: absolute;
+  content: '';
+  border-radius: 999px;
+  filter: blur(0.2px);
+}
+
+.gb-skyline::before {
+  top: 12%;
+  right: 12%;
+  width: 8rem;
+  height: 8rem;
+  background: radial-gradient(circle, rgba(251, 191, 36, 0.9), rgba(251, 191, 36, 0.18) 58%, transparent 62%);
+}
+
+.gb-skyline::after {
+  top: 34%;
+  left: 8%;
+  width: 14rem;
+  height: 4rem;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.66), transparent);
+  transform: rotate(-4deg);
+}
+
+.gb-terrain {
+  background:
+    radial-gradient(ellipse at 18% 0%, rgba(132, 204, 22, 0.45), transparent 45%),
+    radial-gradient(ellipse at 80% 20%, rgba(20, 184, 166, 0.24), transparent 42%),
+    linear-gradient(180deg, rgba(22, 163, 74, 0.4), rgba(22, 101, 52, 0.72));
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.55), 0 -24px 70px rgba(34, 197, 94, 0.18);
+}
+
+.gb-mobile-sprite {
+  --sprite-size: 9rem;
+  --sprite-frames: 4;
+  width: var(--sprite-size);
+  height: var(--sprite-size);
+  image-rendering: pixelated;
+  background-repeat: no-repeat;
+  background-size: calc(var(--sprite-size) * var(--sprite-frames)) var(--sprite-size);
+  filter: drop-shadow(0 18px 18px rgba(15, 23, 42, 0.28));
+  transform-origin: 50% 82%;
+}
+
+.gb-mobile-sprite::after {
+  position: absolute;
+  inset: auto 20% -0.5rem 20%;
+  height: 0.7rem;
+  content: '';
+  background: radial-gradient(ellipse, rgba(15, 23, 42, 0.28), transparent 68%);
+  transform-origin: center;
+  animation: gb-shadow-pulse 2.5s ease-in-out infinite;
+}
+
+.gb-mobile-sprite--frog {
+  --sprite-size: clamp(7rem, 13vw, 11rem);
+  background-image: url('/gunbound/frog-sheet.png');
+  animation:
+    gb-sprite-cycle 0.72s steps(4) infinite,
+    gb-idle-left 2.4s ease-in-out infinite;
+}
+
+.gb-mobile-sprite--trico {
+  --sprite-size: clamp(8rem, 15vw, 13rem);
+  background-image: url('/gunbound/trico-sheet.png');
+  animation:
+    gb-sprite-cycle 0.82s steps(4) infinite,
+    gb-idle-right 2.8s ease-in-out infinite;
+}
+
+.gb-mobile-sprite--aduko {
+  --sprite-size: clamp(10rem, 19vw, 17rem);
+  background-image: url('/gunbound/aduko-sheet.png');
+  animation:
+    gb-sprite-cycle 0.68s steps(4) infinite,
+    gb-idle-center 2.2s ease-in-out infinite;
+}
+
+.gb-shot {
+  animation: gb-float 3.8s ease-in-out infinite;
+}
+
+@keyframes gb-sprite-cycle {
+  to {
+    background-position-x: calc(var(--sprite-size) * var(--sprite-frames) * -1);
+  }
+}
+
+@keyframes gb-idle-left {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-3deg);
+  }
+
+  50% {
+    transform: translate3d(0.25rem, -0.45rem, 0) rotate(2deg);
+  }
+}
+
+@keyframes gb-idle-right {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(4deg);
+  }
+
+  50% {
+    transform: translate3d(-0.35rem, -0.65rem, 0) rotate(-2deg);
+  }
+}
+
+@keyframes gb-idle-center {
+  0%,
+  100% {
+    transform: translate3d(-50%, 0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate3d(-50%, -0.8rem, 0) scale(1.035);
+  }
+}
+
+@keyframes gb-shadow-pulse {
+  0%,
+  100% {
+    opacity: 0.68;
+    transform: scaleX(1);
+  }
+
+  50% {
+    opacity: 0.42;
+    transform: scaleX(0.78);
+  }
+}
+
+@keyframes gb-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  50% {
+    transform: translate3d(16px, -12px, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gb-brand-dragon,
+  .gb-mobile-sprite,
+  .gb-mobile-sprite::after,
+  .gb-shot {
+    animation: none;
+  }
+}
+
+@keyframes gb-brand-dragon-flight {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-8deg);
+  }
+
+  50% {
+    transform: translate3d(0.85rem, -0.35rem, 0) rotate(8deg);
+  }
+}
+
+@media (max-width: 1023px) {
+  .gb-home {
+    padding-bottom: 28rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .gb-brand {
+    min-width: 9rem;
+  }
+
+  .gb-brand-mark {
+    width: 6.2rem;
+  }
+
+  .gb-brand-letter {
+    width: 1.08rem;
+    height: 1.08rem;
+  }
+
+  .gb-brand-docs {
+    display: none;
+  }
+
+  .gb-brand-dragon {
+    display: none;
+  }
+}
+
+.gb-docs-atmosphere {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.gb-docs-atmosphere::before {
+  position: absolute;
+  top: 4rem;
+  right: -8rem;
+  width: 30rem;
+  height: 30rem;
+  content: '';
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.13), transparent 62%);
+}
+
+.gb-docs-atmosphere::after {
+  position: absolute;
+  bottom: -8rem;
+  left: -6rem;
+  width: 28rem;
+  height: 20rem;
+  content: '';
+  background: radial-gradient(ellipse, rgba(34, 197, 94, 0.13), transparent 68%);
+}
+
+.gb-docs-sprite {
+  position: absolute;
+  right: 1.25rem;
+  bottom: 5.25rem;
+  z-index: 0;
+  opacity: 0.28;
+}
+
+.gb-docs-sprite--frog {
+  --sprite-size: 5.5rem;
+  --sprite-frames: 4;
+  width: var(--sprite-size);
+  height: var(--sprite-size);
+  background-image: url('/gunbound/frog-sheet.png');
+  background-repeat: no-repeat;
+  background-size: calc(var(--sprite-size) * var(--sprite-frames)) var(--sprite-size);
+  image-rendering: pixelated;
+  animation:
+    gb-sprite-cycle 0.9s steps(4) infinite,
+    gb-docs-frog-patrol 9s ease-in-out infinite;
+  filter: drop-shadow(0 10px 12px rgba(15, 23, 42, 0.25));
+}
+
+.gb-docs-trail {
+  position: absolute;
+  top: 10rem;
+  right: 12%;
+  width: 12rem;
+  height: 0.35rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.7), transparent);
+  transform: rotate(-18deg);
+  opacity: 0.5;
+  animation: gb-docs-trail-drift 5s ease-in-out infinite;
+}
+
+.gb-docs-page {
+  position: relative;
+}
+
+.gb-docs-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 1.25rem;
+  overflow: hidden;
+  border: 1px solid rgba(14, 165, 233, 0.16);
+  border-radius: 1.25rem;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(240, 249, 255, 0.66)),
+    radial-gradient(circle at 94% 12%, rgba(251, 191, 36, 0.18), transparent 18rem);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+}
+
+.dark .gb-docs-hero {
+  border-color: rgba(125, 211, 252, 0.15);
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.78), rgba(9, 9, 11, 0.86)),
+    radial-gradient(circle at 94% 12%, rgba(251, 191, 36, 0.13), transparent 18rem);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.2);
+}
+
+.gb-docs-kicker {
+  margin-bottom: 0.65rem;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: rgb(3, 105, 161);
+}
+
+.dark .gb-docs-kicker {
+  color: rgb(125, 211, 252);
+}
+
+.gb-docs-hero-orb {
+  position: relative;
+  display: grid;
+  width: 4.5rem;
+  height: 4.5rem;
+  place-items: center;
+  border-radius: 1.1rem;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.9), rgba(251, 191, 36, 0.28) 36%, rgba(14, 165, 233, 0.22));
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.7), 0 16px 30px rgba(14, 165, 233, 0.14);
+}
+
+.gb-docs-hero-orb span {
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 999px;
+  background: rgb(251, 191, 36);
+  box-shadow: 0 0 0 0.55rem rgba(251, 191, 36, 0.16), 0 0 1.8rem rgba(251, 191, 36, 0.55);
+  animation: gb-docs-orb-pulse 2.4s ease-in-out infinite;
+}
+
+.gb-docs-actions {
+  margin-bottom: 1.75rem;
+  padding-left: 0.35rem;
+}
+
+.gb-docs-body {
+  font-size: 1rem;
+  line-height: 1.75;
+}
+
+.gb-mdx-heading {
+  scroll-margin-top: 6rem;
+}
+
+.gb-mdx-heading--h2 {
+  position: relative;
+  margin-top: 2.8rem;
+  padding-top: 1rem;
+}
+
+.gb-mdx-heading--h2::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4.5rem;
+  height: 0.24rem;
+  content: '';
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgb(14, 165, 233), rgb(251, 191, 36));
+}
+
+.gb-mdx-heading--h3 {
+  margin-top: 2rem;
+  color: rgb(15, 23, 42);
+}
+
+.dark .gb-mdx-heading--h3 {
+  color: rgb(241, 245, 249);
+}
+
+.gb-mdx-copy {
+  color: color-mix(in oklab, var(--color-fd-foreground) 78%, transparent);
+}
+
+.gb-mdx-list {
+  display: grid;
+  gap: 0.55rem;
+  margin-block: 1.2rem;
+  padding-left: 1.15rem;
+}
+
+.gb-mdx-list-item::marker {
+  color: rgb(14, 165, 233);
+}
+
+.gb-mdx-list--ordered .gb-mdx-list-item::marker {
+  font-weight: 800;
+  color: rgb(217, 119, 6);
+}
+
+.gb-mdx-callout {
+  margin-block: 1.5rem;
+  border-left: 0.35rem solid rgb(14, 165, 233);
+  border-radius: 0.9rem;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(251, 191, 36, 0.08));
+  padding: 1rem 1.1rem;
+}
+
+.gb-docs-body :where(pre) {
+  border: 1px solid rgba(14, 165, 233, 0.18);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+}
+
+.gb-docs-body :where(code):not(pre code) {
+  border: 1px solid rgba(14, 165, 233, 0.16);
+  border-radius: 0.45rem;
+  background: rgba(14, 165, 233, 0.08);
+  padding: 0.1rem 0.32rem;
+  color: rgb(3, 105, 161);
+}
+
+.dark .gb-docs-body :where(code):not(pre code) {
+  background: rgba(14, 165, 233, 0.12);
+  color: rgb(125, 211, 252);
+}
+
+.gb-docs-body :where(a) {
+  text-decoration-thickness: 0.12em;
+  text-underline-offset: 0.22em;
+}
+
+@keyframes gb-docs-frog-patrol {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-4deg);
+  }
+
+  50% {
+    transform: translate3d(-2rem, -0.6rem, 0) rotate(3deg);
+  }
+}
+
+@keyframes gb-docs-trail-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-18deg);
+  }
+
+  50% {
+    transform: translate3d(-1.5rem, 0.75rem, 0) rotate(-18deg);
+  }
+}
+
+@keyframes gb-docs-orb-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.86;
+  }
+
+  50% {
+    transform: scale(1.16);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gb-docs-sprite--frog,
+  .gb-docs-trail,
+  .gb-docs-hero-orb span {
+    animation: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .gb-docs-hero {
+    grid-template-columns: 1fr;
+    padding: 1rem;
+  }
+
+  .gb-docs-hero-orb {
+    display: none;
+  }
+
+  .gb-docs-atmosphere {
+    display: none;
+  }
 }

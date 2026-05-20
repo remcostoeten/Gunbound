@@ -29,7 +29,27 @@ export const Player = table(
     lastLoginDay: t.u64(),
     totalWins: t.u32(),
     totalLosses: t.u32(),
-    totalRoundsPlayed: t.u32()
+    totalRoundsPlayed: t.u32(),
+    isAdmin: t.bool().optional()
+  }
+);
+
+/**
+ * Public runtime flags controlled by server reducers.
+ *
+ * Values are stored as strings to keep the table generic. Clients parse the
+ * setting they care about and reducers are responsible for authorization.
+ */
+export const AppSetting = table(
+  {
+    name: 'app_setting',
+    public: true
+  },
+  {
+    key: t.string().primaryKey(),
+    value: t.string(),
+    updatedBy: t.identity().optional(),
+    updatedAt: t.timestamp()
   }
 );
 
@@ -228,6 +248,7 @@ export const Credential = table(
 
 const spacetimedb = schema({
   player: Player,
+  appSetting: AppSetting,
   room: Room,
   roomMember: RoomMember,
   round: Round,

@@ -85,6 +85,8 @@ function createTurnGuideWeaponSlots(
   return [
     {
       slotLabel: "Shot 1",
+      mobileType: player.mobile.type,
+      weaponType: "primary",
       weaponLabel: getWeaponDisplayName(player.mobile.type, "primary"),
       detailLabel: primarySelected ? "Selected" : "Ready",
       selected: primarySelected,
@@ -92,6 +94,8 @@ function createTurnGuideWeaponSlots(
     },
     {
       slotLabel: "Shot 2",
+      mobileType: player.mobile.type,
+      weaponType: "secondary",
       weaponLabel: getWeaponDisplayName(player.mobile.type, "secondary"),
       detailLabel: getSecondaryDetailLabel(player.mobile.specialCharges, turnCount, secondaryAvailable, secondarySelected),
       selected: secondarySelected,

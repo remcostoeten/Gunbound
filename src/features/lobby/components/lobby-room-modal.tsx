@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRoomSession, DEFAULT_MOBILE } from "../spacetime/use-room-session";
+import { useRoomSession } from "../spacetime/use-room-session";
+import { DEFAULT_MOBILE } from "@/features/game/mobiles/mobile-factory";
 import type { LobbyRoom } from "../types";
 
 type Props = {
@@ -30,7 +31,7 @@ export function LobbyRoomModal({ room, onClose, onStarted }: Props) {
   useEffect(() => {
     if (autoMobileRef.current) return;
     if (!session.self) return;
-    if (session.self.mobileType.length > 0) {
+    if (session.self.mobileType !== undefined) {
       autoMobileRef.current = true;
       return;
     }
@@ -136,7 +137,7 @@ export function LobbyRoomModal({ room, onClose, onStarted }: Props) {
 
   const everyoneReady =
     session.members.length === room.capacity &&
-    session.members.every(m => m.isReady && m.mobileType.length > 0);
+    session.members.every((m) => m.isReady && m.mobileType !== undefined);
   const startEnabled = session.isHost && everyoneReady && !startBusy;
   const youAreReady = session.self?.isReady === true;
 

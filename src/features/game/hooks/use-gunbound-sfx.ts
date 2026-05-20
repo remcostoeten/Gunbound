@@ -5,6 +5,7 @@ import { createAudioEventTracker, deriveAudioEvents } from "@/features/game/engi
 import { useGameStore } from "@/features/game/store/game-store";
 import type { AudioCue, AudioEventTracker } from "@/features/game/engine/audio-events";
 import type { GameState } from "@/features/game/types/state";
+import { getAudioVolume, subscribeAudioSettings } from "@/lib/audio-settings";
 
 type AudioPool = {
   context: AudioContext | null;
@@ -13,6 +14,10 @@ type AudioPool = {
   bgMusic: HTMLAudioElement | null;
   sounds: Record<string, HTMLAudioElement>;
 };
+
+const BASE_SFX_GAIN = 0.14;
+const BASE_MUSIC_GAIN = 0.08;
+const BASE_BG_MUSIC_VOLUME = 0.12;
 
 const SOUND_PATHS: Record<string, string> = {
   "match-intro": "/sounds/anos-de-gunbound.mp3",
@@ -59,6 +64,14 @@ export function useGunboundSfx(): void {
       window.removeEventListener("pointerdown", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
     };
+  }, []);
+
+  useEffect(function bindAudioSettings(): () => void {
+    function syncAudioVolumes(): void {
+      applyAudioVolumes(poolRef.current);
+    }
+
+    return subscribeAudioSettings(syncAudioVolumes);
   }, []);
 
   useEffect(function startLobbyMusicImmediately(): void {
@@ -109,16 +122,17 @@ function ensureAudio(pool: AudioPool): void {
     if (pool.context.state === "suspended") {
       void pool.context.resume();
     }
+    applyAudioVolumes(pool);
     return;
   }
 
   const context = new window.AudioContext();
   const gain = context.createGain();
-  gain.gain.value = 0.14;
+  gain.gain.value = BASE_SFX_GAIN * getAudioVolume("sfx");
   gain.connect(context.destination);
 
   const musicGain = context.createGain();
-  musicGain.gain.value = 0.08;
+  musicGain.gain.value = BASE_MUSIC_GAIN * getAudioVolume("music");
   musicGain.connect(context.destination);
 
   pool.context = context;
@@ -145,7 +159,7 @@ function startLobbyMusic(pool: AudioPool): void {
   const audio = new Audio("/sounds/lounge.mp3");
   audio.loop = true;
   audio.preload = "auto";
-  audio.volume = 0.12;
+  audio.volume = BASE_BG_MUSIC_VOLUME * getAudioVolume("music");
   void audio
     .play()
     .then(function handleLobbyMusicStarted(): void {
@@ -172,7 +186,7 @@ function resumeLobbyMusicIfNeeded(pool: AudioPool): void {
 function playSfx(pool: AudioPool, name: string): void {
   if (!pool.sounds[name]) return;
   const clone = pool.sounds[name].cloneNode() as HTMLAudioElement;
-  clone.volume = getSfxVolume(name);
+  clone.volume = getSfxVolume(name) * getAudioVolume("sfx");
   clone.play().catch(() => {});
 }
 
@@ -195,6 +209,8 @@ function syncAudioState(
   const gain = pool.gain;
 
   if (context === null || gain === null) return;
+
+  applyAudioVolumes(pool);
 
   routeSceneState(pool, state.scene, prevSceneRef, lobbyStartedRef, lobbyMatchStartCueAtRef, windAmbientNodeRef, context, gain);
 
@@ -303,6 +319,20 @@ function routeAudioCues(
       playSfx(pool, "adios");
     }
     index += 1;
+  }
+}
+
+function applyAudioVolumes(pool: AudioPool): void {
+  if (pool.gain !== null) {
+    pool.gain.gain.value = BASE_SFX_GAIN * getAudioVolume("sfx");
+  }
+
+  if (pool.musicGain !== null) {
+    pool.musicGain.gain.value = BASE_MUSIC_GAIN * getAudioVolume("music");
+  }
+
+  if (pool.bgMusic !== null) {
+    pool.bgMusic.volume = BASE_BG_MUSIC_VOLUME * getAudioVolume("music");
   }
 }
 

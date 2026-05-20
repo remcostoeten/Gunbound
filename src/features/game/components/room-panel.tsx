@@ -26,6 +26,14 @@ export function RoomPanel(props: {
         <span className="room-channel-name">Channel 1 / Gunbound Local Room</span>
         <span className="room-channel-state">Waiting</span>
       </div>
+      <div className="room-map-preview">
+        <img
+          className="room-map-preview-image"
+          src={mapPresentation.previewImage}
+          alt={mapPresentation.label + " map preview"}
+        />
+        <span className="room-map-preview-label">{mapPresentation.label}</span>
+      </div>
       <div className="room-grid">
         <div className="room-row">
           <span className="room-key">Map</span>
@@ -64,9 +72,12 @@ function renderSlot(slot: 1 | 2, name: string, title: PlayerTitle, accent: Playe
       {renderSpriteThumb(mobileType, "room-slot-sprite")}
       <div className="room-slot-copy">
         <span className="room-slot-name">{name || (slot === 1 ? "Player 1" : "Player 2")}</span>
-        <span className="room-slot-mobile">{title} / {getRoomMobileLabel(mobileType)}</span>
+        <span className="room-slot-mobile">
+          <img className="room-slot-title-badge" src={"/badges/badge-" + title.toLowerCase() + ".svg"} alt="" width={16} height={16} />
+          {title} / {getRoomMobileLabel(mobileType)}
+        </span>
       </div>
-      <span className={"room-slot-accent accent-" + accent} />
+      <img className="room-slot-accent" src={"/badges/accent-" + accent + ".svg"} alt="" width={12} height={12} />
       <span className="room-slot-ready">Ready</span>
     </div>
   );

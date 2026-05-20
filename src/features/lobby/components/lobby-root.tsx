@@ -13,7 +13,7 @@ import { LobbyCreateModal } from "./lobby-create-modal";
 import { LobbyToastStack } from "./lobby-toast-stack";
 import { useLobbyState } from "../hooks/use-lobby-state";
 import { useLobbyRooms, type LobbyRoomView } from "../spacetime/use-lobby-rooms";
-import { useCurrentPlayer } from "@/features/game/spacetime";
+import { useCurrentPlayer, useEmptyDataMode } from "@/features/game/spacetime";
 import type { LobbyRoom } from "../types";
 
 type Props = {
@@ -36,8 +36,9 @@ function toLobbyRoom(view: LobbyRoomView): LobbyRoom {
 export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
   const connection = useSpacetimeDB();
   const { player } = useCurrentPlayer();
+  const emptyDataMode = useEmptyDataMode();
   const selfName = player?.name?.trim() || username || null;
-  const s = useLobbyState(selfName);
+  const s = useLobbyState(selfName, emptyDataMode.enabled);
   const { rooms: roomViews, joinRoomByCode, quickJoin } = useLobbyRooms();
 
   const rooms = useMemo(() => roomViews.map(toLobbyRoom), [roomViews]);
@@ -100,6 +101,15 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
     }
   }, [roomViews, s]);
 
+  const handleToggleEmptyData = useCallback(async () => {
+    try {
+      await emptyDataMode.setEnabled(!emptyDataMode.enabled);
+      s.pushToast(emptyDataMode.enabled ? "Fixture data enabled" : "Empty data enabled");
+    } catch (e) {
+      s.pushToast(messageFromError(e));
+    }
+  }, [emptyDataMode, s]);
+
   const handleStarted = useCallback((roomId: bigint) => {
     s.setActiveRoom(null);
     if (onEnterBattle) onEnterBattle(roomId);
@@ -121,6 +131,9 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
           onCreate={() => s.setCreating(true)}
           onFriend={() => s.pushToast("Friend list coming soon")}
           onSearch={() => s.pushToast("Enter a room number…")}
+          canToggleEmptyData={player?.isAdmin === true}
+          emptyDataEnabled={emptyDataMode.enabled}
+          onToggleEmptyData={handleToggleEmptyData}
         />
         <LobbyBody
           rooms={rooms}

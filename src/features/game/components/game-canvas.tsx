@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { getBonusIconPath } from "@/features/game/constants/weapon-icons";
 import { createCameraRig, getCameraFrame, stepCameraRig } from "@/features/game/engine/camera";
 import { createVisualEffectsState, stepVisualEffectsState } from "@/features/game/engine/effects";
 import { createMapDecor } from "@/features/game/engine/map-decor";
@@ -32,7 +33,7 @@ import type {
   WindLeaf
 } from "@/features/game/types/effects";
 import type { CameraFrame, MapDecorPlan, MapDecorPrimitive } from "@/features/game/types/presentation";
-import type { MobileType, PlayerAccent, TerrainTheme, Vec2 } from "@/features/game/types/shared";
+import type { BonusType, MobileType, PlayerAccent, TerrainTheme, Vec2 } from "@/features/game/types/shared";
 
 type SpriteCache = {
   armor: HTMLImageElement | null;
@@ -57,6 +58,8 @@ type ExplosionSpriteSpec = {
 };
 
 type ExplosionSpriteCache = Record<ExplosionSpriteSheet, HTMLImageElement | null>;
+
+type BonusIconCache = Record<BonusType, HTMLImageElement | null>;
 
 type MapDecorCache = {
   key: string;
@@ -133,6 +136,7 @@ export function GameCanvas(): React.JSX.Element {
     dragonRider: null
   });
   const explosionSpriteCacheRef = useRef<ExplosionSpriteCache>(createExplosionSpriteCache());
+  const bonusIconCacheRef = useRef<BonusIconCache>(createBonusIconCache());
 
   useInput();
   useGameLoop(drawFrame);
@@ -147,6 +151,7 @@ export function GameCanvas(): React.JSX.Element {
     canvas.height = worldHeight;
     loadMobileSprites(spriteCacheRef.current);
     loadExplosionSprites(explosionSpriteCacheRef.current);
+    loadBonusIcons(bonusIconCacheRef.current);
   }
 
   function drawFrame(): void {
@@ -200,7 +205,7 @@ export function GameCanvas(): React.JSX.Element {
       drawGrass(context, state.terrain, visualTimeRef.current, state.wind, visualEffects.grass);
     }
 
-    drawBonusBoxes(context, state.bonusBoxes);
+    drawBonusBoxes(context, state.bonusBoxes, bonusIconCacheRef.current);
 
     if (state.scene === "playing" && state.projectile === null && state.terrain !== null) {
       drawAimGuide(context, state.players[state.turn - 1], state.wind, state.power, state.charging, state.terrain);
@@ -425,31 +430,41 @@ function drawGrass(context: CanvasRenderingContext2D, terrain: TerrainState, vis
 
 // ---- Bonus boxes ----
 
-function drawBonusBoxes(context: CanvasRenderingContext2D, bonusBoxes: BonusBox[]): void {
+function drawBonusBoxes(context: CanvasRenderingContext2D, bonusBoxes: BonusBox[], iconCache: BonusIconCache): void {
   let index = 0;
   while (index < bonusBoxes.length) {
     const box = bonusBoxes[index];
     if (!box.landed) {
       drawParachute(context, box.position.x, box.position.y - 34, getBonusParachuteColor(box.type));
     }
-    context.strokeStyle = "#5f3217";
-    context.fillStyle = "#a56738";
-    context.lineWidth = 2;
-    context.fillRect(box.position.x - 12, box.position.y - 28, 24, 22);
-    context.strokeRect(box.position.x - 12, box.position.y - 28, 24, 22);
-    context.strokeStyle = "#704021";
-    context.beginPath();
-    context.moveTo(box.position.x - 6, box.position.y - 28);
-    context.lineTo(box.position.x - 6, box.position.y - 6);
-    context.moveTo(box.position.x + 4, box.position.y - 28);
-    context.lineTo(box.position.x + 4, box.position.y - 6);
-    context.stroke();
-    context.fillStyle = "#fff5cc";
-    context.font = '700 10px "Press Start 2P"';
-    context.textAlign = "center";
-    context.fillText(getBonusShortLabel(box.type), box.position.x, box.position.y - 12);
+    drawBonusBox(context, box, iconCache);
     index += 1;
   }
+}
+
+function drawBonusBox(context: CanvasRenderingContext2D, box: BonusBox, iconCache: BonusIconCache): void {
+  const icon = iconCache[box.type];
+  if (icon !== null && icon.complete && icon.naturalWidth > 0) {
+    context.drawImage(icon, box.position.x - 16, box.position.y - 34, 32, 32);
+    return;
+  }
+
+  context.strokeStyle = "#5f3217";
+  context.fillStyle = "#a56738";
+  context.lineWidth = 2;
+  context.fillRect(box.position.x - 12, box.position.y - 28, 24, 22);
+  context.strokeRect(box.position.x - 12, box.position.y - 28, 24, 22);
+  context.strokeStyle = "#704021";
+  context.beginPath();
+  context.moveTo(box.position.x - 6, box.position.y - 28);
+  context.lineTo(box.position.x - 6, box.position.y - 6);
+  context.moveTo(box.position.x + 4, box.position.y - 28);
+  context.lineTo(box.position.x + 4, box.position.y - 6);
+  context.stroke();
+  context.fillStyle = "#fff5cc";
+  context.font = '700 10px "Press Start 2P"';
+  context.textAlign = "center";
+  context.fillText(getBonusShortLabel(box.type), box.position.x, box.position.y - 12);
 }
 
 // ---- Players ----
@@ -651,6 +666,14 @@ function createExplosionSpriteCache(): ExplosionSpriteCache {
   };
 }
 
+function createBonusIconCache(): BonusIconCache {
+  return {
+    weapon: null,
+    repair: null,
+    double: null
+  };
+}
+
 function loadExplosionSprites(spriteCache: ExplosionSpriteCache): void {
   if (typeof Image === "undefined") return;
   const sheets = Object.keys(explosionSpriteSpecs) as ExplosionSpriteSheet[];
@@ -661,6 +684,21 @@ function loadExplosionSprites(spriteCache: ExplosionSpriteCache): void {
       const image = new Image();
       image.src = explosionSpriteSpecs[sheet].path;
       spriteCache[sheet] = image;
+    }
+    index += 1;
+  }
+}
+
+function loadBonusIcons(iconCache: BonusIconCache): void {
+  if (typeof Image === "undefined") return;
+  const bonusTypes: BonusType[] = ["weapon", "repair", "double"];
+  let index = 0;
+  while (index < bonusTypes.length) {
+    const bonusType = bonusTypes[index];
+    if (iconCache[bonusType] === null) {
+      const image = new Image();
+      image.src = getBonusIconPath(bonusType);
+      iconCache[bonusType] = image;
     }
     index += 1;
   }
@@ -729,7 +767,7 @@ function drawMobileSprite(context: CanvasRenderingContext2D, player: Player, spr
   }
 
   const spriteSource = getMobileSpriteSource(player.mobile.type);
-  const frame = getMobileSpriteFrame(visualTime + player.id * 0.17, 6.5);
+  const frame = getMobileSpriteFrame(visualTime + player.id * 0.17, 6.5, spriteSource.frameCount);
   const destinationWidth = spriteSource.width * spriteSource.battleScale;
   const destinationHeight = spriteSource.height * spriteSource.battleScale;
   const destinationX =
