@@ -13,6 +13,9 @@ import {
 export default __t.row({
   identity: __t.identity().primaryKey(),
   name: __t.string(),
+  createdAt: __t.timestamp().name("created_at"),
+  updatedAt: __t.timestamp().name("updated_at"),
+  displayNameSetAt: __t.option(__t.timestamp()).name("display_name_set_at"),
   isOnline: __t.bool().name("is_online"),
   lastSeen: __t.timestamp().name("last_seen"),
   xp: __t.u64(),

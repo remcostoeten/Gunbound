@@ -7,13 +7,21 @@ export { default } from './schema';
 type ModuleContext = ReducerCtx<InferSchema<typeof spacetimedb>>;
 
 const ROOM_STATUS_WAITING = 'waiting';
-const ROOM_STATUS_IN_ROUND = 'in_round';
+const ROOM_STATUS_STARTING = 'starting';
+const ROOM_STATUS_IN_MATCH = 'in_match';
 const ROOM_STATUS_ENDED = 'ended';
 
 const ROUND_STATUS_ACTIVE = 'active';
 const ROUND_STATUS_FINISHED = 'finished';
 
 const ROOM_MAX_MEMBERS = 2;
+const DEFAULT_MAP_TYPE = 'rolling';
+const DEFAULT_TARGET_SCORE = 2;
+const DEFAULT_ROUND_LIMIT = 5;
+const MIN_TARGET_SCORE = 1;
+const MAX_TARGET_SCORE = 9;
+const MIN_ROUND_LIMIT = 1;
+const MAX_ROUND_LIMIT = 15;
 const CHAT_MESSAGE_MAX_LENGTH = 200;
 const MICROS_PER_DAY = 86_400n * 1_000_000n;
 const EMPTY_DATA_SETTING_KEY = 'empty_data_enabled';
@@ -23,6 +31,7 @@ const VALID_MOBILE_TYPES = new Set([
   'armor', 'knight', 'dragon', 'snow', 'trico', 'aduko',
   'mage', 'nak', 'turtle', 'frog', 'sate'
 ]);
+const VALID_MAP_TYPES = new Set(['rolling', 'canyon', 'crater', 'ridge']);
 
 const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/;
 const ENCRYPTED_TOKEN_MAX_LENGTH = 2048;
@@ -94,6 +103,86 @@ function computeRoundXp(isWinner: boolean, isDraw: boolean, damageDealt: number,
   return base + damageBonus + accuracyBonus;
 }
 
+function isActiveRoomStatus(status: string): boolean {
+  return status !== ROOM_STATUS_ENDED;
+}
+
+function isRoomLockedForMatch(status: string): boolean {
+  return status === ROOM_STATUS_STARTING || status === ROOM_STATUS_IN_MATCH;
+}
+
+function findActiveRoomMembership(ctx: ModuleContext): { roomId: bigint } | null {
+  for (const member of ctx.db.roomMember.room_member_identity.filter(ctx.sender)) {
+    const room = ctx.db.room.id.find(member.roomId);
+    if (room && isActiveRoomStatus(room.status)) {
+      return { roomId: member.roomId };
+    }
+  }
+  return null;
+}
+
+function assertNotInActiveRoom(ctx: ModuleContext): void {
+  if (findActiveRoomMembership(ctx)) {
+    throw new SenderError('leave your current room before joining another');
+  }
+}
+
+function getNextRoomSlotIndex(ctx: ModuleContext, roomId: bigint): number {
+  const used = new Set<number>();
+  for (const member of ctx.db.roomMember.room_member_room_id.filter(roomId)) {
+    used.add(member.slotIndex);
+  }
+
+  let slot = 0;
+  while (slot < ROOM_MAX_MEMBERS) {
+    if (!used.has(slot)) return slot;
+    slot += 1;
+  }
+
+  throw new SenderError('room is full');
+}
+
+function insertPlayer(ctx: ModuleContext, name: string): void {
+  const currentDay = ctx.timestamp.microsSinceUnixEpoch / MICROS_PER_DAY;
+  ctx.db.player.insert({
+    identity: ctx.sender,
+    name,
+    createdAt: ctx.timestamp,
+    updatedAt: ctx.timestamp,
+    displayNameSetAt: name.length > 0 ? ctx.timestamp : undefined,
+    isOnline: true,
+    lastSeen: ctx.timestamp,
+    xp: 0n,
+    level: 0,
+    loginStreak: 1,
+    longestStreak: 1,
+    lastLoginDay: currentDay,
+    totalWins: 0,
+    totalLosses: 0,
+    totalRoundsPlayed: 0,
+    isAdmin: hasBootstrapAdminCredential(ctx, ctx.sender)
+  });
+}
+
+function setPlayerDisplayName(ctx: ModuleContext, name: string): void {
+  const trimmed = name.trim();
+  if (trimmed.length === 0) throw new SenderError('name must not be empty');
+  if (trimmed.length > 32) throw new SenderError('name must be 32 characters or fewer');
+
+  const existing = ctx.db.player.identity.find(ctx.sender);
+  if (existing) {
+    ctx.db.player.identity.update({
+      ...existing,
+      name: trimmed,
+      updatedAt: ctx.timestamp,
+      displayNameSetAt: ctx.timestamp
+    });
+    return;
+  }
+
+  insertPlayer(ctx, trimmed);
+}
+
 export const init = spacetimedb.init(ctx => {
   if (!ctx.db.appSetting.key.find(EMPTY_DATA_SETTING_KEY)) {
     ctx.db.appSetting.insert({
@@ -130,6 +219,7 @@ export const onClientConnected = spacetimedb.clientConnected(ctx => {
 
     ctx.db.player.identity.update({
       ...existing,
+      updatedAt: ctx.timestamp,
       isOnline: true,
       lastSeen: ctx.timestamp,
       loginStreak,
@@ -142,21 +232,7 @@ export const onClientConnected = spacetimedb.clientConnected(ctx => {
     return;
   }
 
-  ctx.db.player.insert({
-    identity: ctx.sender,
-    name: '',
-    isOnline: true,
-    lastSeen: ctx.timestamp,
-    xp: 0n,
-    level: 0,
-    loginStreak: 1,
-    longestStreak: 1,
-    lastLoginDay: currentDay,
-    totalWins: 0,
-    totalLosses: 0,
-    totalRoundsPlayed: 0,
-    isAdmin: hasBootstrapAdminCredential(ctx, ctx.sender)
-  });
+  insertPlayer(ctx, '');
 });
 
 /**
@@ -171,47 +247,35 @@ export const onClientDisconnected = spacetimedb.clientDisconnected(ctx => {
   if (!existing) return;
   ctx.db.player.identity.update({
     ...existing,
+    updatedAt: ctx.timestamp,
     isOnline: false,
     lastSeen: ctx.timestamp
   });
 });
 
 /**
- * Sets the caller's display name.
+ * Sets the caller's profile data.
  *
  * Trims whitespace and enforces a 1-32 character bound so room rosters and
  * HUD overlays stay readable. Creates the player row if the rename arrives
  * before the lifecycle hook has fired (shouldn't happen in practice, but
  * the upsert keeps the reducer safe to retry).
  */
+export const set_player_profile = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    setPlayerDisplayName(ctx, name);
+  }
+);
+
+/**
+ * Compatibility alias for existing clients. New code should call
+ * `set_player_profile` so profile fields can grow without another rename.
+ */
 export const set_player_name = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
-    const trimmed = name.trim();
-    if (trimmed.length === 0) throw new SenderError('name must not be empty');
-    if (trimmed.length > 32) throw new SenderError('name must be 32 characters or fewer');
-
-    const existing = ctx.db.player.identity.find(ctx.sender);
-    if (existing) {
-      ctx.db.player.identity.update({ ...existing, name: trimmed });
-      return;
-    }
-    const currentDay = ctx.timestamp.microsSinceUnixEpoch / MICROS_PER_DAY;
-    ctx.db.player.insert({
-      identity: ctx.sender,
-      name: trimmed,
-      isOnline: true,
-      lastSeen: ctx.timestamp,
-      xp: 0n,
-      level: 0,
-      loginStreak: 1,
-      longestStreak: 1,
-      lastLoginDay: currentDay,
-      totalWins: 0,
-      totalLosses: 0,
-      totalRoundsPlayed: 0,
-      isAdmin: hasBootstrapAdminCredential(ctx, ctx.sender)
-    });
+    setPlayerDisplayName(ctx, name);
   }
 );
 
@@ -234,12 +298,14 @@ export const set_empty_data_enabled = spacetimedb.reducer(
  *
  * Codes are normalized to uppercase and bounded to 4-8 characters so they
  * stay easy to type and share verbally. Uniqueness is only enforced against
- * rooms that are still active (`waiting` or `in_round`) — once a room ends,
+ * rooms that are still active (`waiting`, `starting`, or `in_match`) — once a room ends,
  * its code becomes free again so friends can reuse memorable strings.
  */
 export const create_room = spacetimedb.reducer(
   { code: t.string(), seed: t.u64() },
   (ctx, { code, seed }) => {
+    assertNotInActiveRoom(ctx);
+
     const normalizedCode = code.trim().toUpperCase();
     if (normalizedCode.length < 4 || normalizedCode.length > 8) {
       throw new SenderError('room code must be 4-8 characters');
@@ -257,6 +323,9 @@ export const create_room = spacetimedb.reducer(
       hostIdentity: ctx.sender,
       status: ROOM_STATUS_WAITING,
       seed,
+      mapType: DEFAULT_MAP_TYPE,
+      targetScore: DEFAULT_TARGET_SCORE,
+      roundLimit: DEFAULT_ROUND_LIMIT,
       createdAt: ctx.timestamp
     });
 
@@ -264,9 +333,43 @@ export const create_room = spacetimedb.reducer(
       id: 0n,
       roomId: room.id,
       identity: ctx.sender,
+      slotIndex: 0,
+      teamIndex: undefined,
       mobileType: '',
       isReady: false,
       joinedAt: ctx.timestamp
+    });
+  }
+);
+
+/**
+ * Host-only: updates the room rules while the lobby is waiting.
+ */
+export const update_room_settings = spacetimedb.reducer(
+  { roomId: t.u64(), mapType: t.string(), targetScore: t.u32(), roundLimit: t.u32() },
+  (ctx, { roomId, mapType, targetScore, roundLimit }) => {
+    if (!VALID_MAP_TYPES.has(mapType)) throw new SenderError('unknown map type');
+    if (targetScore < MIN_TARGET_SCORE || targetScore > MAX_TARGET_SCORE) {
+      throw new SenderError(`target score must be ${MIN_TARGET_SCORE}-${MAX_TARGET_SCORE}`);
+    }
+    if (roundLimit < MIN_ROUND_LIMIT || roundLimit > MAX_ROUND_LIMIT) {
+      throw new SenderError(`round limit must be ${MIN_ROUND_LIMIT}-${MAX_ROUND_LIMIT}`);
+    }
+
+    const room = ctx.db.room.id.find(roomId);
+    if (!room) throw new SenderError('room not found');
+    if (room.hostIdentity.toHexString() !== ctx.sender.toHexString()) {
+      throw new SenderError('only the host can update room settings');
+    }
+    if (room.status !== ROOM_STATUS_WAITING) {
+      throw new SenderError('room settings are locked once a match starts');
+    }
+
+    ctx.db.room.id.update({
+      ...room,
+      mapType,
+      targetScore,
+      roundLimit
     });
   }
 );
@@ -294,11 +397,14 @@ export const join_room_by_code = spacetimedb.reducer(
     }
     if (!target) throw new SenderError('no joinable room with that code');
 
+    const currentMembership = findActiveRoomMembership(ctx);
+    if (currentMembership) {
+      if (currentMembership.roomId === target.id) return;
+      throw new SenderError('leave your current room before joining another');
+    }
+
     let memberCount = 0;
     for (const member of ctx.db.roomMember.room_member_room_id.filter(target.id)) {
-      if (member.identity.toHexString() === ctx.sender.toHexString()) {
-        return;
-      }
       memberCount += 1;
     }
 
@@ -310,6 +416,8 @@ export const join_room_by_code = spacetimedb.reducer(
       id: 0n,
       roomId: target.id,
       identity: ctx.sender,
+      slotIndex: getNextRoomSlotIndex(ctx, target.id),
+      teamIndex: undefined,
       mobileType: '',
       isReady: false,
       joinedAt: ctx.timestamp
@@ -376,7 +484,7 @@ export const start_round = spacetimedb.reducer(
     if (room.hostIdentity.toHexString() !== ctx.sender.toHexString()) {
       throw new SenderError('only the host can start a round');
     }
-    if (room.status === ROOM_STATUS_IN_ROUND) {
+    if (isRoomLockedForMatch(room.status)) {
       throw new SenderError('round already in progress');
     }
 
@@ -398,7 +506,7 @@ export const start_round = spacetimedb.reducer(
       winnerIdentity: undefined
     });
 
-    ctx.db.room.id.update({ ...room, status: ROOM_STATUS_IN_ROUND, seed });
+    ctx.db.room.id.update({ ...room, status: ROOM_STATUS_IN_MATCH, seed });
   }
 );
 
@@ -504,6 +612,7 @@ export const end_round = spacetimedb.reducer(
 
       ctx.db.player.identity.update({
         ...player,
+        updatedAt: ctx.timestamp,
         xp: newXp,
         level: newLevel,
         totalWins: isWinner ? player.totalWins + 1 : player.totalWins,
@@ -621,7 +730,7 @@ export const select_mobile = spacetimedb.reducer(
 
     const room = ctx.db.room.id.find(roomId);
     if (!room) throw new SenderError('room not found');
-    if (room.status === ROOM_STATUS_IN_ROUND) {
+    if (isRoomLockedForMatch(room.status)) {
       throw new SenderError('cannot change mobile during an active round');
     }
 
@@ -649,7 +758,7 @@ export const set_ready = spacetimedb.reducer(
   (ctx, { roomId, isReady }) => {
     const room = ctx.db.room.id.find(roomId);
     if (!room) throw new SenderError('room not found');
-    if (room.status === ROOM_STATUS_IN_ROUND) {
+    if (isRoomLockedForMatch(room.status)) {
       throw new SenderError('cannot change ready state during an active round');
     }
 
@@ -711,9 +820,12 @@ export const register_credential = spacetimedb.reducer(
 
     const player = ctx.db.player.identity.find(ctx.sender);
     if (player) {
+      const shouldSetName = player.name === '';
       ctx.db.player.identity.update({
         ...player,
-        name: player.name === '' ? trimmed : player.name,
+        name: shouldSetName ? trimmed : player.name,
+        updatedAt: ctx.timestamp,
+        displayNameSetAt: shouldSetName ? ctx.timestamp : player.displayNameSetAt,
         isAdmin: player.isAdmin || isBootstrapAdminUsername(trimmed)
       });
     }

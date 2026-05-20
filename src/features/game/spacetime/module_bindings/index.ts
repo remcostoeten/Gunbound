@@ -45,10 +45,12 @@ import SelectMobileReducer from "./select_mobile_reducer";
 import SendChatReducer from "./send_chat_reducer";
 import SetEmptyDataEnabledReducer from "./set_empty_data_enabled_reducer";
 import SetPlayerNameReducer from "./set_player_name_reducer";
+import SetPlayerProfileReducer from "./set_player_profile_reducer";
 import SetReadyReducer from "./set_ready_reducer";
 import StartRoundReducer from "./start_round_reducer";
 import SubmitRoundStatsReducer from "./submit_round_stats_reducer";
 import UpdateCredentialTokenReducer from "./update_credential_token_reducer";
+import UpdateRoomSettingsReducer from "./update_room_settings_reducer";
 
 // Import all procedure arg schemas
 
@@ -220,10 +222,12 @@ const reducersSchema = __reducers(
   __reducerSchema("send_chat", SendChatReducer),
   __reducerSchema("set_empty_data_enabled", SetEmptyDataEnabledReducer),
   __reducerSchema("set_player_name", SetPlayerNameReducer),
+  __reducerSchema("set_player_profile", SetPlayerProfileReducer),
   __reducerSchema("set_ready", SetReadyReducer),
   __reducerSchema("start_round", StartRoundReducer),
   __reducerSchema("submit_round_stats", SubmitRoundStatsReducer),
   __reducerSchema("update_credential_token", UpdateCredentialTokenReducer),
+  __reducerSchema("update_room_settings", UpdateRoomSettingsReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */

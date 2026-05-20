@@ -12,7 +12,7 @@ const ROOM_CAPACITY = 2;
 export type LobbyRoomView = {
   id: bigint;
   code: string;
-  status: "waiting" | "in_round";
+  status: "waiting" | "in_match";
   hostIdentityHex: string;
   hostName: string;
   memberCount: number;
@@ -55,7 +55,7 @@ export function useLobbyRooms() {
         return {
           id: r.id,
           code: r.code,
-          status: r.status === "in_round" ? "in_round" : "waiting",
+          status: r.status === "in_match" ? "in_match" : "waiting",
           hostIdentityHex: hex,
           hostName: name.length > 0 ? name : `Host-${hex.slice(0, 4)}`,
           memberCount: memberCount.get(r.id.toString()) ?? 0,

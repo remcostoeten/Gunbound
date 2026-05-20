@@ -14,6 +14,8 @@ export default __t.row({
   id: __t.u64().primaryKey(),
   roomId: __t.u64().name("room_id"),
   identity: __t.identity(),
+  slotIndex: __t.u32().name("slot_index"),
+  teamIndex: __t.option(__t.u32()).name("team_index"),
   mobileType: __t.string().name("mobile_type"),
   isReady: __t.bool().name("is_ready"),
   joinedAt: __t.timestamp().name("joined_at"),

@@ -16,5 +16,8 @@ export default __t.row({
   hostIdentity: __t.identity().name("host_identity"),
   status: __t.string(),
   seed: __t.u64(),
+  mapType: __t.string().name("map_type"),
+  targetScore: __t.u32().name("target_score"),
+  roundLimit: __t.u32().name("round_limit"),
   createdAt: __t.timestamp().name("created_at"),
 });

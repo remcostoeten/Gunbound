@@ -45,7 +45,7 @@ export function LobbyRoomModal({ room, onClose, onStarted }: Props) {
   useEffect(() => {
     if (startedRef.current) return;
     if (!session.room) return;
-    if (session.room.status !== "in_round") return;
+    if (session.room.status !== "in_match") return;
     startedRef.current = true;
     onStarted(session.room.id);
   }, [session.room, onStarted]);
@@ -132,7 +132,10 @@ export function LobbyRoomModal({ room, onClose, onStarted }: Props) {
 
   const slots: Array<{ key: string; member?: typeof session.members[number] }> = [];
   for (let i = 0; i < room.capacity; i += 1) {
-    slots.push({ key: `slot-${i}`, member: session.members[i] });
+    slots.push({
+      key: `slot-${i}`,
+      member: session.members.find((m) => m.slotIndex === i)
+    });
   }
 
   const everyoneReady =
@@ -178,7 +181,7 @@ export function LobbyRoomModal({ room, onClose, onStarted }: Props) {
           <div className="gb-modal-meta">
             <span>Code: <b>{session.room.code}</b></span>
             <span>Players: <b>{session.members.length}/{room.capacity}</b></span>
-            <span>Status: <b>{session.room.status === "in_round" ? "Playing" : "Waiting"}</b></span>
+            <span>Status: <b>{session.room.status === "in_match" ? "Playing" : "Waiting"}</b></span>
           </div>
 
           <div className="gb-chat gb-chat-inroom">
