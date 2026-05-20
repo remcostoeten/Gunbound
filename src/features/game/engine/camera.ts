@@ -44,9 +44,10 @@ export function stepCameraRig(rig: CameraRig, input: CameraStepInput): CameraRig
   const viewport = getViewportForMode(mode);
   const target = clampCenter(resolveTarget(mode, input), viewport);
   const smoothing = getSmoothing(mode, input);
+  const lerpFactor = getAdaptiveLerpFactor(rig.center, target, input.dt, smoothing);
   const center = {
-    x: lerp(rig.center.x, target.x, Math.min(1, input.dt * smoothing)),
-    y: lerp(rig.center.y, target.y, Math.min(1, input.dt * smoothing))
+    x: lerp(rig.center.x, target.x, lerpFactor),
+    y: lerp(rig.center.y, target.y, lerpFactor)
   };
 
   return {
@@ -124,10 +125,7 @@ function getViewportForMode(mode: CameraMode): CameraViewport {
 
 function resolveTarget(mode: CameraMode, input: CameraStepInput): Vec2 {
   if (mode === "projectile" && input.projectile !== null) {
-    return {
-      x: input.projectile.position.x + input.projectile.velocity.x * 0.18,
-      y: input.projectile.position.y + input.projectile.velocity.y * 0.12 - 50
-    };
+    return predictProjectilePosition(input.projectile);
   }
 
   if (mode === "impact" && input.explosionVisual !== null) {
@@ -220,6 +218,29 @@ function getShakeAmplitude(explosionVisual: ExplosionVisual | null, fireShake: n
   }
 
   return shakeIntensity;
+}
+
+function predictProjectilePosition(projectile: { position: Vec2; velocity: Vec2; gravityScale: number }): Vec2 {
+  const lookahead = 0.36;
+  const gravity = 530 * projectile.gravityScale;
+  return {
+    x: projectile.position.x + projectile.velocity.x * lookahead,
+    y: projectile.position.y + projectile.velocity.y * lookahead + 0.5 * gravity * lookahead * lookahead - 50
+  };
+}
+
+function getAdaptiveLerpFactor(center: Vec2, target: Vec2, dt: number, smoothing: number): number {
+  const base = Math.min(1, dt * smoothing);
+  const distance = Math.hypot(target.x - center.x, target.y - center.y);
+  if (distance > 380) {
+    return 1;
+  }
+
+  if (distance > 220) {
+    return Math.max(base, 0.32);
+  }
+
+  return base;
 }
 
 function lerp(from: number, to: number, amount: number): number {
