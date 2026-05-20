@@ -9,27 +9,13 @@ import { GunboundSpacetimeProvider } from "@/features/game/spacetime";
 
 type Stage = "intro" | "auth" | "lobby" | "battle";
 
-const POST_LOGIN_KEY = "gunbound:post-login";
-
 export function HomeScreen() {
   const [stage, setStage] = useState<Stage>("intro");
   const [replayKey, setReplayKey] = useState(0);
   const [fading, setFading] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
   const [battleRoomId, setBattleRoomId] = useState<bigint | undefined>(undefined);
-
-  // After a "login" flow, the page reloads so the SpacetimeDB connection is
-  // rebuilt with the recovered token. Pick up the username and skip
-  // intro+auth so the user lands directly in the lobby they just signed into.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const pending = window.sessionStorage.getItem(POST_LOGIN_KEY);
-    if (!pending) return;
-    window.sessionStorage.removeItem(POST_LOGIN_KEY);
-    setUsername(pending);
-    setStage("lobby");
-    setFading(true);
-  }, []);
+  const [spacetimeSessionKey, setSpacetimeSessionKey] = useState(0);
 
   useEffect(() => {
     if (stage === "intro") {
@@ -49,7 +35,7 @@ export function HomeScreen() {
   }
 
   return (
-    <GunboundSpacetimeProvider>
+    <GunboundSpacetimeProvider sessionKey={spacetimeSessionKey}>
       {stage === "battle" ? (
         <div className="home-stack">
           <div className="home-layer home-battle-layer">
@@ -75,6 +61,7 @@ export function HomeScreen() {
               <AuthRoot
                 onAuthed={(u) => {
                   setUsername(u);
+                  setSpacetimeSessionKey((value) => value + 1);
                   setFading(false);
                   setStage("lobby");
                 }}

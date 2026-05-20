@@ -41,8 +41,14 @@ import KickFromRoomReducer from "./kick_from_room_reducer";
 import LeaveRoomReducer from "./leave_room_reducer";
 import RecordRoundEventReducer from "./record_round_event_reducer";
 import RegisterCredentialReducer from "./register_credential_reducer";
+import RemoveFriendReducer from "./remove_friend_reducer";
+import RespondFriendRequestReducer from "./respond_friend_request_reducer";
+import RespondRoomInviteReducer from "./respond_room_invite_reducer";
 import SelectMobileReducer from "./select_mobile_reducer";
 import SendChatReducer from "./send_chat_reducer";
+import SendFriendRequestReducer from "./send_friend_request_reducer";
+import SendLobbyChatReducer from "./send_lobby_chat_reducer";
+import SendRoomInviteReducer from "./send_room_invite_reducer";
 import SetEmptyDataEnabledReducer from "./set_empty_data_enabled_reducer";
 import SetPlayerNameReducer from "./set_player_name_reducer";
 import SetPlayerProfileReducer from "./set_player_profile_reducer";
@@ -58,8 +64,12 @@ import UpdateRoomSettingsReducer from "./update_room_settings_reducer";
 import AppSettingRow from "./app_setting_table";
 import ChatMessageRow from "./chat_message_table";
 import CredentialRow from "./credential_table";
+import FriendRequestRow from "./friend_request_table";
+import FriendshipRow from "./friendship_table";
+import LobbyChatMessageRow from "./lobby_chat_message_table";
 import PlayerRow from "./player_table";
 import RoomRow from "./room_table";
+import RoomInviteRow from "./room_invite_table";
 import RoomMemberRow from "./room_member_table";
 import RoundRow from "./round_table";
 import RoundEventRow from "./round_event_table";
@@ -108,6 +118,54 @@ const tablesSchema = __schema({
       { name: 'credential_username_key', constraint: 'unique', columns: ['username'] },
     ],
   }, CredentialRow),
+  friendRequest: __table({
+    name: 'friend_request',
+    indexes: [
+      { accessor: 'id', name: 'friend_request_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'friend_request_recipient', name: 'friend_request_recipient_identity_idx_btree', algorithm: 'btree', columns: [
+        'recipientIdentity',
+      ] },
+      { accessor: 'friend_request_requester', name: 'friend_request_requester_identity_idx_btree', algorithm: 'btree', columns: [
+        'requesterIdentity',
+      ] },
+    ],
+    constraints: [
+      { name: 'friend_request_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, FriendRequestRow),
+  friendship: __table({
+    name: 'friendship',
+    indexes: [
+      { accessor: 'friendship_buddy', name: 'friendship_buddy_identity_idx_btree', algorithm: 'btree', columns: [
+        'buddyIdentity',
+      ] },
+      { accessor: 'id', name: 'friendship_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'friendship_owner', name: 'friendship_owner_identity_idx_btree', algorithm: 'btree', columns: [
+        'ownerIdentity',
+      ] },
+    ],
+    constraints: [
+      { name: 'friendship_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, FriendshipRow),
+  lobbyChatMessage: __table({
+    name: 'lobby_chat_message',
+    indexes: [
+      { accessor: 'lobby_chat_message_channel', name: 'lobby_chat_message_channel_idx_btree', algorithm: 'btree', columns: [
+        'channel',
+      ] },
+      { accessor: 'id', name: 'lobby_chat_message_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'lobby_chat_message_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, LobbyChatMessageRow),
   player: __table({
     name: 'player',
     indexes: [
@@ -145,6 +203,26 @@ const tablesSchema = __schema({
       { name: 'room_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, RoomRow),
+  roomInvite: __table({
+    name: 'room_invite',
+    indexes: [
+      { accessor: 'id', name: 'room_invite_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'room_invite_recipient', name: 'room_invite_recipient_identity_idx_btree', algorithm: 'btree', columns: [
+        'recipientIdentity',
+      ] },
+      { accessor: 'room_invite_requester', name: 'room_invite_requester_identity_idx_btree', algorithm: 'btree', columns: [
+        'requesterIdentity',
+      ] },
+      { accessor: 'room_invite_room_id', name: 'room_invite_room_id_idx_btree', algorithm: 'btree', columns: [
+        'roomId',
+      ] },
+    ],
+    constraints: [
+      { name: 'room_invite_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, RoomInviteRow),
   roomMember: __table({
     name: 'room_member',
     indexes: [
@@ -218,8 +296,14 @@ const reducersSchema = __reducers(
   __reducerSchema("leave_room", LeaveRoomReducer),
   __reducerSchema("record_round_event", RecordRoundEventReducer),
   __reducerSchema("register_credential", RegisterCredentialReducer),
+  __reducerSchema("remove_friend", RemoveFriendReducer),
+  __reducerSchema("respond_friend_request", RespondFriendRequestReducer),
+  __reducerSchema("respond_room_invite", RespondRoomInviteReducer),
   __reducerSchema("select_mobile", SelectMobileReducer),
   __reducerSchema("send_chat", SendChatReducer),
+  __reducerSchema("send_friend_request", SendFriendRequestReducer),
+  __reducerSchema("send_lobby_chat", SendLobbyChatReducer),
+  __reducerSchema("send_room_invite", SendRoomInviteReducer),
   __reducerSchema("set_empty_data_enabled", SetEmptyDataEnabledReducer),
   __reducerSchema("set_player_name", SetPlayerNameReducer),
   __reducerSchema("set_player_profile", SetPlayerProfileReducer),

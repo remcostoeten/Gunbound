@@ -10,9 +10,10 @@ type Props = {
   onSend: (text: string) => void;
   whisperTo: string | null;
   onClearWhisper: () => void;
+  onFriendRequestResponse: (requestId: bigint, accept: boolean) => void;
 };
 
-export function LobbyBottom({ onBack, messages, onSend, whisperTo, onClearWhisper }: Props) {
+export function LobbyBottom({ onBack, messages, onSend, whisperTo, onClearWhisper, onFriendRequestResponse }: Props) {
   return (
     <div className="gb-bottom">
       <LobbyChatPanel
@@ -20,6 +21,7 @@ export function LobbyBottom({ onBack, messages, onSend, whisperTo, onClearWhispe
         onSend={onSend}
         whisperTo={whisperTo}
         onClearWhisper={onClearWhisper}
+        onFriendRequestResponse={onFriendRequestResponse}
       />
       <div className="gb-bottom-actions">
         <LobbyActionButton label="Event"  glyph="🎟" tone="purple" />

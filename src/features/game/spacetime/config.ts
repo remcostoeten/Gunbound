@@ -1,5 +1,5 @@
 const DEFAULT_CLOUD_URI = 'wss://maincloud.spacetimedb.com';
-const DEFAULT_LOCAL_URI = 'ws://127.0.0.1:3001';
+const DEFAULT_LOCAL_URI = 'ws://127.0.0.1:3002';
 const DEFAULT_MODULE = 'gunbound';
 
 export const SPACETIME_URI: string = resolveSpacetimeUri();

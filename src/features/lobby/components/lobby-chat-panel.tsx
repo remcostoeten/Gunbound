@@ -8,9 +8,10 @@ type Props = {
   onSend: (text: string) => void;
   whisperTo: string | null;
   onClearWhisper: () => void;
+  onFriendRequestResponse: (requestId: bigint, accept: boolean) => void;
 };
 
-export function LobbyChatPanel({ messages, onSend, whisperTo, onClearWhisper }: Props) {
+export function LobbyChatPanel({ messages, onSend, whisperTo, onClearWhisper, onFriendRequestResponse }: Props) {
   const [draft, setDraft] = useState("");
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -39,6 +40,16 @@ export function LobbyChatPanel({ messages, onSend, whisperTo, onClearWhisper }: 
         {messages.map((m) => (
           <p key={m.id} className={`gb-msg gb-msg-${m.tone}`}>
             <b>{m.author}:</b> <span>{m.text}</span>
+            {m.friendRequest && (
+              <span className="gb-chat-request-actions">
+                <button type="button" onClick={() => onFriendRequestResponse(m.friendRequest!.id, true)}>
+                  Accept
+                </button>
+                <button type="button" onClick={() => onFriendRequestResponse(m.friendRequest!.id, false)}>
+                  Decline
+                </button>
+              </span>
+            )}
           </p>
         ))}
       </div>
@@ -54,7 +65,7 @@ export function LobbyChatPanel({ messages, onSend, whisperTo, onClearWhisper }: 
           className="gb-chat-input"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder={whisperTo ? `Whisper to ${whisperTo}…` : "Say something…"}
+          placeholder={whisperTo ? `Whisper to ${whisperTo}…` : "Say something or /add username"}
           maxLength={140}
         />
         <button type="submit" className="gb-chat-send">Send</button>

@@ -1,5 +1,6 @@
 import spacetimedb from './schema';
 import { t, SenderError } from 'spacetimedb/server';
+import type { Identity } from 'spacetimedb';
 import type { InferSchema, ReducerCtx } from 'spacetimedb/server';
 import { ROOM_STATUS } from '../../../src/features/game/spacetime/room-status';
 
@@ -9,6 +10,12 @@ type ModuleContext = ReducerCtx<InferSchema<typeof spacetimedb>>;
 
 const ROUND_STATUS_ACTIVE = 'active';
 const ROUND_STATUS_FINISHED = 'finished';
+const FRIEND_REQUEST_STATUS_PENDING = 'pending';
+const FRIEND_REQUEST_STATUS_ACCEPTED = 'accepted';
+const FRIEND_REQUEST_STATUS_DECLINED = 'declined';
+const ROOM_INVITE_STATUS_PENDING = 'pending';
+const ROOM_INVITE_STATUS_ACCEPTED = 'accepted';
+const ROOM_INVITE_STATUS_DECLINED = 'declined';
 
 const ROOM_MAX_MEMBERS = 2;
 const DEFAULT_MAP_TYPE = 'rolling';
@@ -19,6 +26,8 @@ const MAX_TARGET_SCORE = 9;
 const MIN_ROUND_LIMIT = 1;
 const MAX_ROUND_LIMIT = 15;
 const CHAT_MESSAGE_MAX_LENGTH = 200;
+const LOBBY_CHANNEL_MIN = 1;
+const LOBBY_CHANNEL_MAX = 8;
 const MICROS_PER_DAY = 86_400n * 1_000_000n;
 const EMPTY_DATA_SETTING_KEY = 'empty_data_enabled';
 const BOOTSTRAP_ADMIN_USERNAMES = new Set(['remco', 'remcostoeten']);
@@ -121,6 +130,56 @@ function assertNotInActiveRoom(ctx: ModuleContext): void {
   if (findActiveRoomMembership(ctx)) {
     throw new SenderError('leave your current room before joining another');
   }
+}
+
+function identitiesMatch(a: Identity, b: Identity): boolean {
+  return a.toHexString() === b.toHexString();
+}
+
+function findFriendship(ctx: ModuleContext, ownerIdentity: Identity, buddyIdentity: Identity) {
+  const buddyHex = buddyIdentity.toHexString();
+  for (const friendship of ctx.db.friendship.friendship_owner.filter(ownerIdentity)) {
+    if (friendship.buddyIdentity.toHexString() === buddyHex) return friendship;
+  }
+  return null;
+}
+
+function findPendingFriendRequest(ctx: ModuleContext, requesterIdentity: Identity, recipientIdentity: Identity) {
+  const recipientHex = recipientIdentity.toHexString();
+  for (const request of ctx.db.friendRequest.friend_request_requester.filter(requesterIdentity)) {
+    if (
+      request.recipientIdentity.toHexString() === recipientHex &&
+      request.status === FRIEND_REQUEST_STATUS_PENDING
+    ) {
+      return request;
+    }
+  }
+  return null;
+}
+
+function findPendingRoomInvite(ctx: ModuleContext, roomId: bigint, requesterIdentity: Identity, recipientIdentity: Identity) {
+  const requesterHex = requesterIdentity.toHexString();
+  const recipientHex = recipientIdentity.toHexString();
+  for (const invite of ctx.db.roomInvite.room_invite_room_id.filter(roomId)) {
+    if (
+      invite.requesterIdentity.toHexString() === requesterHex &&
+      invite.recipientIdentity.toHexString() === recipientHex &&
+      invite.status === ROOM_INVITE_STATUS_PENDING
+    ) {
+      return invite;
+    }
+  }
+  return null;
+}
+
+function ensureFriendship(ctx: ModuleContext, ownerIdentity: Identity, buddyIdentity: Identity): void {
+  if (findFriendship(ctx, ownerIdentity, buddyIdentity)) return;
+  ctx.db.friendship.insert({
+    id: 0n,
+    ownerIdentity,
+    buddyIdentity,
+    createdAt: ctx.timestamp
+  });
 }
 
 function getNextRoomSlotIndex(ctx: ModuleContext, roomId: bigint): number {
@@ -705,6 +764,203 @@ export const send_chat = spacetimedb.reducer(
       senderIdentity: ctx.sender,
       message: trimmed,
       createdAt: ctx.timestamp
+    });
+  }
+);
+
+/**
+ * Sends a public lobby message to one of the numbered lobby channels.
+ *
+ * This is intentionally independent from room chat so channel history remains
+ * available after a player leaves rooms, logs out, or reconnects later.
+ */
+export const send_lobby_chat = spacetimedb.reducer(
+  { channel: t.u32(), message: t.string() },
+  (ctx, { channel, message }) => {
+    const trimmed = message.trim();
+    if (channel < LOBBY_CHANNEL_MIN || channel > LOBBY_CHANNEL_MAX) {
+      throw new SenderError('invalid lobby channel');
+    }
+    if (trimmed.length === 0) throw new SenderError('message must not be empty');
+    if (trimmed.length > CHAT_MESSAGE_MAX_LENGTH) {
+      throw new SenderError(`message must be ${CHAT_MESSAGE_MAX_LENGTH} characters or fewer`);
+    }
+
+    const player = ctx.db.player.identity.find(ctx.sender);
+    if (!player || player.name.trim().length === 0) {
+      throw new SenderError('set a player name before chatting');
+    }
+
+    ctx.db.lobbyChatMessage.insert({
+      id: 0n,
+      channel,
+      senderIdentity: ctx.sender,
+      message: trimmed,
+      createdAt: ctx.timestamp
+    });
+  }
+);
+
+export const send_friend_request = spacetimedb.reducer(
+  { username: t.string() },
+  (ctx, { username }) => {
+    const trimmed = username.trim();
+    if (!USERNAME_PATTERN.test(trimmed)) {
+      throw new SenderError('username must be 3-20 characters: letters, digits, underscore');
+    }
+
+    const credential = ctx.db.credential.username.find(trimmed);
+    if (!credential) throw new SenderError('user not found');
+    if (identitiesMatch(credential.identity, ctx.sender)) {
+      throw new SenderError('cannot add yourself');
+    }
+    if (findFriendship(ctx, ctx.sender, credential.identity)) {
+      throw new SenderError('already buddies');
+    }
+    if (findPendingFriendRequest(ctx, ctx.sender, credential.identity)) {
+      throw new SenderError('friend request already sent');
+    }
+
+    const reciprocal = findPendingFriendRequest(ctx, credential.identity, ctx.sender);
+    if (reciprocal) {
+      ctx.db.friendRequest.id.update({
+        ...reciprocal,
+        status: FRIEND_REQUEST_STATUS_ACCEPTED,
+        resolvedAt: ctx.timestamp
+      });
+      ensureFriendship(ctx, ctx.sender, credential.identity);
+      ensureFriendship(ctx, credential.identity, ctx.sender);
+      return;
+    }
+
+    ctx.db.friendRequest.insert({
+      id: 0n,
+      requesterIdentity: ctx.sender,
+      recipientIdentity: credential.identity,
+      status: FRIEND_REQUEST_STATUS_PENDING,
+      createdAt: ctx.timestamp,
+      resolvedAt: undefined
+    });
+  }
+);
+
+export const respond_friend_request = spacetimedb.reducer(
+  { requestId: t.u64(), accept: t.bool() },
+  (ctx, { requestId, accept }) => {
+    const request = ctx.db.friendRequest.id.find(requestId);
+    if (!request || request.status !== FRIEND_REQUEST_STATUS_PENDING) {
+      throw new SenderError('friend request not found');
+    }
+    if (!identitiesMatch(request.recipientIdentity, ctx.sender)) {
+      throw new SenderError('only the recipient can respond');
+    }
+
+    ctx.db.friendRequest.id.update({
+      ...request,
+      status: accept ? FRIEND_REQUEST_STATUS_ACCEPTED : FRIEND_REQUEST_STATUS_DECLINED,
+      resolvedAt: ctx.timestamp
+    });
+
+    if (!accept) return;
+    ensureFriendship(ctx, request.requesterIdentity, request.recipientIdentity);
+    ensureFriendship(ctx, request.recipientIdentity, request.requesterIdentity);
+  }
+);
+
+export const remove_friend = spacetimedb.reducer(
+  { buddyIdentity: t.identity() },
+  (ctx, { buddyIdentity }) => {
+    const ownEdge = findFriendship(ctx, ctx.sender, buddyIdentity);
+    if (ownEdge) ctx.db.friendship.id.delete(ownEdge.id);
+
+    const reciprocalEdge = findFriendship(ctx, buddyIdentity, ctx.sender);
+    if (reciprocalEdge) ctx.db.friendship.id.delete(reciprocalEdge.id);
+  }
+);
+
+export const send_room_invite = spacetimedb.reducer(
+  { roomId: t.u64(), username: t.string() },
+  (ctx, { roomId, username }) => {
+    const trimmed = username.trim();
+    if (!USERNAME_PATTERN.test(trimmed)) {
+      throw new SenderError('username must be 3-20 characters: letters, digits, underscore');
+    }
+
+    const room = ctx.db.room.id.find(roomId);
+    if (!room || !isActiveRoomStatus(room.status)) throw new SenderError('room not found');
+    if (isRoomLockedForMatch(room.status)) throw new SenderError('cannot invite during an active round');
+
+    let isMember = false;
+    for (const member of ctx.db.roomMember.room_member_room_id.filter(roomId)) {
+      if (identitiesMatch(member.identity, ctx.sender)) {
+        isMember = true;
+        break;
+      }
+    }
+    if (!isMember) throw new SenderError('only room members can invite');
+
+    const credential = ctx.db.credential.username.find(trimmed);
+    if (!credential) throw new SenderError('user not found');
+    if (identitiesMatch(credential.identity, ctx.sender)) throw new SenderError('cannot invite yourself');
+
+    for (const member of ctx.db.roomMember.room_member_room_id.filter(roomId)) {
+      if (identitiesMatch(member.identity, credential.identity)) {
+        throw new SenderError('user is already in this room');
+      }
+    }
+    if (findPendingRoomInvite(ctx, roomId, ctx.sender, credential.identity)) {
+      throw new SenderError('room invite already sent');
+    }
+
+    ctx.db.roomInvite.insert({
+      id: 0n,
+      roomId,
+      requesterIdentity: ctx.sender,
+      recipientIdentity: credential.identity,
+      status: ROOM_INVITE_STATUS_PENDING,
+      createdAt: ctx.timestamp,
+      resolvedAt: undefined
+    });
+  }
+);
+
+export const respond_room_invite = spacetimedb.reducer(
+  { inviteId: t.u64(), accept: t.bool() },
+  (ctx, { inviteId, accept }) => {
+    const invite = ctx.db.roomInvite.id.find(inviteId);
+    if (!invite || invite.status !== ROOM_INVITE_STATUS_PENDING) {
+      throw new SenderError('room invite not found');
+    }
+    if (!identitiesMatch(invite.recipientIdentity, ctx.sender)) {
+      throw new SenderError('only the recipient can respond');
+    }
+
+    ctx.db.roomInvite.id.update({
+      ...invite,
+      status: accept ? ROOM_INVITE_STATUS_ACCEPTED : ROOM_INVITE_STATUS_DECLINED,
+      resolvedAt: ctx.timestamp
+    });
+
+    if (!accept) return;
+
+    const room = ctx.db.room.id.find(invite.roomId);
+    if (!room || !isActiveRoomStatus(room.status)) throw new SenderError('room not found');
+    if (isRoomLockedForMatch(room.status)) throw new SenderError('room is already playing');
+    assertNotInActiveRoom(ctx);
+
+    for (const member of ctx.db.roomMember.room_member_room_id.filter(invite.roomId)) {
+      if (identitiesMatch(member.identity, ctx.sender)) return;
+    }
+
+    ctx.db.roomMember.insert({
+      id: 0n,
+      roomId: invite.roomId,
+      identity: ctx.sender,
+      slotIndex: getNextRoomSlotIndex(ctx, invite.roomId),
+      teamIndex: undefined,
+      mobileType: '',
+      isReady: false,
+      joinedAt: ctx.timestamp
     });
   }
 );

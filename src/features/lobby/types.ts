@@ -34,8 +34,12 @@ export type LobbyTopIcon = {
 export type LobbyActionTone = "purple" | "blue";
 
 export type LobbyChatMsg = {
-  id: number;
+  id: number | string;
   author: string;
   text: string;
   tone: "self" | "system" | "other";
+  friendRequest?: {
+    id: bigint;
+    requesterName: string;
+  };
 };

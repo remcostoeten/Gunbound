@@ -12,15 +12,18 @@ type Props = {
   room: LobbyRoom;
   onClose: () => void;
   onStarted: (roomId: bigint) => void;
+  onInvite: (roomId: bigint, username: string) => Promise<void>;
 };
 
-export function LobbyRoomModal({ room, onClose, onStarted }: Props) {
+export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
   const session = useRoomSession(room.id);
   const [chatDraft, setChatDraft] = useState("");
+  const [inviteDraft, setInviteDraft] = useState("");
   const [settingsDraft, setSettingsDraft] = useState<LobbyRoomSettings>(() => getRoomSettings(room.settings));
   const [readyBusy, setReadyBusy] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [startBusy, setStartBusy] = useState(false);
+  const [inviteBusy, setInviteBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const chatBodyRef = useRef<HTMLDivElement>(null);
   const startedRef = useRef(false);
@@ -120,6 +123,23 @@ export function LobbyRoomModal({ room, onClose, onStarted }: Props) {
       await session.sendChat(text);
     } catch (err) {
       setError(messageFromError(err));
+    }
+  }
+
+  async function sendInvite(e: React.FormEvent) {
+    e.preventDefault();
+    if (!session.room || inviteBusy) return;
+    const username = inviteDraft.trim();
+    if (username.length === 0) return;
+    setInviteBusy(true);
+    setError(null);
+    try {
+      await onInvite(session.room.id, username);
+      setInviteDraft("");
+    } catch (err) {
+      setError(messageFromError(err));
+    } finally {
+      setInviteBusy(false);
     }
   }
 
@@ -223,6 +243,22 @@ export function LobbyRoomModal({ room, onClose, onStarted }: Props) {
             <span>Players: <b>{session.members.length}/{room.capacity}</b></span>
             <span>Status: <b>{session.room.status === ROOM_STATUS.IN_MATCH ? "Playing" : "Waiting"}</b></span>
           </div>
+
+          <form className="gb-room-invite" onSubmit={sendInvite}>
+            <input
+              value={inviteDraft}
+              onChange={(e) => setInviteDraft(e.target.value)}
+              placeholder="Invite username"
+              maxLength={20}
+              disabled={inviteBusy || session.room.status !== ROOM_STATUS.WAITING}
+            />
+            <button
+              type="submit"
+              disabled={inviteDraft.trim().length === 0 || inviteBusy || session.room.status !== ROOM_STATUS.WAITING}
+            >
+              {inviteBusy ? "Sending..." : "Invite"}
+            </button>
+          </form>
 
           <div className="gb-room-settings">
             <div className="gb-room-settings-head">

@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSpacetimeDB } from "spacetimedb/react";
-import { playTrack } from "@/lib/music-bus";
+import { playTrack, registerTrack } from "@/lib/music-bus";
 import { LobbyTopbar } from "./lobby-topbar";
 import { LobbyActionRow } from "./lobby-action-row";
 import { LobbyBody } from "./lobby-body";
@@ -10,10 +10,14 @@ import { LobbyChannelBar } from "./lobby-channel-bar";
 import { LobbyBottom } from "./lobby-bottom";
 import { LobbyRoomModal } from "./lobby-room-modal";
 import { LobbyCreateModal } from "./lobby-create-modal";
+import { LobbyInboxModal } from "./lobby-inbox-modal";
 import { LobbyToastStack } from "./lobby-toast-stack";
 import { useLobbyState } from "../hooks/use-lobby-state";
+import { useLobbyChat } from "../spacetime/use-lobby-chat";
+import { useLobbyFriends, type IncomingRoomInviteView } from "../spacetime/use-lobby-friends";
 import { useLobbyRooms, type LobbyRoomView } from "../spacetime/use-lobby-rooms";
 import { ROOM_STATUS, useCurrentPlayer, useEmptyDataMode } from "@/features/game/spacetime";
+import type { LobbyChatMsg } from "../types";
 import type { LobbyRoom } from "../types";
 
 type Props = {
@@ -21,6 +25,8 @@ type Props = {
   onReplay: () => void;
   onEnterBattle?: (roomId: bigint) => void;
 };
+
+const lobbyMp3 = "/audio/lobby.mp3";
 
 function toLobbyRoom(view: LobbyRoomView): LobbyRoom {
   return {
@@ -36,15 +42,38 @@ function toLobbyRoom(view: LobbyRoomView): LobbyRoom {
 
 export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
   const connection = useSpacetimeDB();
+  const [inboxOpen, setInboxOpen] = useState(false);
   const { player } = useCurrentPlayer();
   const emptyDataMode = useEmptyDataMode();
   const selfName = player?.name?.trim() || username || null;
   const s = useLobbyState(selfName, emptyDataMode.enabled);
   const { rooms: roomViews, joinRoomByCode, quickJoin } = useLobbyRooms();
+  const lobbyChat = useLobbyChat(s.channel);
+  const lobbyFriends = useLobbyFriends();
 
   const rooms = useMemo(() => roomViews.map(toLobbyRoom), [roomViews]);
+  const messages = useMemo<LobbyChatMsg[]>(() => {
+    const requestMessages = lobbyFriends.incomingRequests.map<LobbyChatMsg>((request) => ({
+      id: `friend-request-${request.id.toString()}`,
+      author: "SYSTEM",
+      text: `${request.requesterName} wants to add you as a friend.`,
+      tone: "system",
+      friendRequest: {
+        id: request.id,
+        requesterName: request.requesterName,
+      },
+    }));
+    const roomInviteMessages = lobbyFriends.incomingRoomInvites.map<LobbyChatMsg>((invite) => ({
+      id: `room-invite-${invite.id.toString()}`,
+      author: "SYSTEM",
+      text: `${invite.requesterName} invited you to room ${invite.roomCode}.`,
+      tone: "system",
+    }));
+    return [...lobbyChat.messages, ...requestMessages, ...roomInviteMessages];
+  }, [lobbyChat.messages, lobbyFriends.incomingRequests, lobbyFriends.incomingRoomInvites]);
 
   useEffect(() => {
+    registerTrack("lobby", lobbyMp3, 0.45);
     playTrack("lobby");
   }, []);
 
@@ -116,6 +145,45 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
     if (onEnterBattle) onEnterBattle(roomId);
   }, [onEnterBattle, s]);
 
+  const handleChatSend = useCallback(async (text: string) => {
+    try {
+      await lobbyChat.sendChat(text);
+      if (text.trim().startsWith("/add ")) {
+        s.pushToast("Friend request sent");
+      }
+    } catch (e) {
+      s.pushToast(messageFromError(e));
+    }
+  }, [lobbyChat, s]);
+
+  const handleFriendRequestResponse = useCallback(async (requestId: bigint, accept: boolean) => {
+    try {
+      await lobbyFriends.respondToFriendRequest(requestId, accept);
+      s.pushToast(accept ? "Friend request accepted" : "Friend request declined");
+    } catch (e) {
+      s.pushToast(messageFromError(e));
+    }
+  }, [lobbyFriends, s]);
+
+  const handleRoomInviteResponse = useCallback(async (invite: IncomingRoomInviteView, accept: boolean) => {
+    try {
+      await lobbyFriends.respondToRoomInvite(invite.id, accept);
+      if (accept) {
+        const target = roomViews.find((room) => room.id === invite.roomId);
+        if (target) s.setActiveRoom(toLobbyRoom(target));
+      }
+      s.pushToast(accept ? `Joined room ${invite.roomCode}` : "Room invite declined");
+      if (accept) setInboxOpen(false);
+    } catch (e) {
+      s.pushToast(messageFromError(e));
+    }
+  }, [lobbyFriends, roomViews, s]);
+
+  const handleSendRoomInvite = useCallback(async (roomId: bigint, username: string) => {
+    await lobbyFriends.sendRoomInvite(roomId, username);
+    s.pushToast(`Room invite sent to ${username.trim()}`);
+  }, [lobbyFriends, s]);
+
   return (
     <div className="gb-root">
       <div className="gb-sky" />
@@ -130,7 +198,7 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
           onWaiting={() => s.pushToast("You are now waiting for an invite")}
           onQuickjoin={handleQuickjoin}
           onCreate={() => s.setCreating(true)}
-          onFriend={() => s.pushToast("Friend list coming soon")}
+          onFriend={() => setInboxOpen(true)}
           onSearch={() => s.pushToast("Enter a room number…")}
           canToggleEmptyData={player?.isAdmin === true}
           emptyDataEnabled={emptyDataMode.enabled}
@@ -144,10 +212,11 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
         <LobbyChannelBar channel={s.channel} onSelect={s.selectChannel} />
         <LobbyBottom
           onBack={onReplay}
-          messages={s.messages}
-          onSend={s.sendChat}
+          messages={messages}
+          onSend={handleChatSend}
           whisperTo={s.whisperTo}
           onClearWhisper={() => s.setWhisperTo(null)}
+          onFriendRequestResponse={handleFriendRequestResponse}
         />
       </div>
 
@@ -156,12 +225,22 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
           room={s.activeRoom}
           onClose={() => s.setActiveRoom(null)}
           onStarted={handleStarted}
+          onInvite={handleSendRoomInvite}
         />
       )}
       {s.creating && (
         <LobbyCreateModal
           onClose={() => s.setCreating(false)}
           onCreated={handleCreated}
+        />
+      )}
+      {inboxOpen && (
+        <LobbyInboxModal
+          friendRequests={lobbyFriends.incomingRequests}
+          roomInvites={lobbyFriends.incomingRoomInvites}
+          onClose={() => setInboxOpen(false)}
+          onFriendResponse={handleFriendRequestResponse}
+          onRoomInviteResponse={handleRoomInviteResponse}
         />
       )}
 

@@ -221,6 +221,86 @@ export const ChatMessage = table(
 );
 
 /**
+ * Persistent public lobby chat scoped by channel.
+ *
+ * Rows are append-only so players who reconnect later can replay the channel
+ * history from the database instead of starting from client fixture state.
+ */
+export const LobbyChatMessage = table(
+  {
+    name: 'lobby_chat_message',
+    public: true,
+    indexes: [
+      { accessor: 'lobby_chat_message_channel', algorithm: 'btree', columns: ['channel'] }
+    ]
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    channel: t.u32(),
+    senderIdentity: t.identity(),
+    message: t.string(),
+    createdAt: t.timestamp()
+  }
+);
+
+export const FriendRequest = table(
+  {
+    name: 'friend_request',
+    public: true,
+    indexes: [
+      { accessor: 'friend_request_recipient', algorithm: 'btree', columns: ['recipientIdentity'] },
+      { accessor: 'friend_request_requester', algorithm: 'btree', columns: ['requesterIdentity'] }
+    ]
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    requesterIdentity: t.identity(),
+    recipientIdentity: t.identity(),
+    status: t.string(),
+    createdAt: t.timestamp(),
+    resolvedAt: t.timestamp().optional()
+  }
+);
+
+export const Friendship = table(
+  {
+    name: 'friendship',
+    public: true,
+    indexes: [
+      { accessor: 'friendship_owner', algorithm: 'btree', columns: ['ownerIdentity'] },
+      { accessor: 'friendship_buddy', algorithm: 'btree', columns: ['buddyIdentity'] }
+    ]
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    ownerIdentity: t.identity(),
+    buddyIdentity: t.identity(),
+    createdAt: t.timestamp()
+  }
+);
+
+export const RoomInvite = table(
+  {
+    name: 'room_invite',
+    public: true,
+    indexes: [
+      { accessor: 'room_invite_recipient', algorithm: 'btree', columns: ['recipientIdentity'] },
+      { accessor: 'room_invite_requester', algorithm: 'btree', columns: ['requesterIdentity'] },
+      { accessor: 'room_invite_room_id', algorithm: 'btree', columns: ['roomId'] }
+    ]
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    roomId: t.u64(),
+    requesterIdentity: t.identity(),
+    recipientIdentity: t.identity(),
+    status: t.string(),
+    createdAt: t.timestamp(),
+    resolvedAt: t.timestamp().optional()
+  }
+);
+
+/**
  * Account credentials for cross-device login.
  *
  * Each row binds a chosen `username` to the player's SpacetimeDB `identity`.
@@ -263,6 +343,10 @@ const spacetimedb = schema({
   roundEvent: RoundEvent,
   roundStat: RoundStat,
   chatMessage: ChatMessage,
+  lobbyChatMessage: LobbyChatMessage,
+  friendRequest: FriendRequest,
+  friendship: Friendship,
+  roomInvite: RoomInvite,
   credential: Credential
 });
 
