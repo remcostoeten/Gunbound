@@ -47,5 +47,8 @@ export function GunboundSpacetimeProvider(
 }
 
 function isStoredTokenVerificationError(error: Error): boolean {
-  return error.message.startsWith('Failed to verify token:');
+  return (
+    error.message === 'Failed to verify token' ||
+    error.message === 'Failed to verify token:'
+  );
 }

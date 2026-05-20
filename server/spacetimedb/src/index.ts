@@ -1,15 +1,11 @@
 import spacetimedb from './schema';
 import { t, SenderError } from 'spacetimedb/server';
 import type { InferSchema, ReducerCtx } from 'spacetimedb/server';
+import { ROOM_STATUS } from '../../../src/features/game/spacetime/room-status';
 
 export { default } from './schema';
 
 type ModuleContext = ReducerCtx<InferSchema<typeof spacetimedb>>;
-
-const ROOM_STATUS_WAITING = 'waiting';
-const ROOM_STATUS_STARTING = 'starting';
-const ROOM_STATUS_IN_MATCH = 'in_match';
-const ROOM_STATUS_ENDED = 'ended';
 
 const ROUND_STATUS_ACTIVE = 'active';
 const ROUND_STATUS_FINISHED = 'finished';
@@ -104,11 +100,11 @@ function computeRoundXp(isWinner: boolean, isDraw: boolean, damageDealt: number,
 }
 
 function isActiveRoomStatus(status: string): boolean {
-  return status !== ROOM_STATUS_ENDED;
+  return status !== ROOM_STATUS.ENDED;
 }
 
 function isRoomLockedForMatch(status: string): boolean {
-  return status === ROOM_STATUS_STARTING || status === ROOM_STATUS_IN_MATCH;
+  return status === ROOM_STATUS.STARTING || status === ROOM_STATUS.IN_MATCH;
 }
 
 function findActiveRoomMembership(ctx: ModuleContext): { roomId: bigint } | null {
@@ -312,7 +308,7 @@ export const create_room = spacetimedb.reducer(
     }
 
     for (const existing of ctx.db.room.room_code.filter(normalizedCode)) {
-      if (existing.status !== ROOM_STATUS_ENDED) {
+      if (existing.status !== ROOM_STATUS.ENDED) {
         throw new SenderError('room code already in use');
       }
     }
@@ -321,7 +317,7 @@ export const create_room = spacetimedb.reducer(
       id: 0n,
       code: normalizedCode,
       hostIdentity: ctx.sender,
-      status: ROOM_STATUS_WAITING,
+      status: ROOM_STATUS.WAITING,
       seed,
       mapType: DEFAULT_MAP_TYPE,
       targetScore: DEFAULT_TARGET_SCORE,
@@ -361,7 +357,7 @@ export const update_room_settings = spacetimedb.reducer(
     if (room.hostIdentity.toHexString() !== ctx.sender.toHexString()) {
       throw new SenderError('only the host can update room settings');
     }
-    if (room.status !== ROOM_STATUS_WAITING) {
+    if (room.status !== ROOM_STATUS.WAITING) {
       throw new SenderError('room settings are locked once a match starts');
     }
 
@@ -390,7 +386,7 @@ export const join_room_by_code = spacetimedb.reducer(
 
     let target = null;
     for (const candidate of ctx.db.room.room_code.filter(normalizedCode)) {
-      if (candidate.status === ROOM_STATUS_WAITING) {
+      if (candidate.status === ROOM_STATUS.WAITING) {
         target = candidate;
         break;
       }
@@ -457,7 +453,7 @@ export const leave_room = spacetimedb.reducer(
     }
 
     if (remaining === 0) {
-      ctx.db.room.id.update({ ...room, status: ROOM_STATUS_ENDED });
+      ctx.db.room.id.update({ ...room, status: ROOM_STATUS.ENDED });
     } else if (room.hostIdentity.toHexString() === ctx.sender.toHexString()) {
       for (const member of ctx.db.roomMember.room_member_room_id.filter(roomId)) {
         ctx.db.room.id.update({ ...room, hostIdentity: member.identity });
@@ -506,7 +502,7 @@ export const start_round = spacetimedb.reducer(
       winnerIdentity: undefined
     });
 
-    ctx.db.room.id.update({ ...room, status: ROOM_STATUS_IN_MATCH, seed });
+    ctx.db.room.id.update({ ...room, status: ROOM_STATUS.IN_MATCH, seed });
   }
 );
 
@@ -627,7 +623,7 @@ export const end_round = spacetimedb.reducer(
       ctx.db.roomMember.id.update({ ...member, isReady: false });
     }
 
-    ctx.db.room.id.update({ ...room, status: ROOM_STATUS_WAITING });
+    ctx.db.room.id.update({ ...room, status: ROOM_STATUS.WAITING });
   }
 );
 
@@ -692,7 +688,7 @@ export const send_chat = spacetimedb.reducer(
     }
 
     const room = ctx.db.room.id.find(roomId);
-    if (!room || room.status === ROOM_STATUS_ENDED) throw new SenderError('room not found');
+    if (!room || room.status === ROOM_STATUS.ENDED) throw new SenderError('room not found');
 
     let isMember = false;
     for (const member of ctx.db.roomMember.room_member_room_id.filter(roomId)) {

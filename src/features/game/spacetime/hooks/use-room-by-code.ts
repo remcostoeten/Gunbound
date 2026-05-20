@@ -4,9 +4,8 @@ import { useMemo } from 'react';
 import { useTable } from 'spacetimedb/react';
 
 import { tables } from '../module_bindings';
+import { ROOM_STATUS } from '../room-status';
 import type { Room } from '../module_bindings/types';
-
-const ROOM_STATUS_ENDED = 'ended';
 
 type UseRoomByCodeResult = {
   room: Room | undefined;
@@ -26,7 +25,7 @@ export function useRoomByCode(code: string | undefined): UseRoomByCodeResult {
   const [rows, isReady] = useTable(query, { enabled: normalized.length > 0 });
 
   const room = useMemo(() => {
-    return rows.find(r => r.code === normalized && r.status !== ROOM_STATUS_ENDED);
+    return rows.find(r => r.code === normalized && r.status !== ROOM_STATUS.ENDED);
   }, [rows, normalized]);
 
   return { room, isReady };

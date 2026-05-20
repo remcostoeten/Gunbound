@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRoomSession } from "../spacetime/use-room-session";
+import { ROOM_STATUS } from "@/features/game/spacetime/room-status";
 import { DEFAULT_MOBILE } from "@/features/game/mobiles/mobile-factory";
 import type { LobbyRoom } from "../types";
 
@@ -45,7 +46,7 @@ export function LobbyRoomModal({ room, onClose, onStarted }: Props) {
   useEffect(() => {
     if (startedRef.current) return;
     if (!session.room) return;
-    if (session.room.status !== "in_match") return;
+    if (session.room.status !== ROOM_STATUS.IN_MATCH) return;
     startedRef.current = true;
     onStarted(session.room.id);
   }, [session.room, onStarted]);
@@ -130,12 +131,14 @@ export function LobbyRoomModal({ room, onClose, onStarted }: Props) {
     );
   }
 
+  const membersBySlot = new Map<number, typeof session.members[number]>();
+  for (const member of session.members) {
+    membersBySlot.set(member.slotIndex, member);
+  }
+
   const slots: Array<{ key: string; member?: typeof session.members[number] }> = [];
   for (let i = 0; i < room.capacity; i += 1) {
-    slots.push({
-      key: `slot-${i}`,
-      member: session.members.find((m) => m.slotIndex === i)
-    });
+    slots.push({ key: `slot-${i}`, member: membersBySlot.get(i) });
   }
 
   const everyoneReady =
@@ -181,7 +184,7 @@ export function LobbyRoomModal({ room, onClose, onStarted }: Props) {
           <div className="gb-modal-meta">
             <span>Code: <b>{session.room.code}</b></span>
             <span>Players: <b>{session.members.length}/{room.capacity}</b></span>
-            <span>Status: <b>{session.room.status === "in_match" ? "Playing" : "Waiting"}</b></span>
+            <span>Status: <b>{session.room.status === ROOM_STATUS.IN_MATCH ? "Playing" : "Waiting"}</b></span>
           </div>
 
           <div className="gb-chat gb-chat-inroom">
