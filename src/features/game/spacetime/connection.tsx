@@ -27,10 +27,9 @@ export function GunboundSpacetimeProvider(
       .withUri(SPACETIME_URI)
       .withDatabaseName(SPACETIME_MODULE)
       .withToken(readStoredToken())
-      .onConnect((connection, identity, token) => {
+      .onConnect((_connection, identity, token) => {
         writeStoredToken(token);
         if (onIdentity) onIdentity(identity);
-        connection.subscriptionBuilder().subscribeToAllTables();
       })
       .onConnectError((_connection, error) => {
         if (isStoredTokenVerificationError(error)) {

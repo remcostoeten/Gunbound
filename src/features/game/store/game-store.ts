@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import type { StateCreator } from "zustand";
-import { defaultSuddenDeathTurn, defaultTargetScore, getPhaseDuration } from "@/features/game/constants/gameplay";
+import { defaultRoundLimit, defaultSuddenDeathTurn, defaultTargetScore, getPhaseDuration } from "@/features/game/constants/gameplay";
 import { applyMobileGravity, markPlayersForFalling } from "@/features/game/engine/gravity";
 import { moveMobileAlongTerrain } from "@/features/game/engine/movement";
 import { applyExplosionDamage, stepProjectile } from "@/features/game/engine/physics";
@@ -56,6 +56,8 @@ export const defaultSetup: MatchConfig = {
   playerOneAccent: "sky",
   playerTwoAccent: "coral",
   mapType: "rolling",
+  targetScore: defaultTargetScore,
+  roundLimit: defaultRoundLimit,
   seedText: "gunbound-local"
 };
 

@@ -1,6 +1,7 @@
 import type { GamePhase } from "@/features/game/types/shared";
 
 export const defaultTargetScore = 2;
+export const defaultRoundLimit = 5;
 export const defaultSuddenDeathTurn = 12;
 
 export const phaseDurations: Readonly<Record<GamePhase, number>> = {

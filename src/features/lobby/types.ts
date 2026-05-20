@@ -1,3 +1,11 @@
+import type { MapType } from "@/features/game/types/shared";
+
+export type LobbyRoomSettings = {
+  mapType: MapType;
+  targetScore: number;
+  roundLimit: number;
+};
+
 export type LobbyRoom = {
   id: bigint;
   code: string;
@@ -5,6 +13,7 @@ export type LobbyRoom = {
   hostName: string;
   memberCount: number;
   capacity: number;
+  settings?: LobbyRoomSettings;
   highlight?: boolean;
 };
 

@@ -14,6 +14,8 @@ export type MatchConfig = {
   playerOneAccent: PlayerAccent;
   playerTwoAccent: PlayerAccent;
   mapType: MapType;
+  targetScore: number;
+  roundLimit: number;
   seedText: string;
 };
 

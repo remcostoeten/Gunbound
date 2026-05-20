@@ -16,6 +16,7 @@ export function HomeScreen() {
   const [replayKey, setReplayKey] = useState(0);
   const [fading, setFading] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
+  const [battleRoomId, setBattleRoomId] = useState<bigint | undefined>(undefined);
 
   // After a "login" flow, the page reloads so the SpacetimeDB connection is
   // rebuilt with the recovered token. Pick up the username and skip
@@ -42,6 +43,7 @@ export function HomeScreen() {
   function handleReplay() {
     setFading(false);
     setUsername(null);
+    setBattleRoomId(undefined);
     setStage("intro");
     setReplayKey((k) => k + 1);
   }
@@ -51,7 +53,7 @@ export function HomeScreen() {
       {stage === "battle" ? (
         <div className="home-stack">
           <div className="home-layer home-battle-layer">
-            <GameShell />
+            <GameShell spacetimeRoomId={battleRoomId} />
           </div>
         </div>
       ) : (
@@ -61,7 +63,10 @@ export function HomeScreen() {
               <LobbyRoot
                 username={username}
                 onReplay={handleReplay}
-                onEnterBattle={() => setStage("battle")}
+                onEnterBattle={(roomId) => {
+                  setBattleRoomId(roomId);
+                  setStage("battle");
+                }}
               />
             </div>
           )}

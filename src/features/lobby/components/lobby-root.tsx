@@ -29,7 +29,8 @@ function toLobbyRoom(view: LobbyRoomView): LobbyRoom {
     status: view.status === ROOM_STATUS.IN_MATCH ? "Playing" : "Waiting",
     hostName: view.hostName,
     memberCount: view.memberCount,
-    capacity: view.capacity
+    capacity: view.capacity,
+    settings: view.settings
   };
 }
 

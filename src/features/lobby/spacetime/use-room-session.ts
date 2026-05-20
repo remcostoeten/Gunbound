@@ -7,6 +7,7 @@ import { parseMobileType } from "@/features/game/mobiles/mobile-factory";
 import { tables } from "@/features/game/spacetime";
 import type { Room, RoomMember } from "@/features/game/spacetime";
 import type { MobileType } from "@/features/game/types/shared";
+import type { LobbyRoomSettings } from "../types";
 
 export type RoomChatMessage = {
   id: bigint;
@@ -38,6 +39,7 @@ type UseRoomSessionResult = {
   sendChat(text: string): Promise<void>;
   setReady(ready: boolean): Promise<void>;
   selectMobile(mobileType: MobileType): Promise<void>;
+  updateRoomSettings(settings: LobbyRoomSettings): Promise<void>;
   startRound(): Promise<void>;
   leave(): Promise<void>;
 };
@@ -176,6 +178,20 @@ export function useRoomSession(
     [connection, room],
   );
 
+  const updateRoomSettings = useCallback(
+    async (settings: LobbyRoomSettings) => {
+      const conn = connection.getConnection();
+      if (!conn || !room) return;
+      await conn.reducers.updateRoomSettings({
+        roomId: room.id,
+        mapType: settings.mapType,
+        targetScore: settings.targetScore,
+        roundLimit: settings.roundLimit,
+      });
+    },
+    [connection, room],
+  );
+
   const startRound = useCallback(async () => {
     const conn = connection.getConnection();
     if (!conn || !room) return;
@@ -200,6 +216,7 @@ export function useRoomSession(
     sendChat,
     setReady,
     selectMobile,
+    updateRoomSettings,
     startRound,
     leave,
   };

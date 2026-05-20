@@ -98,7 +98,7 @@ export function resolveMatchContinuation(
 ): MatchContinuation {
   const winner = getRoundWinnerByScore(players, targetScore);
 
-  if (winner !== null) {
+  if (winner !== null || round >= setup.roundLimit) {
     return {
       type: "match-end"
     };

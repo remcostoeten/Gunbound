@@ -41,7 +41,11 @@ export function RoomPanel(props: {
         </div>
         <div className="room-row">
           <span className="room-key">Mode</span>
-          <span className="room-value">Tag Match</span>
+          <span className="room-value">Target {props.formState.targetScore}</span>
+        </div>
+        <div className="room-row">
+          <span className="room-key">Limit</span>
+          <span className="room-value">{props.formState.roundLimit} rounds</span>
         </div>
         <div className="room-row">
           <span className="room-key">Variant</span>
