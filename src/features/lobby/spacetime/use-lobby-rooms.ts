@@ -4,15 +4,14 @@ import { useCallback, useMemo } from "react";
 import { useSpacetimeDB, useTable } from "spacetimedb/react";
 
 import { tables } from "@/features/game/spacetime";
+import { ROOM_STATUS, type RoomStatus } from "@/features/game/spacetime/room-status";
 import { generateRoomCode, generateSeed } from "./generate-code";
-
-const ROOM_STATUS_ENDED = "ended";
 const ROOM_CAPACITY = 2;
 
 export type LobbyRoomView = {
   id: bigint;
   code: string;
-  status: "waiting" | "in_round";
+  status: RoomStatus;
   hostIdentityHex: string;
   hostName: string;
   memberCount: number;
@@ -41,7 +40,7 @@ export function useLobbyRooms() {
     }
 
     return allRooms
-      .filter(r => r.status !== ROOM_STATUS_ENDED)
+      .filter(r => r.status !== ROOM_STATUS.ENDED)
       .sort((a, b) => {
         const ax = a.createdAt.microsSinceUnixEpoch;
         const bx = b.createdAt.microsSinceUnixEpoch;
@@ -55,7 +54,7 @@ export function useLobbyRooms() {
         return {
           id: r.id,
           code: r.code,
-          status: r.status === "in_round" ? "in_round" : "waiting",
+          status: r.status === ROOM_STATUS.IN_MATCH ? ROOM_STATUS.IN_MATCH : ROOM_STATUS.WAITING,
           hostIdentityHex: hex,
           hostName: name.length > 0 ? name : `Host-${hex.slice(0, 4)}`,
           memberCount: memberCount.get(r.id.toString()) ?? 0,
@@ -87,7 +86,7 @@ export function useLobbyRooms() {
 
   const quickJoin = useCallback(async (): Promise<LobbyRoomView | null> => {
     const candidates = rooms.filter(
-      r => r.status === "waiting" && r.memberCount < r.capacity
+      r => r.status === ROOM_STATUS.WAITING && r.memberCount < r.capacity
     );
     if (candidates.length === 0) return null;
     const target = candidates[Math.floor(Math.random() * candidates.length)];

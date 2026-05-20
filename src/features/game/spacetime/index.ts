@@ -3,6 +3,7 @@ export { useCurrentPlayer } from './hooks/use-current-player';
 export { useEmptyDataMode } from './hooks/use-empty-data-mode';
 export { useCurrentRoom } from './hooks/use-current-room';
 export { useRoomByCode } from './hooks/use-room-by-code';
+export { ROOM_STATUS } from './room-status';
 export { reducers, tables } from './module_bindings';
 export type {
   Player,
@@ -11,3 +12,4 @@ export type {
   Round,
   RoundEvent
 } from './module_bindings/types';
+export type { RoomStatus } from './room-status';

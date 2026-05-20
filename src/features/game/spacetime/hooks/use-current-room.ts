@@ -4,9 +4,8 @@ import { useMemo } from 'react';
 import { useSpacetimeDB, useTable } from 'spacetimedb/react';
 
 import { tables } from '../module_bindings';
+import { ROOM_STATUS } from '../room-status';
 import type { Room, RoomMember } from '../module_bindings/types';
-
-const ROOM_STATUS_ENDED = 'ended';
 
 type UseCurrentRoomResult = {
   room: Room | undefined;
@@ -46,7 +45,7 @@ export function useCurrentRoom(): UseCurrentRoomResult {
   const room = useMemo(() => {
     if (!myMembership) return undefined;
     return roomRows.find(
-      r => r.id === myMembership.roomId && r.status !== ROOM_STATUS_ENDED
+      r => r.id === myMembership.roomId && r.status !== ROOM_STATUS.ENDED
     );
   }, [roomRows, myMembership]);
 

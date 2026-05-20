@@ -249,6 +249,146 @@ const flags = {
     <rect x="12.5" y="3" width="1.5" height="8" fill="#fcd116"/>
     <rect x="6" y="6.5" width="8" height="1" fill="#0038a8"/>
   </svg>`,
+
+  // ── Vietnam ──
+
+  vn: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
+    <rect width="20" height="14" fill="#da251d"/>
+    <polygon points="10,1.5 12,5.5 16.5,5.5 13,8 14.5,12.5 10,9.5 5.5,12.5 7,8 3.5,5.5 8,5.5" fill="#ff0"/>
+  </svg>`,
+
+  // ── Colombia ──
+
+  co: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
+    <rect width="20" height="14" fill="#fcd116"/>
+    <rect y="7" width="20" height="3.5" fill="#003893"/>
+    <rect y="10.5" width="20" height="3.5" fill="#ce1126"/>
+  </svg>`,
+
+  // ── Venezuela ──
+
+  ve: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
+    <rect width="20" height="14" fill="#fcd116"/>
+    <rect y="7" width="20" height="3.5" fill="#003893"/>
+    <rect y="10.5" width="20" height="3.5" fill="#ce1126"/>
+    <circle cx="6" cy="8.5" r="0.4" fill="#fff"/>
+    <circle cx="8" cy="8" r="0.4" fill="#fff"/>
+    <circle cx="10" cy="7.8" r="0.4" fill="#fff"/>
+    <circle cx="12" cy="8" r="0.4" fill="#fff"/>
+    <circle cx="14" cy="8.5" r="0.4" fill="#fff"/>
+  </svg>`,
+
+  // ── Denmark ──
+
+  dk: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
+    <rect width="20" height="14" fill="#c8102e"/>
+    <rect x="5.5" width="2.5" height="14" fill="#fff"/>
+    <rect y="5.5" width="20" height="2.5" fill="#fff"/>
+  </svg>`,
+
+  // ── Norway ──
+
+  no: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
+    <rect width="20" height="14" fill="#ef2b2d"/>
+    <rect x="5.5" width="2.5" height="14" fill="#fff"/>
+    <rect y="5.5" width="20" height="2.5" fill="#fff"/>
+    <rect x="6.5" width="0.8" height="14" fill="#002868"/>
+    <rect y="6.5" width="20" height="0.8" fill="#002868"/>
+  </svg>`,
+
+  // ── Finland ──
+
+  fi: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
+    <rect width="20" height="14" fill="#fff"/>
+    <rect x="5.5" width="2.5" height="14" fill="#003580"/>
+    <rect y="5.5" width="20" height="2.5" fill="#003580"/>
+  </svg>`,
+
+  // ── Portugal ──
+
+  pt: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
+    <rect width="20" height="14" fill="#006600"/>
+    <rect x="8" width="12" height="14" fill="#ff0000"/>
+    <circle cx="8" cy="7" r="3" fill="#ffdf00"/>
+    <circle cx="8" cy="7" r="1.5" fill="#006600"/>
+    <path d="M8 5.5 A1.5 1.5 0 0 1 8 8.5" fill="#fff" opacity="0.8"/>
+  </svg>`,
+
+  // ── Greece ──
+
+  gr: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
+    <rect width="20" height="14" fill="#0d5eaf"/>
+    <rect y="1.75" width="20" height="1.75" fill="#fff"/>
+    <rect y="5.25" width="20" height="1.75" fill="#fff"/>
+    <rect y="10.5" width="20" height="1.75" fill="#fff"/>
+    <rect y="8.75" width="20" height="1.75" fill="#0d5eaf"/>
+    <rect y="12.25" width="20" height="1.75" fill="#0d5eaf"/>
+    <rect width="8" height="7" fill="#0d5eaf"/>
+    <rect x="3" width="2" height="7" fill="#fff"/>
+    <rect width="8" y="2.5" height="2" fill="#fff"/>
+  </svg>`,
+
+  // ── Hungary ──
+
+  hu: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
+    <rect width="20" height="14" fill="#ce2b37"/>
+    <rect y="4.67" width="20" height="4.66" fill="#fff"/>
+    <rect y="9.33" width="20" height="4.67" fill="#008751"/>
+  </svg>`,
+
+  // ── Czech Republic ──
+
+  cz: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
+    <rect width="20" height="14" fill="#fff"/>
+    <rect y="7" width="20" height="7" fill="#d7141a"/>
+    <polygon points="0,0 8,7 0,14" fill="#11457e"/>
+  </svg>`,
+
+  // ── Romania ──
+
+  ro: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
+    <rect width="20" height="14" fill="#00319c"/>
+    <rect x="6.67" width="6.66" height="14" fill="#ffde00"/>
+    <rect x="13.33" width="6.67" height="14" fill="#de2110"/>
+  </svg>`,
+
+  // ── Saudi Arabia ──
+
+  sa: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
+    <rect width="20" height="14" fill="#006c35"/>
+    <rect x="5" y="3" width="10" height="2" fill="#fff"/>
+    <rect x="3.5" y="6" width="13" height="1.5" fill="#fff"/>
+    <rect x="6" y="9" width="8" height="2" fill="#fff"/>
+  </svg>`,
+
+  // ── UAE ──
+
+  ae: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
+    <rect width="20" height="14" fill="#009e00"/>
+    <rect y="4.67" width="20" height="4.66" fill="#fff"/>
+    <rect y="9.33" width="20" height="4.67" fill="#000"/>
+    <rect width="5.5" height="14" fill="#ff0000"/>
+  </svg>`,
+
+  // ── Egypt ──
+
+  eg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
+    <rect width="20" height="14" fill="#ce1126"/>
+    <rect y="4.67" width="20" height="4.66" fill="#fff"/>
+    <rect y="9.33" width="20" height="4.67" fill="#000"/>
+    <circle cx="10" cy="7" r="1.8" fill="#c09300"/>
+  </svg>`,
+
+  // ── South Africa ──
+
+  za: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
+    <rect width="20" height="14" fill="#de3831"/>
+    <rect y="7.3" width="20" height="6.7" fill="#002395"/>
+    <polygon points="0,0 0,14 9,7" fill="#007a4d"/>
+    <polygon points="0,2 0,12 7,7" fill="#ffb612"/>
+    <polygon points="0,4 0,10 5,7" fill="#000"/>
+    <polygon points="0,5 0,9 3.5,7" fill="#fff"/>
+  </svg>`,
 };
 
 for (const [code, svg] of Object.entries(flags)) {

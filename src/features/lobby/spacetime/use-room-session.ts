@@ -20,6 +20,7 @@ export type RoomChatMessage = {
 export type RoomMemberView = {
   id: bigint;
   identityHex: string;
+  slotIndex: number;
   name: string;
   mobileType: MobileType | undefined;
   isReady: boolean;
@@ -92,6 +93,7 @@ export function useRoomSession(
     return [...memberRows]
       .filter((m) => m.roomId === room.id)
       .sort((a, b) => {
+        if (a.slotIndex !== b.slotIndex) return a.slotIndex - b.slotIndex;
         const ax = a.joinedAt.microsSinceUnixEpoch;
         const bx = b.joinedAt.microsSinceUnixEpoch;
         if (ax > bx) return 1;
@@ -104,6 +106,7 @@ export function useRoomSession(
         return {
           id: m.id,
           identityHex: hex,
+          slotIndex: m.slotIndex,
           name: name && name.length > 0 ? name : `Player-${hex.slice(0, 4)}`,
           mobileType: parseMobileType(m.mobileType),
           isReady: m.isReady,

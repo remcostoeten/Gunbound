@@ -13,7 +13,7 @@ import { LobbyCreateModal } from "./lobby-create-modal";
 import { LobbyToastStack } from "./lobby-toast-stack";
 import { useLobbyState } from "../hooks/use-lobby-state";
 import { useLobbyRooms, type LobbyRoomView } from "../spacetime/use-lobby-rooms";
-import { useCurrentPlayer, useEmptyDataMode } from "@/features/game/spacetime";
+import { ROOM_STATUS, useCurrentPlayer, useEmptyDataMode } from "@/features/game/spacetime";
 import type { LobbyRoom } from "../types";
 
 type Props = {
@@ -26,7 +26,7 @@ function toLobbyRoom(view: LobbyRoomView): LobbyRoom {
   return {
     id: view.id,
     code: view.code,
-    status: view.status === "in_round" ? "Playing" : "Waiting",
+    status: view.status === ROOM_STATUS.IN_MATCH ? "Playing" : "Waiting",
     hostName: view.hostName,
     memberCount: view.memberCount,
     capacity: view.capacity
@@ -54,7 +54,7 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
     if (player && player.name === desired) return;
     const conn = connection.getConnection();
     if (!conn) return;
-    conn.reducers.setPlayerName({ name: desired }).catch(() => {
+    conn.reducers.setPlayerProfile({ name: desired }).catch(() => {
       // ignore — display falls back to Player-<hex>
     });
   }, [username, player, connection]);

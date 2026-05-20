@@ -6,7 +6,7 @@ import { schema, table, t } from 'spacetimedb/server';
  * Created on first `clientConnected` and never deleted — `isOnline` and
  * `lastSeen` are flipped by the connect/disconnect lifecycle hooks so that
  * other players can see presence without needing to enumerate active sessions.
- * Display `name` starts empty and is set via the `set_player_name` reducer.
+ * Display `name` starts empty and is set via the profile reducers.
  */
 export const Player = table(
   {
@@ -20,6 +20,9 @@ export const Player = table(
   {
     identity: t.identity().primaryKey(),
     name: t.string(),
+    createdAt: t.timestamp(),
+    updatedAt: t.timestamp(),
+    displayNameSetAt: t.timestamp().optional(),
     isOnline: t.bool(),
     lastSeen: t.timestamp(),
     xp: t.u64(),
@@ -56,7 +59,7 @@ export const AppSetting = table(
 /**
  * Invite-only lobby keyed by a short, human-shareable `code`.
  *
- * Lifecycle: `waiting` (accepting joins) → `in_round` (a round is being
+ * Lifecycle: `waiting` (accepting joins) → `in_match` (a round is being
  * played) → `waiting` (round ended, ready for another) → `ended` (last
  * member left). Codes are reusable across `ended` rooms — uniqueness is
  * only enforced against non-`ended` rooms in `create_room`.
@@ -81,6 +84,9 @@ export const Room = table(
     hostIdentity: t.identity(),
     status: t.string(),
     seed: t.u64(),
+    mapType: t.string(),
+    targetScore: t.u32(),
+    roundLimit: t.u32(),
     createdAt: t.timestamp()
   }
 );
@@ -106,6 +112,8 @@ export const RoomMember = table(
     id: t.u64().primaryKey().autoInc(),
     roomId: t.u64(),
     identity: t.identity(),
+    slotIndex: t.u32(),
+    teamIndex: t.u32().optional(),
     mobileType: t.string(),
     isReady: t.bool(),
     joinedAt: t.timestamp()

@@ -6,7 +6,11 @@ import type { Identity } from 'spacetimedb';
 
 import { DbConnection } from './module_bindings';
 import { SPACETIME_MODULE, SPACETIME_URI } from './config';
-import { readStoredToken, writeStoredToken } from './token-storage';
+import {
+  clearStoredToken,
+  readStoredToken,
+  writeStoredToken
+} from './token-storage';
 
 type GunboundSpacetimeProviderProps = {
   children: ReactNode;
@@ -27,6 +31,11 @@ export function GunboundSpacetimeProvider(
         writeStoredToken(token);
         if (onIdentity) onIdentity(identity);
         connection.subscriptionBuilder().subscribeToAllTables();
+      })
+      .onConnectError((_connection, error) => {
+        if (isStoredTokenVerificationError(error)) {
+          clearStoredToken();
+        }
       });
   }, [onIdentity]);
 
@@ -34,5 +43,12 @@ export function GunboundSpacetimeProvider(
     <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
       {children}
     </SpacetimeDBProvider>
+  );
+}
+
+function isStoredTokenVerificationError(error: Error): boolean {
+  return (
+    error.message === 'Failed to verify token' ||
+    error.message === 'Failed to verify token:'
   );
 }

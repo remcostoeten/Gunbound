@@ -39,6 +39,9 @@ export type Credential = __Infer<typeof Credential>;
 export const Player = __t.object("Player", {
   identity: __t.identity(),
   name: __t.string(),
+  createdAt: __t.timestamp(),
+  updatedAt: __t.timestamp(),
+  displayNameSetAt: __t.option(__t.timestamp()),
   isOnline: __t.bool(),
   lastSeen: __t.timestamp(),
   xp: __t.u64(),
@@ -59,6 +62,9 @@ export const Room = __t.object("Room", {
   hostIdentity: __t.identity(),
   status: __t.string(),
   seed: __t.u64(),
+  mapType: __t.string(),
+  targetScore: __t.u32(),
+  roundLimit: __t.u32(),
   createdAt: __t.timestamp(),
 });
 export type Room = __Infer<typeof Room>;
@@ -67,6 +73,8 @@ export const RoomMember = __t.object("RoomMember", {
   id: __t.u64(),
   roomId: __t.u64(),
   identity: __t.identity(),
+  slotIndex: __t.u32(),
+  teamIndex: __t.option(__t.u32()),
   mobileType: __t.string(),
   isReady: __t.bool(),
   joinedAt: __t.timestamp(),

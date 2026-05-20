@@ -17,10 +17,12 @@ import SelectMobileReducer from "../select_mobile_reducer";
 import SendChatReducer from "../send_chat_reducer";
 import SetEmptyDataEnabledReducer from "../set_empty_data_enabled_reducer";
 import SetPlayerNameReducer from "../set_player_name_reducer";
+import SetPlayerProfileReducer from "../set_player_profile_reducer";
 import SetReadyReducer from "../set_ready_reducer";
 import StartRoundReducer from "../start_round_reducer";
 import SubmitRoundStatsReducer from "../submit_round_stats_reducer";
 import UpdateCredentialTokenReducer from "../update_credential_token_reducer";
+import UpdateRoomSettingsReducer from "../update_room_settings_reducer";
 
 export type CreateRoomParams = __Infer<typeof CreateRoomReducer>;
 export type EndRoundParams = __Infer<typeof EndRoundReducer>;
@@ -33,8 +35,10 @@ export type SelectMobileParams = __Infer<typeof SelectMobileReducer>;
 export type SendChatParams = __Infer<typeof SendChatReducer>;
 export type SetEmptyDataEnabledParams = __Infer<typeof SetEmptyDataEnabledReducer>;
 export type SetPlayerNameParams = __Infer<typeof SetPlayerNameReducer>;
+export type SetPlayerProfileParams = __Infer<typeof SetPlayerProfileReducer>;
 export type SetReadyParams = __Infer<typeof SetReadyReducer>;
 export type StartRoundParams = __Infer<typeof StartRoundReducer>;
 export type SubmitRoundStatsParams = __Infer<typeof SubmitRoundStatsReducer>;
 export type UpdateCredentialTokenParams = __Infer<typeof UpdateCredentialTokenReducer>;
+export type UpdateRoomSettingsParams = __Infer<typeof UpdateRoomSettingsReducer>;
 
