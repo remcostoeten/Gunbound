@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getMapPresentation, mapPresentationOptions } from "@/features/game/constants/map-presentation";
+import { getMapPresentation, mapPresentationOptions, parseMapType } from "@/features/game/constants/map-presentation";
 import { getMobilePresentation, mobilePresentationOptions } from "@/features/game/constants/mobile-presentation";
 import { getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
 import { DEFAULT_MOBILE, parseMobileType } from "@/features/game/mobiles/mobile-factory";
@@ -1132,7 +1132,7 @@ function createMatchConfigFromRoom(
         playerTwoTitle: TITLE_OPTIONS[1],
         playerOneAccent: ACCENT_OPTIONS[0],
         playerTwoAccent: ACCENT_OPTIONS[1],
-        mapType: parseMapType(roomSession.room?.mapType),
+        mapType: parseMapType(roomSession.room?.mapType, defaultSetup.mapType),
         targetScore:
             roomSession.room?.targetScore ?? defaultSetup.targetScore,
         roundLimit:
@@ -1141,13 +1141,6 @@ function createMatchConfigFromRoom(
             ? "room-" + roomSession.room.code + "-" + roomSession.room.seed.toString()
             : defaultSetup.seedText,
     };
-}
-
-function parseMapType(value: string | undefined): MapType {
-    return (
-        mapPresentationOptions.find((option) => option.value === value)?.value ??
-        defaultSetup.mapType
-    );
 }
 
 function renderEndScreen(

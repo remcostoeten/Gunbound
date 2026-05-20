@@ -58,6 +58,7 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
       author: "SYSTEM",
       text: `${request.requesterName} wants to add you as a friend.`,
       tone: "system",
+      createdAtMicros: request.createdAtMicros,
       friendRequest: {
         id: request.id,
         requesterName: request.requesterName,
@@ -68,8 +69,9 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
       author: "SYSTEM",
       text: `${invite.requesterName} invited you to room ${invite.roomCode}.`,
       tone: "system",
+      createdAtMicros: invite.createdAtMicros,
     }));
-    return [...lobbyChat.messages, ...requestMessages, ...roomInviteMessages];
+    return [...lobbyChat.messages, ...requestMessages, ...roomInviteMessages].sort(compareLobbyMessages);
   }, [lobbyChat.messages, lobbyFriends.incomingRequests, lobbyFriends.incomingRoomInvites]);
 
   useEffect(() => {
@@ -252,4 +254,12 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
 function messageFromError(e: unknown): string {
   if (e instanceof Error) return e.message;
   return String(e);
+}
+
+function compareLobbyMessages(a: LobbyChatMsg, b: LobbyChatMsg): number {
+  const ax = a.createdAtMicros ?? BigInt(0);
+  const bx = b.createdAtMicros ?? BigInt(0);
+  if (ax > bx) return 1;
+  if (ax < bx) return -1;
+  return 0;
 }

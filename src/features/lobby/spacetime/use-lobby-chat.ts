@@ -49,6 +49,7 @@ export function useLobbyChat(channel: number): {
         author: author && author.trim().length > 0 ? author : `Player-${senderHex.slice(0, 4)}`,
         text: message.message,
         tone: identity && senderHex === identity.toHexString() ? "self" : "other",
+        createdAtMicros: message.createdAt.microsSinceUnixEpoch,
       };
     });
   }, [chatRows, identity, playerNameByHex]);

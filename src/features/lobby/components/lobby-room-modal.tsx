@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRoomSession } from "../spacetime/use-room-session";
 import { ROOM_STATUS } from "@/features/game/spacetime/room-status";
 import { DEFAULT_MOBILE } from "@/features/game/mobiles/mobile-factory";
-import { getMapPresentation, mapPresentationOptions } from "@/features/game/constants/map-presentation";
+import { getMapPresentation, mapPresentationOptions, parseMapType } from "@/features/game/constants/map-presentation";
 import type { MapType } from "@/features/game/types/shared";
 import type { LobbyRoom, LobbyRoomSettings } from "../types";
 
@@ -28,6 +28,7 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
   const chatBodyRef = useRef<HTMLDivElement>(null);
   const startedRef = useRef(false);
   const autoMobileRef = useRef(false);
+  const syncedSettingsRef = useRef<LobbyRoomSettings>(getRoomSettings(room.settings));
 
   useEffect(() => {
     chatBodyRef.current?.scrollTo({
@@ -59,13 +60,18 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
   }, [session.room, onStarted]);
 
   useEffect(() => {
-    if (!session.room || settingsBusy) return;
-    setSettingsDraft(getRoomSettings({
+    if (!session.room) return;
+    const nextSettings = getRoomSettings({
       mapType: parseMapType(session.room.mapType),
       targetScore: session.room.targetScore,
       roundLimit: session.room.roundLimit,
-    }));
-  }, [session.room, settingsBusy]);
+    });
+    setSettingsDraft((currentDraft) => {
+      const previousSynced = syncedSettingsRef.current;
+      syncedSettingsRef.current = nextSettings;
+      return settingsEqual(currentDraft, previousSynced) ? nextSettings : currentDraft;
+    });
+  }, [session.room]);
 
   async function toggleReady() {
     if (!session.self || readyBusy) return;
@@ -420,6 +426,6 @@ function getRoomSettings(settings: LobbyRoomSettings | undefined): LobbyRoomSett
   };
 }
 
-function parseMapType(value: string): MapType {
-  return mapPresentationOptions.find((option) => option.value === value)?.value ?? mapPresentationOptions[0].value;
+function settingsEqual(a: LobbyRoomSettings, b: LobbyRoomSettings): boolean {
+  return a.mapType === b.mapType && a.targetScore === b.targetScore && a.roundLimit === b.roundLimit;
 }

@@ -9,13 +9,19 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from "spacetimedb";
+import {
+  RequestStatus,
+} from "./types";
+
 
 export default __t.row({
   id: __t.u64().primaryKey(),
   roomId: __t.u64().name("room_id"),
   requesterIdentity: __t.identity().name("requester_identity"),
   recipientIdentity: __t.identity().name("recipient_identity"),
-  status: __t.string(),
+  get status() {
+    return RequestStatus;
+  },
   createdAt: __t.timestamp().name("created_at"),
   resolvedAt: __t.option(__t.timestamp()).name("resolved_at"),
 });

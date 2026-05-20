@@ -5,8 +5,7 @@ import { useSpacetimeDB, useTable } from "spacetimedb/react";
 
 import { tables } from "@/features/game/spacetime";
 import { ROOM_STATUS, type RoomStatus } from "@/features/game/spacetime/room-status";
-import { mapPresentationOptions } from "@/features/game/constants/map-presentation";
-import type { MapType } from "@/features/game/types/shared";
+import { parseMapType } from "@/features/game/constants/map-presentation";
 import { generateRoomCode, generateSeed } from "./generate-code";
 import type { LobbyRoomSettings } from "../types";
 const ROOM_CAPACITY = 2;
@@ -104,8 +103,4 @@ export function useLobbyRooms() {
   }, [rooms, joinRoomByCode]);
 
   return { rooms, roomsReady, createRoom, joinRoomByCode, quickJoin };
-}
-
-function parseMapType(value: string): MapType {
-  return mapPresentationOptions.find((option) => option.value === value)?.value ?? mapPresentationOptions[0].value;
 }

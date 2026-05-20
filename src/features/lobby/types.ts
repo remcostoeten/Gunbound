@@ -38,6 +38,7 @@ export type LobbyChatMsg = {
   author: string;
   text: string;
   tone: "self" | "system" | "other";
+  createdAtMicros?: bigint;
   friendRequest?: {
     id: bigint;
     requesterName: string;

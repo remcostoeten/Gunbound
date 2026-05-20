@@ -7,7 +7,7 @@ import type { Identity } from "spacetimedb";
 import { tables } from "@/features/game/spacetime";
 import type { FriendRequest, Player, RoomInvite } from "@/features/game/spacetime/module_bindings/types";
 
-const PENDING_STATUS = "pending";
+const PENDING_STATUS = "Pending";
 const AWAY_AFTER_MS = 10 * 60 * 1000;
 
 export type LobbyFriendPresence = "online" | "away" | "offline";
@@ -117,7 +117,7 @@ export function useLobbyFriends(): {
 
   const incomingRequests = useMemo<IncomingFriendRequestView[]>(() => {
     return [...incomingRequestRows]
-      .filter((request) => request.status === PENDING_STATUS)
+      .filter((request) => request.status.tag === PENDING_STATUS)
       .sort(compareRequests)
       .map((request) => {
         const requesterHex = request.requesterIdentity.toHexString();
@@ -132,7 +132,7 @@ export function useLobbyFriends(): {
 
   const incomingRoomInvites = useMemo<IncomingRoomInviteView[]>(() => {
     return [...incomingRoomInviteRows]
-      .filter((invite) => invite.status === PENDING_STATUS)
+      .filter((invite) => invite.status.tag === PENDING_STATUS)
       .sort(compareRoomInvites)
       .map((invite) => {
         const requesterHex = invite.requesterIdentity.toHexString();
@@ -202,7 +202,7 @@ export function useLobbyFriends(): {
     (target: Identity): boolean => {
       const targetHex = target.toHexString();
       return outgoingRequestRows.some(
-        (request) => request.recipientIdentity.toHexString() === targetHex && request.status === PENDING_STATUS,
+        (request) => request.recipientIdentity.toHexString() === targetHex && request.status.tag === PENDING_STATUS,
       );
     },
     [outgoingRequestRows],

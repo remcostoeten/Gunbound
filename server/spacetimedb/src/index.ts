@@ -10,12 +10,9 @@ type ModuleContext = ReducerCtx<InferSchema<typeof spacetimedb>>;
 
 const ROUND_STATUS_ACTIVE = 'active';
 const ROUND_STATUS_FINISHED = 'finished';
-const FRIEND_REQUEST_STATUS_PENDING = 'pending';
-const FRIEND_REQUEST_STATUS_ACCEPTED = 'accepted';
-const FRIEND_REQUEST_STATUS_DECLINED = 'declined';
-const ROOM_INVITE_STATUS_PENDING = 'pending';
-const ROOM_INVITE_STATUS_ACCEPTED = 'accepted';
-const ROOM_INVITE_STATUS_DECLINED = 'declined';
+const REQUEST_STATUS_PENDING = { tag: 'Pending' } as const;
+const REQUEST_STATUS_ACCEPTED = { tag: 'Accepted' } as const;
+const REQUEST_STATUS_DECLINED = { tag: 'Declined' } as const;
 
 const ROOM_MAX_MEMBERS = 2;
 const DEFAULT_MAP_TYPE = 'rolling';
@@ -149,7 +146,7 @@ function findPendingFriendRequest(ctx: ModuleContext, requesterIdentity: Identit
   for (const request of ctx.db.friendRequest.friend_request_requester.filter(requesterIdentity)) {
     if (
       request.recipientIdentity.toHexString() === recipientHex &&
-      request.status === FRIEND_REQUEST_STATUS_PENDING
+      request.status.tag === REQUEST_STATUS_PENDING.tag
     ) {
       return request;
     }
@@ -164,7 +161,7 @@ function findPendingRoomInvite(ctx: ModuleContext, roomId: bigint, requesterIden
     if (
       invite.requesterIdentity.toHexString() === requesterHex &&
       invite.recipientIdentity.toHexString() === recipientHex &&
-      invite.status === ROOM_INVITE_STATUS_PENDING
+      invite.status.tag === REQUEST_STATUS_PENDING.tag
     ) {
       return invite;
     }
@@ -825,7 +822,7 @@ export const send_friend_request = spacetimedb.reducer(
     if (reciprocal) {
       ctx.db.friendRequest.id.update({
         ...reciprocal,
-        status: FRIEND_REQUEST_STATUS_ACCEPTED,
+        status: REQUEST_STATUS_ACCEPTED,
         resolvedAt: ctx.timestamp
       });
       ensureFriendship(ctx, ctx.sender, credential.identity);
@@ -837,7 +834,7 @@ export const send_friend_request = spacetimedb.reducer(
       id: 0n,
       requesterIdentity: ctx.sender,
       recipientIdentity: credential.identity,
-      status: FRIEND_REQUEST_STATUS_PENDING,
+      status: REQUEST_STATUS_PENDING,
       createdAt: ctx.timestamp,
       resolvedAt: undefined
     });
@@ -848,7 +845,7 @@ export const respond_friend_request = spacetimedb.reducer(
   { requestId: t.u64(), accept: t.bool() },
   (ctx, { requestId, accept }) => {
     const request = ctx.db.friendRequest.id.find(requestId);
-    if (!request || request.status !== FRIEND_REQUEST_STATUS_PENDING) {
+    if (!request || request.status.tag !== REQUEST_STATUS_PENDING.tag) {
       throw new SenderError('friend request not found');
     }
     if (!identitiesMatch(request.recipientIdentity, ctx.sender)) {
@@ -857,7 +854,7 @@ export const respond_friend_request = spacetimedb.reducer(
 
     ctx.db.friendRequest.id.update({
       ...request,
-      status: accept ? FRIEND_REQUEST_STATUS_ACCEPTED : FRIEND_REQUEST_STATUS_DECLINED,
+      status: accept ? REQUEST_STATUS_ACCEPTED : REQUEST_STATUS_DECLINED,
       resolvedAt: ctx.timestamp
     });
 
@@ -917,7 +914,7 @@ export const send_room_invite = spacetimedb.reducer(
       roomId,
       requesterIdentity: ctx.sender,
       recipientIdentity: credential.identity,
-      status: ROOM_INVITE_STATUS_PENDING,
+      status: REQUEST_STATUS_PENDING,
       createdAt: ctx.timestamp,
       resolvedAt: undefined
     });
@@ -928,29 +925,46 @@ export const respond_room_invite = spacetimedb.reducer(
   { inviteId: t.u64(), accept: t.bool() },
   (ctx, { inviteId, accept }) => {
     const invite = ctx.db.roomInvite.id.find(inviteId);
-    if (!invite || invite.status !== ROOM_INVITE_STATUS_PENDING) {
+    if (!invite || invite.status.tag !== REQUEST_STATUS_PENDING.tag) {
       throw new SenderError('room invite not found');
     }
     if (!identitiesMatch(invite.recipientIdentity, ctx.sender)) {
       throw new SenderError('only the recipient can respond');
     }
 
-    ctx.db.roomInvite.id.update({
-      ...invite,
-      status: accept ? ROOM_INVITE_STATUS_ACCEPTED : ROOM_INVITE_STATUS_DECLINED,
-      resolvedAt: ctx.timestamp
-    });
-
-    if (!accept) return;
+    if (!accept) {
+      ctx.db.roomInvite.id.update({
+        ...invite,
+        status: REQUEST_STATUS_DECLINED,
+        resolvedAt: ctx.timestamp
+      });
+      return;
+    }
 
     const room = ctx.db.room.id.find(invite.roomId);
     if (!room || !isActiveRoomStatus(room.status)) throw new SenderError('room not found');
     if (isRoomLockedForMatch(room.status)) throw new SenderError('room is already playing');
     assertNotInActiveRoom(ctx);
 
+    let memberCount = 0;
     for (const member of ctx.db.roomMember.room_member_room_id.filter(invite.roomId)) {
-      if (identitiesMatch(member.identity, ctx.sender)) return;
+      if (identitiesMatch(member.identity, ctx.sender)) {
+        ctx.db.roomInvite.id.update({
+          ...invite,
+          status: REQUEST_STATUS_ACCEPTED,
+          resolvedAt: ctx.timestamp
+        });
+        return;
+      }
+      memberCount += 1;
     }
+    if (memberCount >= ROOM_MAX_MEMBERS) throw new SenderError('room is full');
+
+    ctx.db.roomInvite.id.update({
+      ...invite,
+      status: REQUEST_STATUS_ACCEPTED,
+      resolvedAt: ctx.timestamp
+    });
 
     ctx.db.roomMember.insert({
       id: 0n,

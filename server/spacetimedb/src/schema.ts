@@ -243,6 +243,8 @@ export const LobbyChatMessage = table(
   }
 );
 
+export const RequestStatus = t.enum('RequestStatus', ['Pending', 'Accepted', 'Declined']);
+
 export const FriendRequest = table(
   {
     name: 'friend_request',
@@ -256,7 +258,7 @@ export const FriendRequest = table(
     id: t.u64().primaryKey().autoInc(),
     requesterIdentity: t.identity(),
     recipientIdentity: t.identity(),
-    status: t.string(),
+    status: RequestStatus,
     createdAt: t.timestamp(),
     resolvedAt: t.timestamp().optional()
   }
@@ -294,7 +296,7 @@ export const RoomInvite = table(
     roomId: t.u64(),
     requesterIdentity: t.identity(),
     recipientIdentity: t.identity(),
-    status: t.string(),
+    status: RequestStatus,
     createdAt: t.timestamp(),
     resolvedAt: t.timestamp().optional()
   }

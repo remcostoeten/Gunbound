@@ -40,7 +40,9 @@ export const FriendRequest = __t.object("FriendRequest", {
   id: __t.u64(),
   requesterIdentity: __t.identity(),
   recipientIdentity: __t.identity(),
-  status: __t.string(),
+  get status() {
+    return RequestStatus;
+  },
   createdAt: __t.timestamp(),
   resolvedAt: __t.option(__t.timestamp()),
 });
@@ -83,6 +85,14 @@ export const Player = __t.object("Player", {
 });
 export type Player = __Infer<typeof Player>;
 
+// The tagged union or sum type for the algebraic type `RequestStatus`.
+export const RequestStatus = __t.enum("RequestStatus", {
+  Pending: __t.unit(),
+  Accepted: __t.unit(),
+  Declined: __t.unit(),
+});
+export type RequestStatus = __Infer<typeof RequestStatus>;
+
 export const Room = __t.object("Room", {
   id: __t.u64(),
   code: __t.string(),
@@ -101,7 +111,9 @@ export const RoomInvite = __t.object("RoomInvite", {
   roomId: __t.u64(),
   requesterIdentity: __t.identity(),
   recipientIdentity: __t.identity(),
-  status: __t.string(),
+  get status() {
+    return RequestStatus;
+  },
   createdAt: __t.timestamp(),
   resolvedAt: __t.option(__t.timestamp()),
 });
