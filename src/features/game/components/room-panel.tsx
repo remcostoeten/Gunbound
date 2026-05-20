@@ -1,5 +1,6 @@
 "use client";
 
+import { getMapPresentation } from "@/features/game/constants/map-presentation";
 import { getMobilePresentation } from "@/features/game/constants/mobile-presentation";
 import { normalizeSeed } from "@/features/game/engine/random";
 import { getTerrainTheme } from "@/features/game/engine/terrain";
@@ -10,7 +11,10 @@ import type { MobileType, PlayerAccent, PlayerTitle } from "@/features/game/type
 export function RoomPanel(props: {
   formState: MatchConfig;
 }): React.JSX.Element {
-  const terrainTheme = getTerrainTheme(normalizeSeed(props.formState.seedText || "gunbound-local"));
+  const terrainTheme = getTerrainTheme(props.formState.mapType);
+  const mapPresentation = getMapPresentation(props.formState.mapType);
+  const mapSeed = props.formState.seedText || "gunbound-local";
+  const seedVariant = normalizeSeed(mapSeed) % 1000;
 
   return (
     <div className="room-panel">
@@ -24,12 +28,16 @@ export function RoomPanel(props: {
       </div>
       <div className="room-grid">
         <div className="room-row">
-          <span className="room-key">Map Seed</span>
-          <span className="room-value">{props.formState.seedText || "gunbound-local"}</span>
+          <span className="room-key">Map</span>
+          <span className="room-value">{mapPresentation.label}</span>
         </div>
         <div className="room-row">
           <span className="room-key">Mode</span>
           <span className="room-value">Tag Match</span>
+        </div>
+        <div className="room-row">
+          <span className="room-key">Variant</span>
+          <span className="room-value">{mapSeed} / #{String(seedVariant).padStart(3, "0")}</span>
         </div>
         <div className="room-row">
           <span className="room-key">Wind</span>
@@ -40,6 +48,7 @@ export function RoomPanel(props: {
           <span className="room-value">{getTerrainThemeLabel(terrainTheme)} / Destructible</span>
         </div>
       </div>
+      <div className="room-map-copy">{mapPresentation.description}</div>
       <div className="room-slots">
         {renderSlot(1, props.formState.playerOneName, props.formState.playerOneTitle, props.formState.playerOneAccent, props.formState.playerOneMobile)}
         {renderSlot(2, props.formState.playerTwoName, props.formState.playerTwoTitle, props.formState.playerTwoAccent, props.formState.playerTwoMobile)}

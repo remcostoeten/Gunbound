@@ -378,6 +378,48 @@ function getProjectileStyle(mobileType: MobileType, isSecondary: boolean): { out
       : { outer: "#ffd56e", inner: "#fff7d4", glow: "rgba(255, 209, 86, 0.82)", trail: "255, 215, 105" };
   }
 
+  if (mobileType === "mage") {
+    return isSecondary
+      ? { outer: "#c084fc", inner: "#f3e8ff", glow: "rgba(168, 85, 247, 0.9)", trail: "192, 132, 252" }
+      : { outer: "#a78bfa", inner: "#ede9fe", glow: "rgba(139, 92, 246, 0.85)", trail: "167, 139, 250" };
+  }
+
+  if (mobileType === "nak") {
+    return isSecondary
+      ? { outer: "#d97706", inner: "#fef3c7", glow: "rgba(217, 119, 6, 0.88)", trail: "217, 119, 6" }
+      : { outer: "#f59e0b", inner: "#fffbeb", glow: "rgba(245, 158, 11, 0.82)", trail: "245, 158, 11" };
+  }
+
+  if (mobileType === "turtle") {
+    return isSecondary
+      ? { outer: "#166534", inner: "#dcfce7", glow: "rgba(22, 101, 52, 0.9)", trail: "34, 197, 94" }
+      : { outer: "#16a34a", inner: "#f0fdf4", glow: "rgba(22, 163, 74, 0.85)", trail: "74, 222, 128" };
+  }
+
+  if (mobileType === "frog") {
+    return isSecondary
+      ? { outer: "#65a30d", inner: "#f7fee7", glow: "rgba(101, 163, 13, 0.9)", trail: "132, 204, 22" }
+      : { outer: "#84cc16", inner: "#f7fee7", glow: "rgba(132, 204, 22, 0.85)", trail: "163, 230, 53" };
+  }
+
+  if (mobileType === "sate") {
+    return isSecondary
+      ? { outer: "#1d4ed8", inner: "#dbeafe", glow: "rgba(29, 78, 216, 0.9)", trail: "59, 130, 246" }
+      : { outer: "#3b82f6", inner: "#eff6ff", glow: "rgba(59, 130, 246, 0.85)", trail: "147, 197, 253" };
+  }
+
+  if (mobileType === "armor") {
+    return isSecondary
+      ? { outer: "#e2e8f0", inner: "#f8fafc", glow: "rgba(148, 163, 184, 0.88)", trail: "203, 213, 225" }
+      : { outer: "#f1f5f9", inner: "#ffffff", glow: "rgba(226, 232, 240, 0.8)", trail: "241, 245, 249" };
+  }
+
+  if (mobileType === "snow") {
+    return isSecondary
+      ? { outer: "#bae6fd", inner: "#f0f9ff", glow: "rgba(186, 230, 253, 0.9)", trail: "186, 230, 253" }
+      : { outer: "#e0f2fe", inner: "#ffffff", glow: "rgba(224, 242, 254, 0.85)", trail: "224, 242, 254" };
+  }
+
   return isSecondary
     ? { outer: "#ffe7a5", inner: "#fff5d4", glow: "rgba(255, 211, 97, 0.85)", trail: "255, 211, 97" }
     : { outer: "#ffffff", inner: "#ffffff", glow: "rgba(255, 255, 255, 0.75)", trail: "255, 250, 220" };

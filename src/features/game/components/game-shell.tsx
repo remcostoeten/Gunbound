@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { getMapPresentation, mapPresentationOptions } from "@/features/game/constants/map-presentation";
 import { getMobilePresentation, mobilePresentationOptions } from "@/features/game/constants/mobile-presentation";
 import { getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
 import { AimIndicator } from "@/features/game/components/aim-indicator";
@@ -11,6 +12,8 @@ import { RoomPanel } from "@/features/game/components/room-panel";
 import { TurnBanner } from "@/features/game/components/turn-banner";
 import { useGameState } from "@/features/game/hooks/use-game-state";
 import {
+    lobbyAudioBlockedEvent,
+    lobbyAudioStartedEvent,
     lobbyMatchStartAudioEvent,
     useGunboundSfx,
 } from "@/features/game/hooks/use-gunbound-sfx";
@@ -27,11 +30,118 @@ import {
 } from "@/features/game/store/selectors/match-selectors";
 import { selectHistory } from "@/features/game/store/selectors/history-selectors";
 import type { MatchConfig } from "@/features/game/types/state";
-import type { MobileType, PlayerAccent, PlayerTitle } from "@/features/game/types/shared";
+import type { MapType, MobileType, PlayerAccent, PlayerTitle } from "@/features/game/types/shared";
 
 const TITLE_OPTIONS: PlayerTitle[] = ["Captain", "Raider", "Engineer", "Oracle"];
 const ACCENT_OPTIONS: PlayerAccent[] = ["sky", "coral", "mint", "gold"];
 const MATCH_START_DELAY_MS = 850;
+const LOBBY_ENTRY_DELAY_MS = 2200;
+
+type StartView = "channel" | "room-setup";
+
+type LiveRoom = {
+    title: string;
+    host: string;
+    mapType: MapType;
+    seedText: string;
+    players: string;
+    status: string;
+};
+
+type FriendPresence = {
+    name: string;
+    mobile: MobileType;
+    status: string;
+    activity: string;
+};
+
+type ChannelChatMessage = {
+    author: string;
+    accent: PlayerAccent;
+    text: string;
+    time: string;
+};
+
+const LIVE_ROOMS: LiveRoom[] = [
+    {
+        title: "Avatar High Arc",
+        host: "Remco",
+        mapType: "ridge",
+        seedText: "miramo-skyline",
+        players: "2/2",
+        status: "In Match",
+    },
+    {
+        title: "Dragon Storm",
+        host: "Mika",
+        mapType: "canyon",
+        seedText: "dragon-trade",
+        players: "1/2",
+        status: "Waiting",
+    },
+    {
+        title: "Boomer Night",
+        host: "Tariq",
+        mapType: "crater",
+        seedText: "wind-lab",
+        players: "2/2",
+        status: "Round 3",
+    },
+];
+
+const FRIENDS_LIST: FriendPresence[] = [
+    {
+        name: "Nina",
+        mobile: "knight",
+        status: "Online",
+        activity: "Browsing Channel 1",
+    },
+    {
+        name: "Jasper",
+        mobile: "armor",
+        status: "In Room",
+        activity: "Waiting in Dragon Storm",
+    },
+    {
+        name: "Lotte",
+        mobile: "dragon",
+        status: "In Match",
+        activity: "Round 2 on Nirvana",
+    },
+    {
+        name: "Milan",
+        mobile: "snow",
+        status: "Away",
+        activity: "Last seen 12m ago",
+    },
+];
+
+const CHANNEL_CHAT: ChannelChatMessage[] = [
+    {
+        author: "System",
+        accent: "gold",
+        text: "Channel 1 is open. Wind conditions are dynamic tonight.",
+        time: "19:42",
+    },
+    {
+        author: "Nina",
+        accent: "sky",
+        text: "Who is up for a fast 1v1 after this round?",
+        time: "19:43",
+    },
+    {
+        author: "Tariq",
+        accent: "coral",
+        text: "Boomer Night is full, but spectators can clone the map seed.",
+        time: "19:44",
+    },
+    {
+        author: "Lotte",
+        accent: "mint",
+        text: "Dragon on Nirvana still feels unfair with that tailwind.",
+        time: "19:45",
+    },
+];
 
 export function GameShell() {
     const scene = useGameState(selectScene);
@@ -46,8 +156,13 @@ export function GameShell() {
     const [formState, setFormState] = useState<MatchConfig>(
         setup || defaultSetup,
     );
+    const [startView, setStartView] = useState<StartView>("channel");
+    const [showLobbyEntry, setShowLobbyEntry] = useState(true);
     const [matchStarting, setMatchStarting] = useState(false);
+    const [showLobbyAudioNotice, setShowLobbyAudioNotice] = useState(false);
     const matchStartTimeoutRef = useRef<number | null>(null);
+    const lobbyEntryTimeoutRef = useRef<number | null>(null);
+    const hasShownLobbyEntryRef = useRef(false);
     useGunboundSfx();
 
     useEffect(function resetPendingMatchStart(): void {
@@ -61,8 +176,82 @@ export function GameShell() {
             if (matchStartTimeoutRef.current !== null) {
                 window.clearTimeout(matchStartTimeoutRef.current);
             }
+            if (lobbyEntryTimeoutRef.current !== null) {
+                window.clearTimeout(lobbyEntryTimeoutRef.current);
+            }
         };
     }, []);
+
+    useEffect(function stageLobbyEntry(): () => void {
+        if (scene !== "start") {
+            setShowLobbyEntry(false);
+            return function noopCleanup(): void {};
+        }
+
+        if (hasShownLobbyEntryRef.current) {
+            setShowLobbyEntry(false);
+            return function noopCleanup(): void {};
+        }
+
+        setShowLobbyEntry(true);
+        lobbyEntryTimeoutRef.current = window.setTimeout(
+            function finishLobbyEntry(): void {
+                lobbyEntryTimeoutRef.current = null;
+                hasShownLobbyEntryRef.current = true;
+                setShowLobbyEntry(false);
+            },
+            LOBBY_ENTRY_DELAY_MS,
+        );
+
+        return function cleanupLobbyEntry(): void {
+            if (lobbyEntryTimeoutRef.current !== null) {
+                window.clearTimeout(lobbyEntryTimeoutRef.current);
+                lobbyEntryTimeoutRef.current = null;
+            }
+        };
+    }, [scene]);
+
+    useEffect(function bindLobbyAudioNotice(): () => void {
+        function handleLobbyAudioBlocked(): void {
+            setShowLobbyAudioNotice(true);
+        }
+
+        function handleLobbyAudioStarted(): void {
+            setShowLobbyAudioNotice(false);
+        }
+
+        window.addEventListener(
+            lobbyAudioBlockedEvent,
+            handleLobbyAudioBlocked,
+        );
+        window.addEventListener(
+            lobbyAudioStartedEvent,
+            handleLobbyAudioStarted,
+        );
+
+        return function cleanupLobbyAudioNotice(): void {
+            window.removeEventListener(
+                lobbyAudioBlockedEvent,
+                handleLobbyAudioBlocked,
+            );
+            window.removeEventListener(
+                lobbyAudioStartedEvent,
+                handleLobbyAudioStarted,
+            );
+        };
+    }, []);
+
+    useEffect(function resetLobbyAudioNoticeForScene(): void {
+        if (scene !== "start") {
+            setShowLobbyAudioNotice(false);
+        }
+    }, [scene]);
+
+    useEffect(function resetStartViewForScene(): void {
+        if (scene === "start") {
+            setStartView("channel");
+        }
+    }, [scene]);
 
     return (
         <main className="game-shell">
@@ -79,12 +268,23 @@ export function GameShell() {
                 </div>
             ) : null}
             {scene === "start"
-                ? renderStartScreen(
-                      formState,
-                      setFormState,
-                      queueMatchStart,
-                      matchStarting,
-                  )
+                ? showLobbyEntry
+                    ? renderLobbyEntryScreen(handleLobbyEntryComplete)
+                    : startView === "channel"
+                      ? renderChannelScreen(
+                            formState,
+                            openCreateRoom,
+                            cloneRoomSetup,
+                            showLobbyAudioNotice,
+                        )
+                      : renderStartScreen(
+                            formState,
+                            setFormState,
+                            queueMatchStart,
+                            openChannelLobby,
+                            matchStarting,
+                            showLobbyAudioNotice,
+                        )
                 : null}
             {scene === "end"
                 ? renderEndScreen(
@@ -116,6 +316,83 @@ export function GameShell() {
             MATCH_START_DELAY_MS,
         );
     }
+
+    function handleLobbyEntryComplete(): void {
+        if (scene !== "start") {
+            return;
+        }
+
+        hasShownLobbyEntryRef.current = true;
+        if (lobbyEntryTimeoutRef.current !== null) {
+            window.clearTimeout(lobbyEntryTimeoutRef.current);
+            lobbyEntryTimeoutRef.current = null;
+        }
+        setShowLobbyEntry(false);
+    }
+
+    function openCreateRoom(): void {
+        setStartView("room-setup");
+    }
+
+    function openChannelLobby(): void {
+        setStartView("channel");
+    }
+
+    function cloneRoomSetup(room: LiveRoom): void {
+        setFormState({
+            ...formState,
+            seedText: room.seedText,
+            mapType: room.mapType,
+        });
+        setStartView("room-setup");
+    }
+}
+
+function renderLobbyEntryScreen(
+    onComplete: {
+        (): void;
+    },
+): React.JSX.Element {
+    return (
+        <div className="screen">
+            <div className="lobby-entry">
+                <div className="lobby-entry-glow" />
+                <div className="lobby-entry-card">
+                    <div className="lobby-entry-badge">Channel Gate</div>
+                    <div className="lobby-entry-copy">
+                        <span className="lobby-entry-kicker">
+                            Gunbound Network
+                        </span>
+                        <h1 className="lobby-entry-title">
+                            Entering Channel 1
+                        </h1>
+                        <p className="lobby-entry-text">
+                            Syncing room board, loading mobiles, and warming up
+                            the wind map for a local artillery duel.
+                        </p>
+                    </div>
+                    <div className="lobby-entry-status">
+                        <div className="lobby-entry-progress">
+                            <span className="lobby-entry-progress-bar" />
+                        </div>
+                        <div className="lobby-entry-steps" aria-hidden="true">
+                            <span>Room registry online</span>
+                            <span>Mobiles checked in</span>
+                            <span>Lobby ready</span>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        className="lobby-btn lobby-btn-primary"
+                        onClick={onComplete}
+                    >
+                        <span className="lobby-btn-icon">&#9654;</span>
+                        <span className="lobby-btn-label">Enter Lobby</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 function renderStartScreen(
@@ -124,7 +401,11 @@ function renderStartScreen(
     queueMatchStart: {
         (config: MatchConfig): void;
     },
+    openChannelLobby: {
+        (): void;
+    },
     matchStarting: boolean,
+    showLobbyAudioNotice: boolean,
 ): React.JSX.Element {
     return (
         <div className="screen">
@@ -134,18 +415,24 @@ function renderStartScreen(
                 <div className="lobby-header">
                     <span className="lobby-channel-badge">Channel 1</span>
                     <div className="lobby-title-group">
-                        <span className="lobby-kicker">Local Hot-Seat</span>
-                        <h1 className="lobby-title">Gunbound</h1>
-                        <span className="lobby-subtitle">Artillery Duel</span>
+                        <span className="lobby-kicker">Room Creation</span>
+                        <h1 className="lobby-title">Create Lobby</h1>
+                        <span className="lobby-subtitle">Stage The Duel</span>
                     </div>
                     <div className="lobby-room-info">
-                        <span className="lobby-room-tag">Room</span>
+                        <span className="lobby-room-tag">Flow</span>
                         <span className="lobby-room-name">
-                            Gunbound Local Room
+                            Channel 1 / New Room
                         </span>
-                        <span className="lobby-room-status">Waiting</span>
+                        <span className="lobby-room-status">Draft</span>
                     </div>
                 </div>
+                {showLobbyAudioNotice ? (
+                    <div className="lobby-audio-notice" role="status">
+                        Browser autoplay blocked the lobby music. Click or press
+                        any key to enable it.
+                    </div>
+                ) : null}
 
                 <div className="lobby-players">
                     {renderLobbyPlayer(
@@ -175,7 +462,24 @@ function renderStartScreen(
                 <div className="lobby-controls">
                     <div className="lobby-options">
                         <div className="lobby-option">
-                            <span className="lobby-option-label">Seed</span>
+                            <span className="lobby-option-label">Map</span>
+                            <select
+                                className="lobby-option-input"
+                                value={formState.mapType}
+                                onChange={handleMapTypeChange}
+                            >
+                                {mapPresentationOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                        {option.label}
+                                    </option>
+                                ))}
+                            </select>
+                            <span className="lobby-option-copy">
+                                {getMapPresentation(formState.mapType).description}
+                            </span>
+                        </div>
+                        <div className="lobby-option">
+                            <span className="lobby-option-label">Seed Variant</span>
                             <input
                                 className="lobby-option-input"
                                 value={formState.seedText}
@@ -187,6 +491,13 @@ function renderStartScreen(
                         <RoomPanel formState={formState} />
                     </div>
                     <div className="lobby-actions">
+                        <button
+                            type="button"
+                            className="lobby-btn lobby-btn-secondary"
+                            onClick={openChannelLobby}
+                        >
+                            <span className="lobby-btn-label">Back To Channel</span>
+                        </button>
                         <button
                             type="button"
                             className="lobby-btn lobby-btn-primary"
@@ -285,6 +596,15 @@ function renderStartScreen(
         });
     }
 
+    function handleMapTypeChange(
+        event: React.ChangeEvent<HTMLSelectElement>,
+    ): void {
+        setFormState({
+            ...formState,
+            mapType: event.target.value as MapType,
+        });
+    }
+
     function handleStartClick(): void {
         queueMatchStart({
             ...formState,
@@ -293,6 +613,221 @@ function renderStartScreen(
             seedText: formState.seedText.trim() || "gunbound-local",
         });
     }
+}
+
+function renderChannelScreen(
+    formState: MatchConfig,
+    openCreateRoom: {
+        (): void;
+    },
+    cloneRoomSetup: {
+        (room: LiveRoom): void;
+    },
+    showLobbyAudioNotice: boolean,
+): React.JSX.Element {
+    return (
+        <div className="screen">
+            <div className="lobby-bg-particles" />
+            <div className="lobby-bg-clouds" />
+            <div className="channel-shell">
+                <div className="channel-topbar">
+                    <div className="channel-title-group">
+                        <span className="channel-kicker">Post Login Lobby</span>
+                        <h1 className="channel-title">Channel 1</h1>
+                        <span className="channel-subtitle">
+                            Rooms, friends, and chat before the match starts
+                        </span>
+                    </div>
+                    <div className="channel-actions">
+                        <button
+                            type="button"
+                            className="lobby-btn lobby-btn-secondary"
+                        >
+                            <span className="lobby-btn-label">Quick Match</span>
+                        </button>
+                        <button
+                            type="button"
+                            className="lobby-btn lobby-btn-primary"
+                            onClick={openCreateRoom}
+                        >
+                            <span className="lobby-btn-icon">&#9654;</span>
+                            <span className="lobby-btn-label">Create Room</span>
+                        </button>
+                    </div>
+                </div>
+                {showLobbyAudioNotice ? (
+                    <div className="lobby-audio-notice" role="status">
+                        Browser autoplay blocked the lobby music. Click or press
+                        any key to enable it.
+                    </div>
+                ) : null}
+                <div className="channel-grid">
+                    <section className="channel-panel channel-room-panel">
+                        <div className="channel-panel-head">
+                            <div>
+                                <span className="channel-panel-kicker">
+                                    Room Browser
+                                </span>
+                                <h2>Active Matches</h2>
+                            </div>
+                            <span className="channel-panel-badge">
+                                {String(LIVE_ROOMS.length)} Rooms
+                            </span>
+                        </div>
+                        <div className="channel-room-list">
+                            {LIVE_ROOMS.map((room) => (
+                                <button
+                                    key={room.title}
+                                    type="button"
+                                    className="channel-room-card"
+                                    onClick={function handleCloneRoom(): void {
+                                        cloneRoomSetup(room);
+                                    }}
+                                >
+                                    <div className="channel-room-row">
+                                        <span className="channel-room-title">
+                                            {room.title}
+                                        </span>
+                                        <span className="channel-room-state">
+                                            {room.status}
+                                        </span>
+                                    </div>
+                                    <div className="channel-room-row">
+                                        <span className="channel-room-copy">
+                                            Host {room.host} /{" "}
+                                            {
+                                                getMapPresentation(room.mapType)
+                                                    .label
+                                            }
+                                        </span>
+                                        <span className="channel-room-copy">
+                                            {room.players}
+                                        </span>
+                                    </div>
+                                    <div className="channel-room-seed">
+                                        Seed {room.seedText}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </section>
+                    <section className="channel-panel channel-chat-panel">
+                        <div className="channel-panel-head">
+                            <div>
+                                <span className="channel-panel-kicker">
+                                    Public Feed
+                                </span>
+                                <h2>Channel Chat</h2>
+                            </div>
+                            <span className="channel-panel-badge">
+                                Generic
+                            </span>
+                        </div>
+                        <div className="channel-chat-log">
+                            {CHANNEL_CHAT.map((message) => (
+                                <div
+                                    key={message.author + message.time}
+                                    className="channel-chat-row"
+                                >
+                                    <div className="channel-chat-meta">
+                                        <span
+                                            className={
+                                                "channel-chat-accent accent-" +
+                                                message.accent
+                                            }
+                                        />
+                                        <span className="channel-chat-author">
+                                            {message.author}
+                                        </span>
+                                        <span className="channel-chat-time">
+                                            {message.time}
+                                        </span>
+                                    </div>
+                                    <p className="channel-chat-text">
+                                        {message.text}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="channel-chat-compose">
+                            <input
+                                value={
+                                    (formState.playerOneName || "Player 1") +
+                                    " says hello..."
+                                }
+                                readOnly
+                            />
+                            <button
+                                type="button"
+                                className="lobby-btn lobby-btn-secondary"
+                            >
+                                <span className="lobby-btn-label">Send</span>
+                            </button>
+                        </div>
+                    </section>
+                    <section className="channel-panel channel-side-panel">
+                        <div className="channel-panel-head">
+                            <div>
+                                <span className="channel-panel-kicker">
+                                    Friend List
+                                </span>
+                                <h2>Online Friends</h2>
+                            </div>
+                            <span className="channel-panel-badge">
+                                {String(FRIENDS_LIST.length)} Online
+                            </span>
+                        </div>
+                        <div className="channel-friend-list">
+                            {FRIENDS_LIST.map((friend) => (
+                                <div
+                                    key={friend.name}
+                                    className="channel-friend-row"
+                                >
+                                    <div
+                                        className="channel-friend-sprite"
+                                        style={getFriendSpriteStyle(friend.mobile)}
+                                    />
+                                    <div className="channel-friend-copy">
+                                        <span className="channel-friend-name">
+                                            {friend.name}
+                                        </span>
+                                        <span className="channel-friend-state">
+                                            {friend.status}
+                                        </span>
+                                        <span className="channel-friend-activity">
+                                            {friend.activity}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="channel-create-card">
+                            <span className="channel-create-kicker">
+                                Ready To Host
+                            </span>
+                            <strong className="channel-create-title">
+                                Open your own room
+                            </strong>
+                            <span className="channel-create-copy">
+                                Current setup uses{" "}
+                                {getMapPresentation(formState.mapType).label} on
+                                seed {formState.seedText || "gunbound-local"}.
+                            </span>
+                            <button
+                                type="button"
+                                className="lobby-btn lobby-btn-primary"
+                                onClick={openCreateRoom}
+                            >
+                                <span className="lobby-btn-label">
+                                    Configure Duel
+                                </span>
+                            </button>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 function renderLobbyPlayer(
@@ -437,6 +972,28 @@ function getLobbySpriteStyle(
             String(spriteSource.previewTranslateX) +
             "px, " +
             String(spriteSource.previewTranslateY) +
+            "px)"
+    };
+}
+
+function getFriendSpriteStyle(mobileType: MobileType): React.CSSProperties {
+    const spriteSource = getMobileSpriteSource(mobileType);
+    const scaleX = shouldFlipMobileSprite(mobileType, 1)
+        ? -0.72
+        : 0.72;
+
+    return {
+        backgroundImage: 'url("' + spriteSource.path + '")',
+        backgroundPosition: "0 0",
+        backgroundRepeat: "no-repeat",
+        backgroundSize: String(spriteSource.frameCount * 100) + "% 100%",
+        transform:
+            "scale(" +
+            String(scaleX) +
+            ", 0.72) translate(" +
+            String(spriteSource.previewTranslateX * 0.42) +
+            "px, " +
+            String(spriteSource.previewTranslateY * 0.42) +
             "px)"
     };
 }

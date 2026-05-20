@@ -23,7 +23,7 @@ export type NextRoundState = Partial<GameState> & {
 
 export function createStartedMatchState(config: MatchConfig): StartedMatchState {
   const seed = normalizeSeed(config.seedText);
-  const terrainRoll = createTerrain(seed, worldWidth, worldHeight);
+  const terrainRoll = createTerrain(seed, worldWidth, worldHeight, config.mapType);
   const players = createPlayers(config, terrainRoll.terrain);
   const windRoll = rollWind(terrainRoll.state);
 
@@ -65,7 +65,7 @@ export function createNextRoundState(
   previousHistory: MatchEvent[]
 ): NextRoundState {
   const seed = normalizeSeed(setup.seedText + "-round-" + String(round));
-  const terrainRoll = createTerrain(seed, worldWidth, worldHeight);
+  const terrainRoll = createTerrain(seed, worldWidth, worldHeight, setup.mapType);
   const players = createPlayersForRound(setup, terrainRoll.terrain, previousPlayers);
   const windRoll = rollWind(terrainRoll.state);
   const starter: PlayerId = round % 2 === 0 ? 2 : 1;

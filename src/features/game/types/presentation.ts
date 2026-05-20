@@ -34,3 +34,41 @@ export type CameraStepInput = {
   explosionVisual: ExplosionVisual | null;
   dt: number;
 };
+
+export type TurnGuideTone = "move" | "aim" | "fire" | "resolve" | "end";
+
+export type TurnGuideCommandState = "active" | "ready" | "locked";
+
+export type TurnGuidePhaseStepState = "complete" | "active" | "pending";
+
+export type TurnGuideCommand = {
+  keyLabel: string;
+  actionLabel: string;
+  detailLabel: string;
+  state: TurnGuideCommandState;
+};
+
+export type TurnGuideWeaponSlot = {
+  slotLabel: string;
+  weaponLabel: string;
+  detailLabel: string;
+  selected: boolean;
+  available: boolean;
+};
+
+export type TurnGuidePhaseStep = {
+  label: string;
+  state: TurnGuidePhaseStepState;
+};
+
+export type TurnGuide = {
+  headline: string;
+  detail: string;
+  phaseLabel: string;
+  tone: TurnGuideTone;
+  timerLabel: string;
+  powerPercent: number;
+  commands: TurnGuideCommand[];
+  weaponSlots: TurnGuideWeaponSlot[];
+  phaseSteps: TurnGuidePhaseStep[];
+};

@@ -55,6 +55,7 @@ export const defaultSetup: MatchConfig = {
   playerTwoTitle: "Raider",
   playerOneAccent: "sky",
   playerTwoAccent: "coral",
+  mapType: "rolling",
   seedText: "gunbound-local"
 };
 
@@ -182,13 +183,30 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         const step = stepProjectile(nextProjectile, nextTerrain, nextPlayers, state.wind, dt);
         nextProjectile = step.projectile;
 
+        if (step.bonusExplosion !== null) {
+          nextTerrain = carveCrater(nextTerrain, step.bonusExplosion.point, step.bonusExplosion.radius);
+          const bonusResult = applyExplosion(nextPlayers, step.bonusExplosion, state.round, state.turn);
+          nextPlayers = bonusResult.players;
+          nextDamagePopups = nextDamagePopups.concat(bonusResult.damagePopups);
+          nextHistory = appendHistory(nextHistory, bonusResult.history);
+        }
+
         if (step.explosion !== null) {
-          nextTerrain = carveCrater(nextTerrain, step.explosion.point, step.explosion.radius);
-          const explosionResult = applyExplosion(nextPlayers, step.explosion, state.round, state.turn);
-          nextPlayers = markPlayersForFalling(explosionResult.players);
-          nextDamagePopups = nextDamagePopups.concat(explosionResult.damagePopups);
-          nextHistory = appendHistory(nextHistory, explosionResult.history);
-          nextExplosionVisual = createExplosionVisual(step.explosion);
+          const explosions = buildExplosionList(step.explosion);
+          let primaryVisualSet = false;
+
+          for (const explosion of explosions) {
+            nextTerrain = carveCrater(nextTerrain, explosion.point, explosion.radius);
+            const explosionResult = applyExplosion(nextPlayers, explosion, state.round, state.turn);
+            nextPlayers = markPlayersForFalling(explosionResult.players);
+            nextDamagePopups = nextDamagePopups.concat(explosionResult.damagePopups);
+            nextHistory = appendHistory(nextHistory, explosionResult.history);
+            if (!primaryVisualSet) {
+              nextExplosionVisual = createExplosionVisual(explosion);
+              primaryVisualSet = true;
+            }
+          }
+
           nextPower = 0;
           nextCharging = false;
           nextWinner = getRoundWinner(nextPlayers);
@@ -803,10 +821,22 @@ function createMatchEvent(round: number, turn: 1 | 2, kind: MatchEvent["kind"], 
   });
 }
 
+function buildExplosionList(explosion: ExplosionState): ExplosionState[] {
+  if (explosion.mobileType === "mage" && explosion.weapon === "secondary") {
+    return [
+      { ...explosion, point: { x: explosion.point.x - 22, y: explosion.point.y }, damage: explosion.damage * 0.65, radius: explosion.radius * 0.8 },
+      { ...explosion, point: { x: explosion.point.x + 22, y: explosion.point.y }, damage: explosion.damage * 0.65, radius: explosion.radius * 0.8 }
+    ];
+  }
+
+  return [explosion];
+}
+
 function createExplosionVisual(explosion: ExplosionState): ExplosionVisual {
   return {
     point: explosion.point,
     radius: explosion.radius,
+    mobileType: explosion.mobileType,
     timer: 0.6,
     duration: 0.6
   };
@@ -867,6 +897,7 @@ function tickExplosionVisual(explosionVisual: ExplosionVisual | null, dt: number
   return {
     point: explosionVisual.point,
     radius: explosionVisual.radius,
+    mobileType: explosionVisual.mobileType,
     timer: nextTimer,
     duration: explosionVisual.duration
   };

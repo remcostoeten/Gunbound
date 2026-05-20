@@ -1,13 +1,16 @@
 "use client";
 
+import { createTurnGuide } from "@/features/game/engine/action-guide";
 import { getWindLabel } from "@/features/game/engine/wind";
 import { useGameState } from "@/features/game/hooks/use-game-state";
 import {
   selectBonusBoxes,
+  selectCharging,
   selectPhase,
   selectPhaseDuration,
   selectPhaseTimer,
   selectPlayers,
+  selectPower,
   selectTurn,
   selectTurnCount,
   selectWind
@@ -21,9 +24,12 @@ export function Hud(): React.JSX.Element {
   const phaseTimer = useGameState(selectPhaseTimer);
   const phaseDuration = useGameState(selectPhaseDuration);
   const turnCount = useGameState(selectTurnCount);
+  const power = useGameState(selectPower);
+  const charging = useGameState(selectCharging);
   const bonusBoxes = useGameState(selectBonusBoxes);
   const currentPlayer = players[turn - 1];
   const landedBoxes = countLandedBoxes(bonusBoxes);
+  const turnGuide = createTurnGuide(currentPlayer, phase, charging, phaseTimer, power, turnCount);
 
   return (
     <div className="hud">
@@ -90,8 +96,11 @@ export function Hud(): React.JSX.Element {
           <span className="turn-value">
             {currentPlayer.title} {currentPlayer.name} / {capitalize(currentPlayer.mobile.type)}
           </span>
+          <div className="turn-phase-strip">
+            {turnGuide.phaseSteps.map(renderPhaseStep)}
+          </div>
           <div className="turn-meta-row">
-            <span>Phase {capitalize(phase)}</span>
+            <span>Phase {turnGuide.phaseLabel}</span>
             <span>
               {formatTimer(phaseTimer)} / {String(turnCount).padStart(2, "0")}
             </span>
@@ -100,11 +109,23 @@ export function Hud(): React.JSX.Element {
             <div className="phase-meter-fill" style={{ width: getPhaseWidth(phaseTimer, phaseDuration) }} />
           </div>
           <div className="turn-meta-row subtle">
-            <span>Supply Boxes {landedBoxes}</span>
+            <span>{turnGuide.headline}</span>
             <span>Charges {currentPlayer.mobile.specialCharges}</span>
+          </div>
+          <div className="turn-meta-row subtle">
+            <span>Supply Boxes {landedBoxes}</span>
+            <span>Power {String(turnGuide.powerPercent).padStart(2, "0")}%</span>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function renderPhaseStep(step: ReturnType<typeof createTurnGuide>["phaseSteps"][number]): React.JSX.Element {
+  return (
+    <div key={step.label} className={"turn-phase-pill " + step.state}>
+      <span>{step.label}</span>
     </div>
   );
 }

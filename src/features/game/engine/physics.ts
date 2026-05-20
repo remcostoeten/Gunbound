@@ -12,6 +12,7 @@ import type { Vec2 } from "@/features/game/types/shared";
 export type ProjectileStep = {
   projectile: ProjectileState | null;
   explosion: ExplosionState | null;
+  bonusExplosion: ExplosionState | null;
 };
 
 export function getLaunchRadians(mobile: Mobile): number {
@@ -20,10 +21,31 @@ export function getLaunchRadians(mobile: Mobile): number {
 }
 
 export function getMuzzlePosition(mobile: Mobile, radians: number): Vec2 {
+  const offset = getMobileCannonOffset(mobile.type);
   return {
-    x: mobile.position.x + Math.cos(radians) * 24,
-    y: mobile.position.y - mobile.height * 0.6 - Math.sin(radians) * 10
+    x: mobile.position.x + Math.cos(radians) * offset.reach,
+    y: mobile.position.y - mobile.height * offset.heightFraction - Math.sin(radians) * 10
   };
+}
+
+function getMobileCannonOffset(type: Mobile["type"]): { reach: number; heightFraction: number } {
+  if (type === "armor" || type === "turtle" || type === "sate") {
+    return { reach: 26, heightFraction: 0.65 };
+  }
+
+  if (type === "mage") {
+    return { reach: 22, heightFraction: 0.72 };
+  }
+
+  if (type === "nak" || type === "frog") {
+    return { reach: 20, heightFraction: 0.45 };
+  }
+
+  if (type === "snow" || type === "aduko") {
+    return { reach: 24, heightFraction: 0.7 };
+  }
+
+  return { reach: 24, heightFraction: 0.6 };
 }
 
 export function stepProjectile(
@@ -42,26 +64,50 @@ export function stepProjectile(
     x: projectile.position.x + velocity.x * dt,
     y: projectile.position.y + velocity.y * dt
   };
-  const directHit = tracePlayerCollision(players, projectile.owner, previousPosition, nextPosition, projectile.radius);
 
+  const directHit = tracePlayerCollision(players, projectile.owner, previousPosition, nextPosition, projectile.radius);
   if (directHit !== null) {
     return {
       projectile: null,
-      explosion: {
-        point: {
-          x: directHit.mobile.position.x,
-          y: directHit.mobile.position.y - directHit.mobile.height * 0.55
-        },
-        damage: projectile.damage,
-        radius: projectile.blastRadius,
-        owner: projectile.owner
-      }
+      bonusExplosion: null,
+      explosion: buildExplosion(projectile, {
+        x: directHit.mobile.position.x,
+        y: directHit.mobile.position.y - directHit.mobile.height * 0.55
+      })
+    };
+  }
+
+  if (projectile.tunnelingTicks > 0) {
+    if (projectile.tunnelingTicks === 1) {
+      return {
+        projectile: null,
+        bonusExplosion: null,
+        explosion: buildExplosion(projectile, nextPosition)
+      };
+    }
+
+    return {
+      projectile: advanceProjectile(projectile, nextPosition, previousPosition, velocity, dt, projectile.tunnelingTicks - 1),
+      bonusExplosion: null,
+      explosion: null
     };
   }
 
   const terrainHit = traceTerrainCollision(terrain, previousPosition, nextPosition, projectile.radius);
   if (terrainHit !== null) {
-    if (projectile.weapon === "secondary" && projectile.bouncesLeft > 0) {
+    if (projectile.mobileType === "nak" && projectile.weapon === "primary") {
+      return {
+        projectile: advanceProjectile(projectile, nextPosition, previousPosition, velocity, dt, 22),
+        bonusExplosion: null,
+        explosion: null
+      };
+    }
+
+    const canBounce =
+      projectile.bouncesLeft > 0 &&
+      (projectile.weapon === "secondary" || projectile.mobileType === "frog");
+
+    if (canBounce) {
       const normal = getTerrainNormal(terrain, terrainHit);
       const reflectedVelocity = reflectVelocity(velocity, normal);
       const reducedVelocity = {
@@ -71,6 +117,11 @@ export function stepProjectile(
       const magnitude = Math.hypot(reducedVelocity.x, reducedVelocity.y);
 
       if (magnitude > 120) {
+        const bounceExplosion: ExplosionState | null =
+          projectile.mobileType === "frog"
+            ? buildExplosion(projectile, terrainHit, projectile.damage * 0.35, projectile.blastRadius * 0.55)
+            : null;
+
         return {
           projectile: {
             active: true,
@@ -82,15 +133,18 @@ export function stepProjectile(
             velocity: reducedVelocity,
             radius: projectile.radius,
             owner: projectile.owner,
+            mobileType: projectile.mobileType,
             weapon: projectile.weapon,
             damage: projectile.damage,
             blastRadius: projectile.blastRadius,
             bouncesLeft: projectile.bouncesLeft - 1,
+            tunnelingTicks: 0,
             power: projectile.power,
             life: projectile.life + dt,
             windScale: projectile.windScale,
             gravityScale: projectile.gravityScale
           },
+          bonusExplosion: bounceExplosion,
           explosion: null
         };
       }
@@ -98,48 +152,70 @@ export function stepProjectile(
 
     return {
       projectile: null,
-      explosion: {
-        point: terrainHit,
-        damage: projectile.damage,
-        radius: projectile.blastRadius,
-        owner: projectile.owner
-      }
+      bonusExplosion: null,
+      explosion: buildExplosion(projectile, terrainHit)
     };
   }
 
   if (nextPosition.y > terrain.height + 40 || nextPosition.x < -40 || nextPosition.x > terrain.width + 40 || projectile.life > 8) {
     return {
       projectile: null,
-      explosion: {
-        point: {
-          x: clamp(nextPosition.x, 0, terrain.width - 1),
-          y: clamp(nextPosition.y, 0, terrain.height - 1)
-        },
-        damage: projectile.damage * 0.6,
-        radius: projectile.blastRadius,
-        owner: projectile.owner
-      }
+      bonusExplosion: null,
+      explosion: buildExplosion(projectile, {
+        x: clamp(nextPosition.x, 0, terrain.width - 1),
+        y: clamp(nextPosition.y, 0, terrain.height - 1)
+      }, projectile.damage * 0.6)
     };
   }
 
   return {
-    projectile: {
-      active: true,
-      position: nextPosition,
-      previousPosition,
-      velocity,
-      radius: projectile.radius,
-      owner: projectile.owner,
-      weapon: projectile.weapon,
-      damage: projectile.damage,
-      blastRadius: projectile.blastRadius,
-      bouncesLeft: projectile.bouncesLeft,
-      power: projectile.power,
-      life: projectile.life + dt,
-      windScale: projectile.windScale,
-      gravityScale: projectile.gravityScale
-    },
+    projectile: advanceProjectile(projectile, nextPosition, previousPosition, velocity, dt, 0),
+    bonusExplosion: null,
     explosion: null
+  };
+}
+
+function advanceProjectile(
+  projectile: ProjectileState,
+  position: Vec2,
+  previousPosition: Vec2,
+  velocity: Vec2,
+  dt: number,
+  tunnelingTicks: number
+): ProjectileState {
+  return {
+    active: true,
+    position,
+    previousPosition,
+    velocity,
+    radius: projectile.radius,
+    owner: projectile.owner,
+    mobileType: projectile.mobileType,
+    weapon: projectile.weapon,
+    damage: projectile.damage,
+    blastRadius: projectile.blastRadius,
+    bouncesLeft: projectile.bouncesLeft,
+    tunnelingTicks,
+    power: projectile.power,
+    life: projectile.life + dt,
+    windScale: projectile.windScale,
+    gravityScale: projectile.gravityScale
+  };
+}
+
+function buildExplosion(
+  projectile: ProjectileState,
+  point: Vec2,
+  damage = projectile.damage,
+  radius = projectile.blastRadius
+): ExplosionState {
+  return {
+    point,
+    damage,
+    radius,
+    owner: projectile.owner,
+    mobileType: projectile.mobileType,
+    weapon: projectile.weapon
   };
 }
 

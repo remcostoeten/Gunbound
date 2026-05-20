@@ -7,6 +7,7 @@
     "build": "NODE_ENV=production next build",
     "start": "bun --bun next start",
     "prepare-mobile-asset": "python3 scripts/prepare-mobile-asset.py",
+    "spacetime:build": "spacetime build --module-path server/spacetimedb",
     "spacetime:start": "spacetime start",
     "spacetime:dev": "spacetime dev --module-path server/spacetimedb --client-lang typescript --module-bindings-path src/features/game/spacetime/module_bindings",
     "spacetime:generate": "spacetime generate --lang typescript --out-dir src/features/game/spacetime/module_bindings --module-path server/spacetimedb",

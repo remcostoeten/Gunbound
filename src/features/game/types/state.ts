@@ -2,7 +2,7 @@ import type { ProjectileState } from "@/features/game/types/combat";
 import type { BonusBox, Player, TerrainState } from "@/features/game/types/entities";
 import type { DamagePopup, ExplosionVisual, TurnAnnouncement } from "@/features/game/types/effects";
 import type { MatchEvent } from "@/features/game/types/events";
-import type { GamePhase, GameScene, MobileType, PlayerAccent, PlayerId, PlayerTitle, Vec2 } from "@/features/game/types/shared";
+import type { GamePhase, GameScene, MapType, MobileType, PlayerAccent, PlayerId, PlayerTitle, Vec2 } from "@/features/game/types/shared";
 
 export type MatchConfig = {
   playerOneName: string;
@@ -13,6 +13,7 @@ export type MatchConfig = {
   playerTwoTitle: PlayerTitle;
   playerOneAccent: PlayerAccent;
   playerTwoAccent: PlayerAccent;
+  mapType: MapType;
   seedText: string;
 };
 
