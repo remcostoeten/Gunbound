@@ -30,13 +30,20 @@ import type {
   WindLeaf
 } from "@/features/game/types/effects";
 import type { CameraFrame } from "@/features/game/types/presentation";
-import type { MobileType, PlayerAccent, TerrainTheme, Vec2, WeaponType } from "@/features/game/types/shared";
+import type { MobileType, PlayerAccent, TerrainTheme, Vec2 } from "@/features/game/types/shared";
 
 type SpriteCache = {
   armor: HTMLImageElement | null;
   knight: HTMLImageElement | null;
   dragon: HTMLImageElement | null;
   snow: HTMLImageElement | null;
+  trico: HTMLImageElement | null;
+  aduko: HTMLImageElement | null;
+  mage: HTMLImageElement | null;
+  nak: HTMLImageElement | null;
+  turtle: HTMLImageElement | null;
+  frog: HTMLImageElement | null;
+  sate: HTMLImageElement | null;
   dragonRider: HTMLImageElement | null;
 };
 
@@ -105,6 +112,13 @@ export function GameCanvas(): React.JSX.Element {
     knight: null,
     dragon: null,
     snow: null,
+    trico: null,
+    aduko: null,
+    mage: null,
+    nak: null,
+    turtle: null,
+    frog: null,
+    sate: null,
     dragonRider: null
   });
   const explosionSpriteCacheRef = useRef<ExplosionSpriteCache>(createExplosionSpriteCache());
@@ -176,7 +190,7 @@ export function GameCanvas(): React.JSX.Element {
       drawAimGuide(context, state.players[state.turn - 1], state.wind, state.power, state.charging, state.terrain);
     }
 
-    drawProjectileTrail(context, visualEffects.trail, visualEffects.lastWeapon);
+    drawProjectileTrail(context, visualEffects.trail, visualEffects.lastMobileType, visualEffects.lastWeapon);
     drawWindLeaves(context, visualEffects.leaves);
     drawPlayers(context, state.players, state.turn, visualTimeRef.current, spriteCacheRef.current);
 
@@ -333,23 +347,40 @@ function getTurretAngle(player: Player): number {
 
 function drawProjectile(context: CanvasRenderingContext2D, projectile: ProjectileState): void {
   const isSecondary = projectile.weapon === "secondary";
-  const color = isSecondary ? "#ffe7a5" : "#ffffff";
-  const glowColor = isSecondary ? "rgba(255, 211, 97, 0.85)" : "rgba(255, 255, 255, 0.75)";
+  const style = getProjectileStyle(projectile.mobileType, isSecondary);
 
   context.shadowBlur = 20;
-  context.shadowColor = glowColor;
-  context.fillStyle = color;
+  context.shadowColor = style.glow;
+  context.fillStyle = style.outer;
   context.beginPath();
   context.arc(projectile.position.x, projectile.position.y, projectile.radius + 1, 0, Math.PI * 2);
   context.fill();
 
   context.shadowBlur = 8;
-  context.fillStyle = isSecondary ? "#fff5d4" : "#ffffff";
+  context.fillStyle = style.inner;
   context.beginPath();
   context.arc(projectile.position.x, projectile.position.y, projectile.radius * 0.5, 0, Math.PI * 2);
   context.fill();
 
   context.shadowBlur = 0;
+}
+
+function getProjectileStyle(mobileType: MobileType, isSecondary: boolean): { outer: string; inner: string; glow: string; trail: string } {
+  if (mobileType === "aduko") {
+    return isSecondary
+      ? { outer: "#d9d3ff", inner: "#ffffff", glow: "rgba(161, 145, 255, 0.9)", trail: "170, 155, 255" }
+      : { outer: "#bfeeff", inner: "#ffffff", glow: "rgba(109, 215, 255, 0.85)", trail: "120, 220, 255" };
+  }
+
+  if (mobileType === "trico") {
+    return isSecondary
+      ? { outer: "#9cff7e", inner: "#f2ffe9", glow: "rgba(128, 255, 102, 0.88)", trail: "142, 255, 112" }
+      : { outer: "#ffd56e", inner: "#fff7d4", glow: "rgba(255, 209, 86, 0.82)", trail: "255, 215, 105" };
+  }
+
+  return isSecondary
+    ? { outer: "#ffe7a5", inner: "#fff5d4", glow: "rgba(255, 211, 97, 0.85)", trail: "255, 211, 97" }
+    : { outer: "#ffffff", inner: "#ffffff", glow: "rgba(255, 255, 255, 0.75)", trail: "255, 250, 220" };
 }
 
 function getBonusShortLabel(type: BonusBox["type"]): string {
@@ -364,6 +395,13 @@ function loadMobileSprites(spriteCache: SpriteCache): void {
   if (spriteCache.knight === null) spriteCache.knight = createMobileSpriteImage("knight");
   if (spriteCache.dragon === null) spriteCache.dragon = createMobileSpriteImage("dragon");
   if (spriteCache.snow === null) spriteCache.snow = createMobileSpriteImage("snow");
+  if (spriteCache.trico === null) spriteCache.trico = createMobileSpriteImage("trico");
+  if (spriteCache.aduko === null) spriteCache.aduko = createMobileSpriteImage("aduko");
+  if (spriteCache.mage === null) spriteCache.mage = createMobileSpriteImage("mage");
+  if (spriteCache.nak === null) spriteCache.nak = createMobileSpriteImage("nak");
+  if (spriteCache.turtle === null) spriteCache.turtle = createMobileSpriteImage("turtle");
+  if (spriteCache.frog === null) spriteCache.frog = createMobileSpriteImage("frog");
+  if (spriteCache.sate === null) spriteCache.sate = createMobileSpriteImage("sate");
   if (spriteCache.dragonRider === null) spriteCache.dragonRider = createRiderSpriteImage("dragon");
 }
 
@@ -527,6 +565,34 @@ function getCachedSprite(spriteCache: SpriteCache, type: MobileType): HTMLImageE
     return spriteCache.dragon;
   }
 
+  if (type === "trico") {
+    return spriteCache.trico;
+  }
+
+  if (type === "aduko") {
+    return spriteCache.aduko;
+  }
+
+  if (type === "mage") {
+    return spriteCache.mage;
+  }
+
+  if (type === "nak") {
+    return spriteCache.nak;
+  }
+
+  if (type === "turtle") {
+    return spriteCache.turtle;
+  }
+
+  if (type === "frog") {
+    return spriteCache.frog;
+  }
+
+  if (type === "sate") {
+    return spriteCache.sate;
+  }
+
   return spriteCache.snow;
 }
 
@@ -539,7 +605,12 @@ function getCachedRiderSprite(spriteCache: SpriteCache, type: MobileType): HTMLI
 }
 
 function drawFallbackMobile(context: CanvasRenderingContext2D, player: Player): void {
-  if (player.mobile.type === "armor" || player.mobile.type === "snow") {
+  if (
+    player.mobile.type === "armor" ||
+    player.mobile.type === "snow" ||
+    player.mobile.type === "turtle" ||
+    player.mobile.type === "sate"
+  ) {
     drawArmorMobile(context, player, "#62c3ff");
   } else {
     drawKnightMobile(context, player, "#ff9262");
@@ -562,9 +633,9 @@ function applyCameraFrame(context: CanvasRenderingContext2D, cameraFrame: Camera
   context.translate(-cameraFrame.offset.x, -cameraFrame.offset.y);
 }
 
-function drawProjectileTrail(context: CanvasRenderingContext2D, trail: Vec2[], weaponType: WeaponType): void {
+function drawProjectileTrail(context: CanvasRenderingContext2D, trail: Vec2[], mobileType: MobileType, weaponType: "primary" | "secondary"): void {
   if (trail.length < 2) return;
-  const color = weaponType === "secondary" ? "255, 211, 97" : "255, 250, 220";
+  const color = getProjectileStyle(mobileType, weaponType === "secondary").trail;
   let index = 0;
   while (index < trail.length) {
     const point = trail[index];
@@ -599,13 +670,14 @@ function drawExplosionVisual(context: CanvasRenderingContext2D, explosionVisual:
   if (explosionVisual === null) return;
   const progress = 1 - explosionVisual.timer / explosionVisual.duration;
   const alpha = 1 - progress;
+  const style = getProjectileStyle(explosionVisual.mobileType, explosionVisual.radius >= 54);
 
   const flashRadius = explosionVisual.radius * (0.2 + progress * 0.5);
   const flashGradient = context.createRadialGradient(explosionVisual.point.x, explosionVisual.point.y, 0, explosionVisual.point.x, explosionVisual.point.y, flashRadius);
   flashGradient.addColorStop(0, "rgba(255, 255, 255, " + String(alpha * 0.95) + ")");
-  flashGradient.addColorStop(0.3, "rgba(255, 242, 183, " + String(alpha * 0.85) + ")");
-  flashGradient.addColorStop(0.7, "rgba(255, 190, 80, " + String(alpha * 0.5) + ")");
-  flashGradient.addColorStop(1, "rgba(255, 190, 80, 0)");
+  flashGradient.addColorStop(0.3, colorWithAlpha(style.inner, alpha * 0.85));
+  flashGradient.addColorStop(0.7, colorWithAlpha(style.outer, alpha * 0.5));
+  flashGradient.addColorStop(1, colorWithAlpha(style.outer, 0));
   context.fillStyle = flashGradient;
   context.beginPath();
   context.arc(explosionVisual.point.x, explosionVisual.point.y, flashRadius, 0, Math.PI * 2);
@@ -623,18 +695,28 @@ function drawExplosionVisual(context: CanvasRenderingContext2D, explosionVisual:
   context.fill();
 
   const ringRadius = explosionVisual.radius * (0.4 + progress * 1.0);
-  context.strokeStyle = "rgba(255, 252, 229, " + String(alpha * 0.8) + ")";
+  context.strokeStyle = colorWithAlpha(style.inner, alpha * 0.8);
   context.lineWidth = 6 * alpha + 1;
   context.beginPath();
   context.arc(explosionVisual.point.x, explosionVisual.point.y, ringRadius, 0, Math.PI * 2);
   context.stroke();
 
   const outerRingRadius = explosionVisual.radius * (0.5 + progress * 1.1);
-  context.strokeStyle = "rgba(200, 140, 80, " + String(alpha * 0.35) + ")";
+  context.strokeStyle = colorWithAlpha(style.outer, alpha * 0.35);
   context.lineWidth = 3 * alpha + 1;
   context.beginPath();
   context.arc(explosionVisual.point.x, explosionVisual.point.y, outerRingRadius, 0, Math.PI * 2);
   context.stroke();
+}
+
+function colorWithAlpha(color: string, alpha: number): string {
+  if (color === "#d9d3ff") return "rgba(217, 211, 255, " + String(alpha) + ")";
+  if (color === "#bfeeff") return "rgba(191, 238, 255, " + String(alpha) + ")";
+  if (color === "#9cff7e") return "rgba(156, 255, 126, " + String(alpha) + ")";
+  if (color === "#ffd56e") return "rgba(255, 213, 110, " + String(alpha) + ")";
+  if (color === "#ffe7a5") return "rgba(255, 231, 165, " + String(alpha) + ")";
+  if (color === "#fff5d4") return "rgba(255, 245, 212, " + String(alpha) + ")";
+  return "rgba(255, 255, 255, " + String(alpha) + ")";
 }
 
 function drawExplosionSprites(context: CanvasRenderingContext2D, sprites: ExplosionSpriteEffect[], spriteCache: ExplosionSpriteCache): void {

@@ -29,6 +29,8 @@ const SOUND_PATHS: Record<string, string> = {
 };
 
 export const lobbyMatchStartAudioEvent = "gunbound:lobby-match-start";
+export const lobbyAudioBlockedEvent = "gunbound:lobby-audio-blocked";
+export const lobbyAudioStartedEvent = "gunbound:lobby-audio-started";
 
 export function useGunboundSfx(): void {
   const poolRef = useRef<AudioPool>({
@@ -49,6 +51,7 @@ export function useGunboundSfx(): void {
     function unlockAudio(): void {
       ensureAudio(poolRef.current);
       initSounds(poolRef.current);
+      resumeLobbyMusicIfNeeded(poolRef.current);
     }
     window.addEventListener("pointerdown", unlockAudio, { passive: true });
     window.addEventListener("keydown", unlockAudio);
@@ -56,6 +59,12 @@ export function useGunboundSfx(): void {
       window.removeEventListener("pointerdown", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
     };
+  }, []);
+
+  useEffect(function startLobbyMusicImmediately(): void {
+    initSounds(poolRef.current);
+    startLobbyMusic(poolRef.current);
+    lobbyStartedRef.current = true;
   }, []);
 
   useEffect(() => {
@@ -82,22 +91,6 @@ export function useGunboundSfx(): void {
     window.addEventListener(lobbyMatchStartAudioEvent, playLobbyMatchStartCue);
     return function cleanupLobbyMatchStartCue(): void {
       window.removeEventListener(lobbyMatchStartAudioEvent, playLobbyMatchStartCue);
-    };
-  }, []);
-
-  useEffect(() => {
-    function onInteraction(): void {
-      const pool = poolRef.current;
-      if (!lobbyStartedRef.current && pool.sounds["super-shot"]) {
-        startLobbyMusic(pool);
-        lobbyStartedRef.current = true;
-      }
-    }
-    window.addEventListener("pointerdown", onInteraction, { once: true });
-    window.addEventListener("keydown", onInteraction, { once: true });
-    return () => {
-      window.removeEventListener("pointerdown", onInteraction);
-      window.removeEventListener("keydown", onInteraction);
     };
   }, []);
 
@@ -141,15 +134,39 @@ function stopMusic(pool: AudioPool): void {
 }
 
 function startLobbyMusic(pool: AudioPool): void {
+  if (pool.bgMusic !== null && !pool.bgMusic.paused) {
+    return;
+  }
+
   if (pool.bgMusic) {
     pool.bgMusic.pause();
     pool.bgMusic = null;
   }
   const audio = new Audio("/sounds/lounge.mp3");
   audio.loop = true;
+  audio.preload = "auto";
   audio.volume = 0.12;
-  audio.play().catch(() => {});
+  void audio
+    .play()
+    .then(function handleLobbyMusicStarted(): void {
+      window.dispatchEvent(new Event(lobbyAudioStartedEvent));
+    })
+    .catch(function handleLobbyMusicBlocked(): void {
+      window.dispatchEvent(new Event(lobbyAudioBlockedEvent));
+    });
   pool.bgMusic = audio;
+}
+
+function resumeLobbyMusicIfNeeded(pool: AudioPool): void {
+  if (useGameStore.getState().scene !== "start") {
+    return;
+  }
+
+  if (pool.bgMusic !== null && !pool.bgMusic.paused) {
+    return;
+  }
+
+  startLobbyMusic(pool);
 }
 
 function playSfx(pool: AudioPool, name: string): void {
@@ -218,10 +235,8 @@ function routeSceneState(
   }
 
   if (scene === "start" && prevSceneRef.current === "end") {
-    if (!lobbyStartedRef.current) {
-      startLobbyMusic(pool);
-      lobbyStartedRef.current = true;
-    }
+    startLobbyMusic(pool);
+    lobbyStartedRef.current = true;
   }
 }
 
@@ -367,15 +382,19 @@ function playChargeRelease(context: AudioContext, gain: GainNode, power: number)
 
 function playShotFire(context: AudioContext, gain: GainNode, isSecondary: boolean, mobileType: string, power: number): void {
   const powerScale = 0.7 + power * 0.3;
-  if (mobileType === "armor") {
+  if (mobileType === "armor" || mobileType === "turtle") {
     playOscillatorSweep(context, gain, 60, 35, 0.16, "sine", 0.18 * powerScale);
     playOscillatorSweep(context, gain, isSecondary ? 200 : 280, isSecondary ? 60 : 90, 0.14, "sawtooth", 0.22 * powerScale);
     playNoiseBurst(context, gain, 0.1, 0.14 * powerScale);
-  } else if (mobileType === "snow") {
+  } else if (mobileType === "snow" || mobileType === "sate") {
     playOscillatorSweep(context, gain, 70, 42, 0.18, "triangle", 0.17 * powerScale);
     playOscillatorSweep(context, gain, isSecondary ? 190 : 250, isSecondary ? 72 : 100, 0.16, "sawtooth", 0.2 * powerScale);
     playNoiseBurst(context, gain, 0.09, 0.12 * powerScale);
-  } else if (mobileType === "dragon") {
+  } else if (mobileType === "aduko" || mobileType === "mage") {
+    playOscillatorSweep(context, gain, 220, 110, 0.08, "triangle", 0.14 * powerScale);
+    playOscillatorSweep(context, gain, isSecondary ? 680 : 560, isSecondary ? 180 : 240, 0.18, "square", 0.2 * powerScale);
+    playNoiseBurst(context, gain, 0.04, 0.06 * powerScale);
+  } else if (mobileType === "dragon" || mobileType === "trico" || mobileType === "nak" || mobileType === "frog") {
     playOscillatorSweep(context, gain, 160, 92, 0.1, "triangle", 0.12 * powerScale);
     playOscillatorSweep(context, gain, isSecondary ? 420 : 520, isSecondary ? 130 : 180, 0.14, "square", 0.18 * powerScale);
     playNoiseBurst(context, gain, 0.05, 0.08 * powerScale);
