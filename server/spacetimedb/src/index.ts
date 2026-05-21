@@ -653,11 +653,9 @@ export const start_round = spacetimedb.reducer(
 /**
  * Appends a single deterministic event to a round's history.
  *
- * Authorization: caller must be a member of the round's room. The reducer
- * intentionally does not validate `tick` ordering or `kind`/`payload`
- * contents — events are an append-only stream and the client-side replay
- * is responsible for sorting and interpreting them. Keeping this surface
- * small lets gameplay evolve without server redeploys.
+ * Authorization: caller must be the room member whose slot owns the current
+ * turn. The reducer validates event kind, payload shape, strict tick ordering,
+ * and turn order so clients cannot skip ahead or write opponent actions.
  *
  * Rejects events for non-active rounds so finished history is immutable.
  */
@@ -735,13 +733,6 @@ export const end_round = spacetimedb.reducer(
       throw new SenderError('only the host can end a round');
     }
 
-    ctx.db.round.id.update({
-      ...round,
-      status: ROUND_STATUS_FINISHED,
-      endedAt: ctx.timestamp,
-      winnerIdentity
-    });
-
     const isDraw = winnerIdentity === undefined;
     let winnerIsMember = isDraw;
 
@@ -754,6 +745,13 @@ export const end_round = spacetimedb.reducer(
       }
     }
     if (!winnerIsMember) throw new SenderError('winner is not a room member');
+
+    ctx.db.round.id.update({
+      ...round,
+      status: ROUND_STATUS_FINISHED,
+      endedAt: ctx.timestamp,
+      winnerIdentity
+    });
 
     for (const member of ctx.db.roomMember.room_member_room_id.filter(round.roomId)) {
       const player = ctx.db.player.identity.find(member.identity);
