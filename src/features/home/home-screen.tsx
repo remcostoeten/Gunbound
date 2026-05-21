@@ -43,7 +43,6 @@ function HomeScreenInner({ bumpSession }: { bumpSession: () => void }) {
 
   const [stage, setStage] = useState<Stage>("checking");
   const [replayKey, setReplayKey] = useState(0);
-  const [fading, setFading] = useState(false);
   const [username, setUsername] = useState<string | null>(() => readStoredUsername() ?? null);
   const [battleRoomId, setBattleRoomId] = useState<bigint | undefined>(undefined);
   const [pendingRoomCode, setPendingRoomCode] = useState<string | null>(null);
@@ -102,21 +101,11 @@ function HomeScreenInner({ bumpSession }: { bumpSession: () => void }) {
     setStage("auth");
   }, [stage, connection.connectionError]);
 
-  useEffect(() => {
-    if (stage === "intro" || stage === "checking") {
-      setFading(false);
-      return;
-    }
-    const t = window.setTimeout(() => setFading(true), 30);
-    return () => clearTimeout(t);
-  }, [stage]);
-
   function handleReplay() {
     const conn = connection.getConnection();
     if (conn) {
       conn.reducers.setLobbyPresence({ active: false });
     }
-    setFading(false);
     setUsername(null);
     setBattleRoomId(undefined);
     setPendingRoomCode(null);
@@ -135,7 +124,6 @@ function HomeScreenInner({ bumpSession }: { bumpSession: () => void }) {
     clearStoredToken();
     clearStoredUsername();
     clearRoomCodeFromUrl();
-    setFading(false);
     setUsername(null);
     setBattleRoomId(undefined);
     setPendingRoomCode(null);
@@ -178,30 +166,42 @@ function HomeScreenInner({ bumpSession }: { bumpSession: () => void }) {
                 onAuthed={(u) => {
                   setUsername(u);
                   bumpSession();
-                  setFading(false);
                   setStage("lobby");
                 }}
               />
             </div>
           )}
-          {stage === "intro" || stage === "checking" || !fading ? (
-            <div
-              className={`home-layer home-intro-layer ${
-                stage !== "intro" && stage !== "checking" ? "home-fade-out" : ""
-              }`}
-            >
+          {stage === "intro" || stage === "checking" ? (
+            <div className="home-layer home-intro-layer">
               {stage === "intro" ? (
                 <IntroRoot
                   key={replayKey}
                   replayKey={replayKey}
                   onComplete={() => setStage("auth")}
                 />
-              ) : null}
+              ) : (
+                <HomeCheckingScreen />
+              )}
             </div>
           ) : null}
         </div>
       )}
     </>
+  );
+}
+
+function HomeCheckingScreen(): React.JSX.Element {
+  return (
+    <div className="home-checking" role="status" aria-live="polite" aria-busy="true">
+      <div className="home-checking-card">
+        <span className="home-checking-kicker">Gunbound</span>
+        <p className="home-checking-title">Connecting</p>
+        <p className="home-checking-text">Restoring your session…</p>
+        <div className="home-checking-progress" aria-hidden="true">
+          <span className="home-checking-progress-bar" />
+        </div>
+      </div>
+    </div>
   );
 }
 

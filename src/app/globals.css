@@ -1,6 +1,11 @@
 @import "tailwindcss" source(none);
 @source "../";
+@source "../app/styles/**/*.css";
 @import "tw-animate-css";
+@import "./styles/intro.css";
+@import "./styles/lobby.css";
+@import "./styles/auth.css";
+@import "./styles/game.css";
 
 @custom-variant dark (&:is(.dark *));
 
