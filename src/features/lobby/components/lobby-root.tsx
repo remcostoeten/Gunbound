@@ -10,6 +10,8 @@ import { LobbyBottom } from "./lobby-bottom";
 import { LobbyRoomModal } from "./lobby-room-modal";
 import { LobbyCreateModal } from "./lobby-create-modal";
 import { LobbyInboxModal } from "./lobby-inbox-modal";
+import { LobbyMyInfoModal } from "./lobby-my-info-modal";
+import { LobbyRoomSearchModal } from "./lobby-room-search-modal";
 import { LobbyToastStack } from "./lobby-toast-stack";
 import { useLobbyState } from "../hooks/use-lobby-state";
 import { useLobbyChat } from "../spacetime/use-lobby-chat";
@@ -42,6 +44,8 @@ function toLobbyRoom(view: LobbyRoomView): LobbyRoom {
 export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
   const connection = useSpacetimeDB();
   const [inboxOpen, setInboxOpen] = useState(false);
+  const [myInfoOpen, setMyInfoOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const { player } = useCurrentPlayer();
   usePlayerCountrySync();
   const emptyDataMode = useEmptyDataMode();
@@ -194,14 +198,17 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
       <div className="gb-frame">
         <LobbyTopbar
           onExit={onReplay}
-          onIconClick={(label) => s.pushToast(`${label} is not available yet`)}
+          onIconClick={(label) => {
+            if (label === "My Info") { setMyInfoOpen(true); return; }
+            s.pushToast(`${label} is not available yet`);
+          }}
         />
         <LobbyActionRow
           onWaiting={() => s.pushToast("You are now waiting for an invite")}
           onQuickjoin={handleQuickjoin}
           onCreate={() => s.setCreating(true)}
           onFriend={() => setInboxOpen(true)}
-          onSearch={() => s.pushToast("Enter a room number…")}
+          onSearch={() => setSearchOpen(true)}
           canToggleEmptyData={player?.isAdmin === true}
           emptyDataEnabled={emptyDataMode.enabled}
           onToggleEmptyData={handleToggleEmptyData}
@@ -242,6 +249,19 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
           onClose={() => setInboxOpen(false)}
           onFriendResponse={handleFriendRequestResponse}
           onRoomInviteResponse={handleRoomInviteResponse}
+        />
+      )}
+      {myInfoOpen && player && (
+        <LobbyMyInfoModal player={player} onClose={() => setMyInfoOpen(false)} />
+      )}
+      {searchOpen && (
+        <LobbyRoomSearchModal
+          onClose={() => setSearchOpen(false)}
+          onJoin={async (code) => {
+            await joinRoomByCode(code);
+            const target = roomViews.find(r => r.code === code.toUpperCase());
+            if (target) s.setActiveRoom(toLobbyRoom(target));
+          }}
         />
       )}
 
