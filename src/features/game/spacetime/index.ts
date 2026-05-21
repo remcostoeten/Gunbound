@@ -1,5 +1,6 @@
 export { GunboundSpacetimeProvider } from './connection';
 export { useCurrentPlayer } from './hooks/use-current-player';
+export { usePlayerCountrySync } from './hooks/use-player-country-sync';
 export { useEmptyDataMode } from './hooks/use-empty-data-mode';
 export { useCurrentRoom } from './hooks/use-current-room';
 export { useRoomByCode } from './hooks/use-room-by-code';

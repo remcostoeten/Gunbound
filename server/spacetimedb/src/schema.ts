@@ -33,7 +33,8 @@ export const Player = table(
     totalWins: t.u32(),
     totalLosses: t.u32(),
     totalRoundsPlayed: t.u32(),
-    isAdmin: t.bool().optional()
+    isAdmin: t.bool().optional(),
+    country: t.string().optional()
   }
 );
 
@@ -221,6 +222,88 @@ export const ChatMessage = table(
 );
 
 /**
+ * Persistent public lobby chat scoped by channel.
+ *
+ * Rows are append-only so players who reconnect later can replay the channel
+ * history from the database instead of starting from client fixture state.
+ */
+export const LobbyChatMessage = table(
+  {
+    name: 'lobby_chat_message',
+    public: true,
+    indexes: [
+      { accessor: 'lobby_chat_message_channel', algorithm: 'btree', columns: ['channel'] }
+    ]
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    channel: t.u32(),
+    senderIdentity: t.identity(),
+    message: t.string(),
+    createdAt: t.timestamp()
+  }
+);
+
+export const RequestStatus = t.enum('RequestStatus', ['Pending', 'Accepted', 'Declined']);
+
+export const FriendRequest = table(
+  {
+    name: 'friend_request',
+    public: true,
+    indexes: [
+      { accessor: 'friend_request_recipient', algorithm: 'btree', columns: ['recipientIdentity'] },
+      { accessor: 'friend_request_requester', algorithm: 'btree', columns: ['requesterIdentity'] }
+    ]
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    requesterIdentity: t.identity(),
+    recipientIdentity: t.identity(),
+    status: RequestStatus,
+    createdAt: t.timestamp(),
+    resolvedAt: t.timestamp().optional()
+  }
+);
+
+export const Friendship = table(
+  {
+    name: 'friendship',
+    public: true,
+    indexes: [
+      { accessor: 'friendship_owner', algorithm: 'btree', columns: ['ownerIdentity'] },
+      { accessor: 'friendship_buddy', algorithm: 'btree', columns: ['buddyIdentity'] }
+    ]
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    ownerIdentity: t.identity(),
+    buddyIdentity: t.identity(),
+    createdAt: t.timestamp()
+  }
+);
+
+export const RoomInvite = table(
+  {
+    name: 'room_invite',
+    public: true,
+    indexes: [
+      { accessor: 'room_invite_recipient', algorithm: 'btree', columns: ['recipientIdentity'] },
+      { accessor: 'room_invite_requester', algorithm: 'btree', columns: ['requesterIdentity'] },
+      { accessor: 'room_invite_room_id', algorithm: 'btree', columns: ['roomId'] }
+    ]
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    roomId: t.u64(),
+    requesterIdentity: t.identity(),
+    recipientIdentity: t.identity(),
+    status: RequestStatus,
+    createdAt: t.timestamp(),
+    resolvedAt: t.timestamp().optional()
+  }
+);
+
+/**
  * Account credentials for cross-device login.
  *
  * Each row binds a chosen `username` to the player's SpacetimeDB `identity`.
@@ -263,7 +346,35 @@ const spacetimedb = schema({
   roundEvent: RoundEvent,
   roundStat: RoundStat,
   chatMessage: ChatMessage,
+  lobbyChatMessage: LobbyChatMessage,
+  friendRequest: FriendRequest,
+  friendship: Friendship,
+  roomInvite: RoomInvite,
   credential: Credential
 });
+
+// Per-subscriber visibility filters for the social tables. Tables stay
+// `public` so the TypeScript client bindings continue to expose them, but
+// the server only delivers rows where the subscriber is a party. Without
+// these filters any authenticated client could subscribe to the raw tables
+// and enumerate the full social graph.
+//
+// Migrate to `spacetimedb.view(...)` when the TypeScript codegen begins
+// emitting view accessors (2.2.0 silently skips them).
+export const friendshipOwnerVisibility = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM friendship WHERE ownerIdentity = :sender'
+);
+
+export const friendRequestRecipientVisibility = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM friend_request WHERE recipientIdentity = :sender'
+);
+
+export const friendRequestRequesterVisibility = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM friend_request WHERE requesterIdentity = :sender'
+);
+
+export const roomInviteRecipientVisibility = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM room_invite WHERE recipientIdentity = :sender'
+);
 
 export default spacetimedb;

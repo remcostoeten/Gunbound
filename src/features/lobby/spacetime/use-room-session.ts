@@ -2,11 +2,13 @@
 
 import { useCallback, useMemo } from "react";
 import { useSpacetimeDB, useTable } from "spacetimedb/react";
+import type { Identity } from "spacetimedb";
 
 import { parseMobileType } from "@/features/game/mobiles/mobile-factory";
 import { tables } from "@/features/game/spacetime";
-import type { Room, RoomMember } from "@/features/game/spacetime";
+import type { Room, RoomMember, Round, RoundEvent } from "@/features/game/spacetime";
 import type { MobileType } from "@/features/game/types/shared";
+import type { LobbyRoomSettings } from "../types";
 
 export type RoomChatMessage = {
   id: bigint;
@@ -19,6 +21,7 @@ export type RoomChatMessage = {
 
 export type RoomMemberView = {
   id: bigint;
+  identity: Identity;
   identityHex: string;
   slotIndex: number;
   name: string;
@@ -30,6 +33,8 @@ export type RoomMemberView = {
 
 type UseRoomSessionResult = {
   room: Room | undefined;
+  activeRound: Round | undefined;
+  roundEvents: RoundEvent[];
   members: RoomMemberView[];
   self: RoomMemberView | undefined;
   isHost: boolean;
@@ -38,6 +43,7 @@ type UseRoomSessionResult = {
   sendChat(text: string): Promise<void>;
   setReady(ready: boolean): Promise<void>;
   selectMobile(mobileType: MobileType): Promise<void>;
+  updateRoomSettings(settings: LobbyRoomSettings): Promise<void>;
   startRound(): Promise<void>;
   leave(): Promise<void>;
 };
@@ -80,6 +86,50 @@ export function useRoomSession(
     enabled: roomId !== undefined,
   });
 
+  const roundQuery = useMemo(() => {
+    if (roomId === undefined) return tables.round;
+    return tables.round.where((r) => r.roomId.eq(roomId));
+  }, [roomId]);
+
+  const [roundRows, roundsReady] = useTable(roundQuery, {
+    enabled: roomId !== undefined,
+  });
+
+  const activeRound = useMemo<Round | undefined>(() => {
+    if (roomId === undefined) return undefined;
+    return [...roundRows]
+      .filter((r) => r.roomId === roomId && r.status === "active")
+      .sort((a, b) => {
+        const ax = a.startedAt.microsSinceUnixEpoch;
+        const bx = b.startedAt.microsSinceUnixEpoch;
+        if (bx > ax) return 1;
+        if (bx < ax) return -1;
+        return 0;
+      })[0];
+  }, [roundRows, roomId]);
+
+  const roundEventQuery = useMemo(() => {
+    if (!activeRound) return tables.roundEvent;
+    return tables.roundEvent.where((event) => event.roundId.eq(activeRound.id));
+  }, [activeRound]);
+
+  const [roundEventRows, roundEventsReady] = useTable(roundEventQuery, {
+    enabled: activeRound !== undefined,
+  });
+
+  const roundEvents = useMemo<RoundEvent[]>(() => {
+    if (!activeRound) return [];
+    return [...roundEventRows]
+      .filter((event) => event.roundId === activeRound.id)
+      .sort((a, b) => {
+        if (a.tick > b.tick) return 1;
+        if (a.tick < b.tick) return -1;
+        if (a.id > b.id) return 1;
+        if (a.id < b.id) return -1;
+        return 0;
+      });
+  }, [roundEventRows, activeRound]);
+
   const [allPlayers] = useTable(tables.player);
 
   const playerNameByHex = useMemo(() => {
@@ -105,6 +155,7 @@ export function useRoomSession(
         const name = playerNameByHex.get(hex);
         return {
           id: m.id,
+          identity: m.identity,
           identityHex: hex,
           slotIndex: m.slotIndex,
           name: name && name.length > 0 ? name : `Player-${hex.slice(0, 4)}`,
@@ -176,6 +227,20 @@ export function useRoomSession(
     [connection, room],
   );
 
+  const updateRoomSettings = useCallback(
+    async (settings: LobbyRoomSettings) => {
+      const conn = connection.getConnection();
+      if (!conn || !room) return;
+      await conn.reducers.updateRoomSettings({
+        roomId: room.id,
+        mapType: settings.mapType,
+        targetScore: settings.targetScore,
+        roundLimit: settings.roundLimit,
+      });
+    },
+    [connection, room],
+  );
+
   const startRound = useCallback(async () => {
     const conn = connection.getConnection();
     if (!conn || !room) return;
@@ -188,10 +253,12 @@ export function useRoomSession(
     await conn.reducers.leaveRoom({ roomId: room.id });
   }, [connection, room]);
 
-  const isLoaded = roomReady && membersReady && chatReady;
+  const isLoaded = roomReady && membersReady && chatReady && roundsReady && (activeRound === undefined || roundEventsReady);
 
   return {
     room,
+    activeRound,
+    roundEvents,
     members,
     self,
     isHost,
@@ -200,6 +267,7 @@ export function useRoomSession(
     sendChat,
     setReady,
     selectMobile,
+    updateRoomSettings,
     startRound,
     leave,
   };

@@ -5,7 +5,9 @@ import { useSpacetimeDB, useTable } from "spacetimedb/react";
 
 import { tables } from "@/features/game/spacetime";
 import { ROOM_STATUS, type RoomStatus } from "@/features/game/spacetime/room-status";
+import { parseMapType } from "@/features/game/constants/map-presentation";
 import { generateRoomCode, generateSeed } from "./generate-code";
+import type { LobbyRoomSettings } from "../types";
 const ROOM_CAPACITY = 2;
 
 export type LobbyRoomView = {
@@ -16,6 +18,7 @@ export type LobbyRoomView = {
   hostName: string;
   memberCount: number;
   capacity: number;
+  settings: LobbyRoomSettings;
   createdAtMicros: bigint;
 };
 
@@ -59,6 +62,11 @@ export function useLobbyRooms() {
           hostName: name.length > 0 ? name : `Host-${hex.slice(0, 4)}`,
           memberCount: memberCount.get(r.id.toString()) ?? 0,
           capacity: ROOM_CAPACITY,
+          settings: {
+            mapType: parseMapType(r.mapType),
+            targetScore: r.targetScore,
+            roundLimit: r.roundLimit
+          },
           createdAtMicros: r.createdAt.microsSinceUnixEpoch
         } satisfies LobbyRoomView;
       });

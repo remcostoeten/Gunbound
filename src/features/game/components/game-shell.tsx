@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getMapPresentation, mapPresentationOptions } from "@/features/game/constants/map-presentation";
+import { getMapPresentation, mapPresentationOptions, parseMapType } from "@/features/game/constants/map-presentation";
 import { getMobilePresentation, mobilePresentationOptions } from "@/features/game/constants/mobile-presentation";
 import { getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
+import { DEFAULT_MOBILE, parseMobileType } from "@/features/game/mobiles/mobile-factory";
 import { AimIndicator } from "@/features/game/components/aim-indicator";
 import { GameCanvas } from "@/features/game/components/game-canvas";
 import { HistoryPanel } from "@/features/game/components/history-panel";
@@ -18,6 +19,7 @@ import {
     useGunboundSfx,
 } from "@/features/game/hooks/use-gunbound-sfx";
 import { defaultSetup, useGameStore } from "@/features/game/store/game-store";
+import { useBattleEventSync } from "@/features/game/multiplayer/use-battle-event-sync";
 import {
     selectMessage,
     selectPlayers,
@@ -31,6 +33,7 @@ import {
 import { selectHistory } from "@/features/game/store/selectors/history-selectors";
 import type { MatchConfig } from "@/features/game/types/state";
 import type { MapType, MobileType, PlayerAccent, PlayerTitle } from "@/features/game/types/shared";
+import { useRoomSession } from "@/features/lobby/spacetime/use-room-session";
 import { getBattleImmersive, subscribeDisplaySettings } from "@/lib/display-settings";
 import { registerTrack, playTrack, stopAll } from "@/lib/music-bus";
 
@@ -47,6 +50,8 @@ const BATTLE_TRACKS = [
 
 const TITLE_OPTIONS: PlayerTitle[] = ["Captain", "Raider", "Engineer", "Oracle"];
 const ACCENT_OPTIONS: PlayerAccent[] = ["sky", "coral", "mint", "gold"];
+const TARGET_SCORE_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+const ROUND_LIMIT_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 const MATCH_START_DELAY_MS = 850;
 const LOBBY_ENTRY_DELAY_MS = 2200;
 
@@ -156,7 +161,11 @@ const CHANNEL_CHAT: ChannelChatMessage[] = [
     },
 ];
 
-export function GameShell() {
+type GameShellProps = {
+    spacetimeRoomId?: bigint;
+};
+
+export function GameShell({ spacetimeRoomId }: GameShellProps) {
     const scene = useGameState(selectScene);
     const players = useGameState(selectPlayers);
     const winner = useGameState(selectWinner);
@@ -166,6 +175,8 @@ export function GameShell() {
     const startMatch = useGameStore(selectStartMatch);
     const restartMatch = useGameStore(selectRestartMatch);
     const returnToSetup = useGameStore(selectReturnToSetup);
+    const roomSession = useRoomSession(spacetimeRoomId);
+    const battleSync = useBattleEventSync(roomSession);
     const [formState, setFormState] = useState<MatchConfig>(
         setup || defaultSetup,
     );
@@ -179,6 +190,7 @@ export function GameShell() {
     const matchStartTimeoutRef = useRef<number | null>(null);
     const lobbyEntryTimeoutRef = useRef<number | null>(null);
     const hasShownLobbyEntryRef = useRef(false);
+    const startedSpacetimeRoomRef = useRef<string | null>(null);
     useGunboundSfx();
 
     useEffect(function manageBattleBgm(): void {
@@ -290,6 +302,20 @@ export function GameShell() {
         return subscribeDisplaySettings(syncBattleImmersive);
     }, []);
 
+    useEffect(function startSpacetimeRoomMatch(): void {
+        if (spacetimeRoomId === undefined) return;
+        if (scene !== "start" || matchStarting) return;
+        if (!roomSession.room || roomSession.members.length < 2) return;
+
+        const roomKey = roomSession.room.id.toString();
+        if (startedSpacetimeRoomRef.current === roomKey) return;
+
+        const config = createMatchConfigFromRoom(roomSession);
+        startedSpacetimeRoomRef.current = roomKey;
+        setFormState(config);
+        queueMatchStart(config);
+    }, [spacetimeRoomId, scene, matchStarting, roomSession.room, roomSession.members]);
+
     return (
         <main className={battleImmersive ? "game-shell game-shell--immersive" : "game-shell"}>
             <GameCanvas />
@@ -297,7 +323,11 @@ export function GameShell() {
             {scene === "playing" ? <HistoryPanel /> : null}
             {scene === "playing" ? <TurnBanner /> : null}
             {scene === "playing" ? (
-                <div className="status-line">{message}</div>
+                <div className="status-line">
+                    {spacetimeRoomId !== undefined && !battleSync.canControl
+                        ? message + " Waiting for " + battleSync.activePlayerName + "."
+                        : message}
+                </div>
             ) : null}
             {scene === "playing" ? (
                 <div className="hud-bottom-wrapper">
@@ -525,6 +555,34 @@ function renderStartScreen(
                                 placeholder="gunbound-local"
                             />
                         </div>
+                        <div className="lobby-option">
+                            <span className="lobby-option-label">Target Score</span>
+                            <select
+                                className="lobby-option-input"
+                                value={formState.targetScore}
+                                onChange={handleTargetScoreChange}
+                            >
+                                {TARGET_SCORE_OPTIONS.map((value) => (
+                                    <option key={value} value={value}>
+                                        {value}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="lobby-option">
+                            <span className="lobby-option-label">Round Limit</span>
+                            <select
+                                className="lobby-option-input"
+                                value={formState.roundLimit}
+                                onChange={handleRoundLimitChange}
+                            >
+                                {ROUND_LIMIT_OPTIONS.map((value) => (
+                                    <option key={value} value={value}>
+                                        {value}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                         <RoomPanel formState={formState} />
                     </div>
                     <div className="lobby-actions">
@@ -639,6 +697,24 @@ function renderStartScreen(
         setFormState({
             ...formState,
             mapType: event.target.value as MapType,
+        });
+    }
+
+    function handleTargetScoreChange(
+        event: React.ChangeEvent<HTMLSelectElement>,
+    ): void {
+        setFormState({
+            ...formState,
+            targetScore: Number(event.target.value),
+        });
+    }
+
+    function handleRoundLimitChange(
+        event: React.ChangeEvent<HTMLSelectElement>,
+    ): void {
+        setFormState({
+            ...formState,
+            roundLimit: Number(event.target.value),
         });
     }
 
@@ -1039,6 +1115,38 @@ function getFriendSpriteStyle(mobileType: MobileType): React.CSSProperties {
 
 function capitalizeLabel(value: string): string {
     return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
+function createMatchConfigFromRoom(
+    roomSession: ReturnType<typeof useRoomSession>,
+): MatchConfig {
+    const members = [...roomSession.members].sort(
+        (a, b) => a.slotIndex - b.slotIndex,
+    );
+    const playerOne = members[0];
+    const playerTwo = members[1];
+
+    return {
+        ...defaultSetup,
+        playerOneName: playerOne?.name || defaultSetup.playerOneName,
+        playerTwoName: playerTwo?.name || defaultSetup.playerTwoName,
+        playerOneMobile:
+            parseMobileType(playerOne?.mobileType ?? "") ?? DEFAULT_MOBILE,
+        playerTwoMobile:
+            parseMobileType(playerTwo?.mobileType ?? "") ?? DEFAULT_MOBILE,
+        playerOneTitle: TITLE_OPTIONS[0],
+        playerTwoTitle: TITLE_OPTIONS[1],
+        playerOneAccent: ACCENT_OPTIONS[0],
+        playerTwoAccent: ACCENT_OPTIONS[1],
+        mapType: parseMapType(roomSession.room?.mapType, defaultSetup.mapType),
+        targetScore:
+            roomSession.room?.targetScore ?? defaultSetup.targetScore,
+        roundLimit:
+            roomSession.room?.roundLimit ?? defaultSetup.roundLimit,
+        seedText: roomSession.room
+            ? "room-" + roomSession.room.code + "-" + roomSession.room.seed.toString()
+            : defaultSetup.seedText,
+    };
 }
 
 function renderEndScreen(

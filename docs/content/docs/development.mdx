@@ -1,0 +1,72 @@
+---
+title: Developer Guide
+description: Local setup, scripts, and day-to-day workflow for the repo.
+---
+
+This guide is the shortest path for someone who wants to work on the repo without guessing which process owns which job.
+
+## Start The Repo
+
+From the repository root:
+
+```bash
+bun run dev
+```
+
+That opens the process manager in the terminal and starts the main app stack. It brings up the Next.js app and the local SpacetimeDB server, then lets you start the module watcher from the same screen.
+
+If you want the module watcher directly, use:
+
+```bash
+bun run spacetime:dev
+```
+
+## Useful Scripts
+
+```bash
+bun run dev
+bun run dev:next
+bun run build
+bun run spacetime:start
+bun run spacetime:dev
+bun run spacetime:dev:reset
+bun run spacetime:generate
+bun run spacetime:publish:local
+bun run spacetime:publish:local:reset
+bun run spacetime:logs
+```
+
+## Local Workflow
+
+1. Start the repo with `bun run dev`.
+2. If you need a clean SpacetimeDB state, use `bun run spacetime:dev:reset` or `bun run spacetime:publish:local:reset`.
+3. Make your server or client change.
+4. Regenerate bindings when the schema or reducers change.
+5. Refresh the browser after binding changes.
+
+## Where To Edit
+
+- Gameplay and lobby UI: `src/features/game/` and `src/features/lobby/`
+- SpacetimeDB schema and reducers: `server/spacetimedb/src/`
+- Generated bindings: `src/features/game/spacetime/module_bindings/`
+- Docs content: `docs/content/docs/`
+- Docs app shell: `docs/src/app/`
+
+## Git And Verification
+
+Use normal git inspection commands while working:
+
+```bash
+git status
+git diff
+git log --oneline --decorate -n 10
+```
+
+Keep changes scoped to the files that actually own the behavior. If a change affects generated bindings, regenerate them instead of editing the outputs by hand. Before sending a reviewable change, run the smallest check that matches the risk: `bun run build` for the app, `bun run types:check` for the docs app, or the relevant SpacetimeDB command for backend work.
+
+## Common Mistakes
+
+- Editing `src/features/game/spacetime/module_bindings/` directly.
+- Changing schema or reducer code without regenerating bindings.
+- Assuming the local SpacetimeDB URI is the same as the Next.js port.
+- Treating docs as an afterthought when they explain the workflow people will actually use.

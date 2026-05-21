@@ -54,6 +54,13 @@ export function registerTrack(id: TrackId, src: string, volume = 0.5) {
   } else {
     t.baseVolume = volume;
   }
+  if (current === id) {
+    const p = t.el.play();
+    if (p && typeof p.catch === "function") {
+      p.catch(() => ensureUnlockListener());
+    }
+    scheduleTick();
+  }
   return t;
 }
 

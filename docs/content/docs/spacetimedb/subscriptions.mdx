@@ -16,13 +16,13 @@ The client uses two mechanisms:
 The `GunboundSpacetimeProvider` sets up the connection and subscribes to all tables:
 
 ```typescript
-// src/features/game/spacetime/provider.tsx
+// src/features/game/spacetime/connection.tsx
 export function GunboundSpacetimeProvider({ children }: { children: React.ReactNode }) {
   const builder = useMemo(() => {
     const token = readStoredToken();
     return DbConnection.builder()
-      .withUri(SPACETIMEDB_URI)
-      .withDatabaseName(MODULE_NAME)
+      .withUri(SPACETIME_URI)
+      .withDatabaseName(SPACETIME_MODULE)
       .withToken(token || undefined)
       .onConnect(onConnect)
       .onConnectError(onConnectError);

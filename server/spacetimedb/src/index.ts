@@ -1,5 +1,6 @@
 import spacetimedb from './schema';
 import { t, SenderError } from 'spacetimedb/server';
+import type { Identity } from 'spacetimedb';
 import type { InferSchema, ReducerCtx } from 'spacetimedb/server';
 import { ROOM_STATUS } from '../../../src/features/game/spacetime/room-status';
 
@@ -9,6 +10,16 @@ type ModuleContext = ReducerCtx<InferSchema<typeof spacetimedb>>;
 
 const ROUND_STATUS_ACTIVE = 'active';
 const ROUND_STATUS_FINISHED = 'finished';
+const MAX_ROUND_EVENT_PAYLOAD_LENGTH = 1024;
+const VALID_ROUND_EVENT_KINDS = new Set([
+  'battle_move',
+  'battle_switch_weapon',
+  'battle_fire'
+]);
+const VALID_BATTLE_WEAPONS = new Set(['primary', 'secondary']);
+const REQUEST_STATUS_PENDING = { tag: 'Pending' } as const;
+const REQUEST_STATUS_ACCEPTED = { tag: 'Accepted' } as const;
+const REQUEST_STATUS_DECLINED = { tag: 'Declined' } as const;
 
 const ROOM_MAX_MEMBERS = 2;
 const DEFAULT_MAP_TYPE = 'rolling';
@@ -19,6 +30,8 @@ const MAX_TARGET_SCORE = 9;
 const MIN_ROUND_LIMIT = 1;
 const MAX_ROUND_LIMIT = 15;
 const CHAT_MESSAGE_MAX_LENGTH = 200;
+const LOBBY_CHANNEL_MIN = 1;
+const LOBBY_CHANNEL_MAX = 8;
 const MICROS_PER_DAY = 86_400n * 1_000_000n;
 const EMPTY_DATA_SETTING_KEY = 'empty_data_enabled';
 const BOOTSTRAP_ADMIN_USERNAMES = new Set(['remco', 'remcostoeten']);
@@ -99,6 +112,87 @@ function computeRoundXp(isWinner: boolean, isDraw: boolean, damageDealt: number,
   return base + damageBonus + accuracyBonus;
 }
 
+type RoundEventPayload = {
+  v?: unknown;
+  turn?: unknown;
+  direction?: unknown;
+  weapon?: unknown;
+  angle?: unknown;
+  power?: unknown;
+};
+
+function parseRoundEventPayload(kind: string, payload: string): { turn: number } {
+  let value: RoundEventPayload;
+  try {
+    value = JSON.parse(payload) as RoundEventPayload;
+  } catch {
+    throw new SenderError('invalid round event payload');
+  }
+
+  if (value.v !== 1) throw new SenderError('unsupported round event version');
+  if (value.turn !== 1 && value.turn !== 2) throw new SenderError('invalid round event turn');
+
+  if (kind === 'battle_move') {
+    if (value.direction !== -1 && value.direction !== 1) {
+      throw new SenderError('invalid move direction');
+    }
+  } else if (kind === 'battle_switch_weapon') {
+    if (typeof value.weapon !== 'string' || !VALID_BATTLE_WEAPONS.has(value.weapon)) {
+      throw new SenderError('invalid weapon');
+    }
+  } else if (kind === 'battle_fire') {
+    if (typeof value.weapon !== 'string' || !VALID_BATTLE_WEAPONS.has(value.weapon)) {
+      throw new SenderError('invalid weapon');
+    }
+    if (typeof value.angle !== 'number' || value.angle < 0 || value.angle > 180) {
+      throw new SenderError('invalid firing angle');
+    }
+    if (typeof value.power !== 'number' || value.power < 0 || value.power > 1.1) {
+      throw new SenderError('invalid firing power');
+    }
+  }
+
+  return { turn: value.turn };
+}
+
+function getExpectedRoundEventTick(ctx: ModuleContext, roundId: bigint): bigint {
+  let maxTick = 0n;
+  for (const event of ctx.db.roundEvent.round_event_round_id.filter(roundId)) {
+    if (event.tick > maxTick) maxTick = event.tick;
+  }
+  return maxTick + 1n;
+}
+
+function getExpectedBattleTurn(ctx: ModuleContext, roundId: bigint): number {
+  let turn = 1;
+  const events = [...ctx.db.roundEvent.round_event_round_id.filter(roundId)].sort((a, b) => {
+    if (a.tick > b.tick) return 1;
+    if (a.tick < b.tick) return -1;
+    return 0;
+  });
+
+  for (const event of events) {
+    const parsed = parseRoundEventPayload(event.kind, event.payload);
+    if (parsed.turn !== turn) continue;
+    if (event.kind === 'battle_move' || event.kind === 'battle_fire') {
+      turn = turn === 1 ? 2 : 1;
+    }
+  }
+  return turn;
+}
+
+function assertRoundTurnActor(ctx: ModuleContext, roomId: bigint, turn: number): void {
+  for (const member of ctx.db.roomMember.room_member_room_id.filter(roomId)) {
+    if (member.slotIndex === turn - 1) {
+      if (member.identity.toHexString() !== ctx.sender.toHexString()) {
+        throw new SenderError('not your turn');
+      }
+      return;
+    }
+  }
+  throw new SenderError('turn has no room member');
+}
+
 function isActiveRoomStatus(status: string): boolean {
   return status !== ROOM_STATUS.ENDED;
 }
@@ -121,6 +215,56 @@ function assertNotInActiveRoom(ctx: ModuleContext): void {
   if (findActiveRoomMembership(ctx)) {
     throw new SenderError('leave your current room before joining another');
   }
+}
+
+function identitiesMatch(a: Identity, b: Identity): boolean {
+  return a.toHexString() === b.toHexString();
+}
+
+function findFriendship(ctx: ModuleContext, ownerIdentity: Identity, buddyIdentity: Identity) {
+  const buddyHex = buddyIdentity.toHexString();
+  for (const friendship of ctx.db.friendship.friendship_owner.filter(ownerIdentity)) {
+    if (friendship.buddyIdentity.toHexString() === buddyHex) return friendship;
+  }
+  return null;
+}
+
+function findPendingFriendRequest(ctx: ModuleContext, requesterIdentity: Identity, recipientIdentity: Identity) {
+  const recipientHex = recipientIdentity.toHexString();
+  for (const request of ctx.db.friendRequest.friend_request_requester.filter(requesterIdentity)) {
+    if (
+      request.recipientIdentity.toHexString() === recipientHex &&
+      request.status.tag === REQUEST_STATUS_PENDING.tag
+    ) {
+      return request;
+    }
+  }
+  return null;
+}
+
+function findPendingRoomInvite(ctx: ModuleContext, roomId: bigint, requesterIdentity: Identity, recipientIdentity: Identity) {
+  const requesterHex = requesterIdentity.toHexString();
+  const recipientHex = recipientIdentity.toHexString();
+  for (const invite of ctx.db.roomInvite.room_invite_room_id.filter(roomId)) {
+    if (
+      invite.requesterIdentity.toHexString() === requesterHex &&
+      invite.recipientIdentity.toHexString() === recipientHex &&
+      invite.status.tag === REQUEST_STATUS_PENDING.tag
+    ) {
+      return invite;
+    }
+  }
+  return null;
+}
+
+function ensureFriendship(ctx: ModuleContext, ownerIdentity: Identity, buddyIdentity: Identity): void {
+  if (findFriendship(ctx, ownerIdentity, buddyIdentity)) return;
+  ctx.db.friendship.insert({
+    id: 0n,
+    ownerIdentity,
+    buddyIdentity,
+    createdAt: ctx.timestamp
+  });
 }
 
 function getNextRoomSlotIndex(ctx: ModuleContext, roomId: bigint): number {
@@ -156,7 +300,8 @@ function insertPlayer(ctx: ModuleContext, name: string): void {
     totalWins: 0,
     totalLosses: 0,
     totalRoundsPlayed: 0,
-    isAdmin: hasBootstrapAdminCredential(ctx, ctx.sender)
+    isAdmin: hasBootstrapAdminCredential(ctx, ctx.sender),
+    country: undefined
   });
 }
 
@@ -261,6 +406,31 @@ export const set_player_profile = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
     setPlayerDisplayName(ctx, name);
+  }
+);
+
+/**
+ * Stores the caller's ISO 3166-1 alpha-2 country code (e.g. "US", "NL").
+ * Pass an empty string to clear the value when geolocation opts out.
+ */
+export const set_player_country = spacetimedb.reducer(
+  { country: t.string() },
+  (ctx, { country }) => {
+    const trimmed = country.trim().toUpperCase();
+    const next = trimmed.length === 0 ? undefined : trimmed;
+    if (next !== undefined && !/^[A-Z]{2}$/.test(next)) {
+      throw new SenderError('country must be a 2-letter ISO code');
+    }
+
+    const existing = ctx.db.player.identity.find(ctx.sender);
+    if (!existing) throw new SenderError('player not found');
+    if (existing.country === next) return;
+
+    ctx.db.player.identity.update({
+      ...existing,
+      country: next,
+      updatedAt: ctx.timestamp
+    });
   }
 );
 
@@ -509,11 +679,9 @@ export const start_round = spacetimedb.reducer(
 /**
  * Appends a single deterministic event to a round's history.
  *
- * Authorization: caller must be a member of the round's room. The reducer
- * intentionally does not validate `tick` ordering or `kind`/`payload`
- * contents — events are an append-only stream and the client-side replay
- * is responsible for sorting and interpreting them. Keeping this surface
- * small lets gameplay evolve without server redeploys.
+ * Authorization: caller must be the room member whose slot owns the current
+ * turn. The reducer validates event kind, payload shape, strict tick ordering,
+ * and turn order so clients cannot skip ahead or write opponent actions.
  *
  * Rejects events for non-active rounds so finished history is immutable.
  */
@@ -530,6 +698,20 @@ export const record_round_event = spacetimedb.reducer(
     if (round.status !== ROUND_STATUS_ACTIVE) {
       throw new SenderError('round is not active');
     }
+    if (!VALID_ROUND_EVENT_KINDS.has(kind)) {
+      throw new SenderError('unknown round event kind');
+    }
+    if (payload.length > MAX_ROUND_EVENT_PAYLOAD_LENGTH) {
+      throw new SenderError('round event payload too large');
+    }
+    if (tick !== getExpectedRoundEventTick(ctx, roundId)) {
+      throw new SenderError('round event tick out of order');
+    }
+    const parsedPayload = parseRoundEventPayload(kind, payload);
+    const expectedTurn = getExpectedBattleTurn(ctx, roundId);
+    if (parsedPayload.turn !== expectedTurn) {
+      throw new SenderError('not this turn');
+    }
 
     let isMember = false;
     for (const member of ctx.db.roomMember.room_member_room_id.filter(round.roomId)) {
@@ -539,6 +721,7 @@ export const record_round_event = spacetimedb.reducer(
       }
     }
     if (!isMember) throw new SenderError('only room members may record events');
+    assertRoundTurnActor(ctx, round.roomId, parsedPayload.turn);
 
     ctx.db.roundEvent.insert({
       id: 0n,
@@ -566,6 +749,9 @@ export const end_round = spacetimedb.reducer(
   (ctx, { roundId, winnerIdentity }) => {
     const round = ctx.db.round.id.find(roundId);
     if (!round) throw new SenderError('round not found');
+    if (round.status !== ROUND_STATUS_ACTIVE) {
+      throw new SenderError('round is not active');
+    }
 
     const room = ctx.db.room.id.find(round.roomId);
     if (!room) throw new SenderError('room not found');
@@ -573,14 +759,25 @@ export const end_round = spacetimedb.reducer(
       throw new SenderError('only the host can end a round');
     }
 
+    const isDraw = winnerIdentity === undefined;
+    let winnerIsMember = isDraw;
+
+    if (!isDraw) {
+      for (const member of ctx.db.roomMember.room_member_room_id.filter(round.roomId)) {
+        if (member.identity.toHexString() === winnerIdentity!.toHexString()) {
+          winnerIsMember = true;
+          break;
+        }
+      }
+    }
+    if (!winnerIsMember) throw new SenderError('winner is not a room member');
+
     ctx.db.round.id.update({
       ...round,
       status: ROUND_STATUS_FINISHED,
       endedAt: ctx.timestamp,
       winnerIdentity
     });
-
-    const isDraw = winnerIdentity === undefined;
 
     for (const member of ctx.db.roomMember.room_member_room_id.filter(round.roomId)) {
       const player = ctx.db.player.identity.find(member.identity);
@@ -705,6 +902,220 @@ export const send_chat = spacetimedb.reducer(
       senderIdentity: ctx.sender,
       message: trimmed,
       createdAt: ctx.timestamp
+    });
+  }
+);
+
+/**
+ * Sends a public lobby message to one of the numbered lobby channels.
+ *
+ * This is intentionally independent from room chat so channel history remains
+ * available after a player leaves rooms, logs out, or reconnects later.
+ */
+export const send_lobby_chat = spacetimedb.reducer(
+  { channel: t.u32(), message: t.string() },
+  (ctx, { channel, message }) => {
+    const trimmed = message.trim();
+    if (channel < LOBBY_CHANNEL_MIN || channel > LOBBY_CHANNEL_MAX) {
+      throw new SenderError('invalid lobby channel');
+    }
+    if (trimmed.length === 0) throw new SenderError('message must not be empty');
+    if (trimmed.length > CHAT_MESSAGE_MAX_LENGTH) {
+      throw new SenderError(`message must be ${CHAT_MESSAGE_MAX_LENGTH} characters or fewer`);
+    }
+
+    const player = ctx.db.player.identity.find(ctx.sender);
+    if (!player || player.name.trim().length === 0) {
+      throw new SenderError('set a player name before chatting');
+    }
+
+    ctx.db.lobbyChatMessage.insert({
+      id: 0n,
+      channel,
+      senderIdentity: ctx.sender,
+      message: trimmed,
+      createdAt: ctx.timestamp
+    });
+  }
+);
+
+export const send_friend_request = spacetimedb.reducer(
+  { username: t.string() },
+  (ctx, { username }) => {
+    const trimmed = username.trim();
+    if (!USERNAME_PATTERN.test(trimmed)) {
+      throw new SenderError('username must be 3-20 characters: letters, digits, underscore');
+    }
+
+    const credential = ctx.db.credential.username.find(trimmed);
+    if (!credential) throw new SenderError('user not found');
+    if (identitiesMatch(credential.identity, ctx.sender)) {
+      throw new SenderError('cannot add yourself');
+    }
+    if (findFriendship(ctx, ctx.sender, credential.identity)) {
+      throw new SenderError('already buddies');
+    }
+    if (findPendingFriendRequest(ctx, ctx.sender, credential.identity)) {
+      throw new SenderError('friend request already sent');
+    }
+
+    const reciprocal = findPendingFriendRequest(ctx, credential.identity, ctx.sender);
+    if (reciprocal) {
+      ctx.db.friendRequest.id.update({
+        ...reciprocal,
+        status: REQUEST_STATUS_ACCEPTED,
+        resolvedAt: ctx.timestamp
+      });
+      ensureFriendship(ctx, ctx.sender, credential.identity);
+      ensureFriendship(ctx, credential.identity, ctx.sender);
+      return;
+    }
+
+    ctx.db.friendRequest.insert({
+      id: 0n,
+      requesterIdentity: ctx.sender,
+      recipientIdentity: credential.identity,
+      status: REQUEST_STATUS_PENDING,
+      createdAt: ctx.timestamp,
+      resolvedAt: undefined
+    });
+  }
+);
+
+export const respond_friend_request = spacetimedb.reducer(
+  { requestId: t.u64(), accept: t.bool() },
+  (ctx, { requestId, accept }) => {
+    const request = ctx.db.friendRequest.id.find(requestId);
+    if (!request || request.status.tag !== REQUEST_STATUS_PENDING.tag) {
+      throw new SenderError('friend request not found');
+    }
+    if (!identitiesMatch(request.recipientIdentity, ctx.sender)) {
+      throw new SenderError('only the recipient can respond');
+    }
+
+    ctx.db.friendRequest.id.update({
+      ...request,
+      status: accept ? REQUEST_STATUS_ACCEPTED : REQUEST_STATUS_DECLINED,
+      resolvedAt: ctx.timestamp
+    });
+
+    if (!accept) return;
+    ensureFriendship(ctx, request.requesterIdentity, request.recipientIdentity);
+    ensureFriendship(ctx, request.recipientIdentity, request.requesterIdentity);
+  }
+);
+
+export const remove_friend = spacetimedb.reducer(
+  { buddyIdentity: t.identity() },
+  (ctx, { buddyIdentity }) => {
+    const ownEdge = findFriendship(ctx, ctx.sender, buddyIdentity);
+    if (ownEdge) ctx.db.friendship.id.delete(ownEdge.id);
+
+    const reciprocalEdge = findFriendship(ctx, buddyIdentity, ctx.sender);
+    if (reciprocalEdge) ctx.db.friendship.id.delete(reciprocalEdge.id);
+  }
+);
+
+export const send_room_invite = spacetimedb.reducer(
+  { roomId: t.u64(), username: t.string() },
+  (ctx, { roomId, username }) => {
+    const trimmed = username.trim();
+    if (!USERNAME_PATTERN.test(trimmed)) {
+      throw new SenderError('username must be 3-20 characters: letters, digits, underscore');
+    }
+
+    const room = ctx.db.room.id.find(roomId);
+    if (!room || !isActiveRoomStatus(room.status)) throw new SenderError('room not found');
+    if (isRoomLockedForMatch(room.status)) throw new SenderError('cannot invite during an active round');
+
+    let isMember = false;
+    for (const member of ctx.db.roomMember.room_member_room_id.filter(roomId)) {
+      if (identitiesMatch(member.identity, ctx.sender)) {
+        isMember = true;
+        break;
+      }
+    }
+    if (!isMember) throw new SenderError('only room members can invite');
+
+    const credential = ctx.db.credential.username.find(trimmed);
+    if (!credential) throw new SenderError('user not found');
+    if (identitiesMatch(credential.identity, ctx.sender)) throw new SenderError('cannot invite yourself');
+
+    for (const member of ctx.db.roomMember.room_member_room_id.filter(roomId)) {
+      if (identitiesMatch(member.identity, credential.identity)) {
+        throw new SenderError('user is already in this room');
+      }
+    }
+    if (findPendingRoomInvite(ctx, roomId, ctx.sender, credential.identity)) {
+      throw new SenderError('room invite already sent');
+    }
+
+    ctx.db.roomInvite.insert({
+      id: 0n,
+      roomId,
+      requesterIdentity: ctx.sender,
+      recipientIdentity: credential.identity,
+      status: REQUEST_STATUS_PENDING,
+      createdAt: ctx.timestamp,
+      resolvedAt: undefined
+    });
+  }
+);
+
+export const respond_room_invite = spacetimedb.reducer(
+  { inviteId: t.u64(), accept: t.bool() },
+  (ctx, { inviteId, accept }) => {
+    const invite = ctx.db.roomInvite.id.find(inviteId);
+    if (!invite || invite.status.tag !== REQUEST_STATUS_PENDING.tag) {
+      throw new SenderError('room invite not found');
+    }
+    if (!identitiesMatch(invite.recipientIdentity, ctx.sender)) {
+      throw new SenderError('only the recipient can respond');
+    }
+
+    if (!accept) {
+      ctx.db.roomInvite.id.update({
+        ...invite,
+        status: REQUEST_STATUS_DECLINED,
+        resolvedAt: ctx.timestamp
+      });
+      return;
+    }
+
+    const room = ctx.db.room.id.find(invite.roomId);
+    if (!room || !isActiveRoomStatus(room.status)) throw new SenderError('room not found');
+    if (isRoomLockedForMatch(room.status)) throw new SenderError('room is already playing');
+    assertNotInActiveRoom(ctx);
+
+    let memberCount = 0;
+    for (const member of ctx.db.roomMember.room_member_room_id.filter(invite.roomId)) {
+      if (identitiesMatch(member.identity, ctx.sender)) {
+        ctx.db.roomInvite.id.update({
+          ...invite,
+          status: REQUEST_STATUS_ACCEPTED,
+          resolvedAt: ctx.timestamp
+        });
+        return;
+      }
+      memberCount += 1;
+    }
+    if (memberCount >= ROOM_MAX_MEMBERS) throw new SenderError('room is full');
+
+    ctx.db.roomInvite.id.update({
+      ...invite,
+      status: REQUEST_STATUS_ACCEPTED,
+      resolvedAt: ctx.timestamp
+    });
+
+    ctx.db.roomMember.insert({
+      id: 0n,
+      roomId: invite.roomId,
+      identity: ctx.sender,
+      slotIndex: getNextRoomSlotIndex(ctx, invite.roomId),
+      teamIndex: undefined,
+      mobileType: '',
+      isReady: false,
+      joinedAt: ctx.timestamp
     });
   }
 );

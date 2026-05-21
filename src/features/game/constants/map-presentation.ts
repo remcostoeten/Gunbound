@@ -53,3 +53,7 @@ export function getMapPresentation(mapType: MapType): MapPresentation {
 
   return mapPresentationList[0];
 }
+
+export function parseMapType(value: string | null | undefined, fallback: MapType = mapPresentationList[0].value): MapType {
+  return mapPresentationList.find((option) => option.value === value)?.value ?? fallback;
+}

@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useGameStore } from "@/features/game/store/game-store";
+import { dispatchBattleInputCommand } from "@/features/game/multiplayer/battle-command-bus";
 
 export function useInput(): void {
   useEffect(bindInput, []);
@@ -17,36 +18,42 @@ function bindInput(): CleanupHandler {
 
     if (event.code === "ArrowUp") {
       event.preventDefault();
+      if (dispatchBattleInputCommand({ kind: "aim", key: "up", active: true })) return;
       store.setAimKey("up", true);
       return;
     }
 
     if (event.code === "ArrowDown") {
       event.preventDefault();
+      if (dispatchBattleInputCommand({ kind: "aim", key: "down", active: true })) return;
       store.setAimKey("down", true);
       return;
     }
 
     if (event.code === "KeyA" && !event.repeat) {
       event.preventDefault();
+      if (dispatchBattleInputCommand({ kind: "move", direction: -1 })) return;
       store.attemptMove(-1);
       return;
     }
 
     if (event.code === "KeyD" && !event.repeat) {
       event.preventDefault();
+      if (dispatchBattleInputCommand({ kind: "move", direction: 1 })) return;
       store.attemptMove(1);
       return;
     }
 
     if (event.code === "KeyQ" && !event.repeat) {
       event.preventDefault();
+      if (dispatchBattleInputCommand({ kind: "switch-weapon" })) return;
       store.switchWeapon();
       return;
     }
 
     if (event.code === "Space" && !event.repeat) {
       event.preventDefault();
+      if (dispatchBattleInputCommand({ kind: "begin-charge" })) return;
       store.beginCharge();
     }
   }
@@ -56,18 +63,21 @@ function bindInput(): CleanupHandler {
 
     if (event.code === "ArrowUp") {
       event.preventDefault();
+      if (dispatchBattleInputCommand({ kind: "aim", key: "up", active: false })) return;
       store.setAimKey("up", false);
       return;
     }
 
     if (event.code === "ArrowDown") {
       event.preventDefault();
+      if (dispatchBattleInputCommand({ kind: "aim", key: "down", active: false })) return;
       store.setAimKey("down", false);
       return;
     }
 
     if (event.code === "Space") {
       event.preventDefault();
+      if (dispatchBattleInputCommand({ kind: "release-charge" })) return;
       store.releaseCharge();
     }
   }

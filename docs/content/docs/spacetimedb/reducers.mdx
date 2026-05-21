@@ -503,7 +503,7 @@ These use the server's CSPRNG and are deterministic across replicas.
 Start a local SpacetimeDB instance:
 
 ```bash
-spacetime start
+bun run spacetime:start
 ```
 
 Publish the module:
@@ -526,7 +526,7 @@ const conn = window.__spacetimedb__.connection;
 await conn.reducers.createRoom({ code: 'TEST1' });
 ```
 
-Check the local SpacetimeDB dashboard at `http://localhost:3000` to see the inserted rows.
+Check the browser UI or the server logs to confirm the row changes.
 
 ## Next Steps
 

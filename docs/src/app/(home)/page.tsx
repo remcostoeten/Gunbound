@@ -1,24 +1,24 @@
 import Link from 'next/link';
-import { ArrowRight, BookOpen, DatabaseZap, MessageCircle, Sparkles } from 'lucide-react';
+import { ArrowRight, BookOpen, DatabaseZap, Sparkles } from 'lucide-react';
 
 const guideCards = [
   {
-    title: 'Quickstart',
-    description: 'Spin up the realtime stack and get the first client flow connected.',
-    href: '/docs/spacetimedb/quickstart',
+    title: 'Project Overview',
+    description: 'See how the client, server module, bindings, and docs fit together.',
+    href: '/docs/project-overview',
     icon: Sparkles,
   },
   {
-    title: 'Architecture',
-    description: 'See how reducers, tables, subscriptions, and clients fit together.',
-    href: '/docs/spacetimedb/architecture',
+    title: 'Developer Guide',
+    description: 'Follow the local workflow, scripts, and edit loop without guessing.',
+    href: '/docs/development',
     icon: DatabaseZap,
   },
   {
-    title: 'Ask AI',
-    description: 'Use the floating assistant inside the docs when you need a fast pointer.',
-    href: '/docs',
-    icon: MessageCircle,
+    title: 'Quickstart',
+    description: 'Start the repo locally and get the module watcher running.',
+    href: '/docs/spacetimedb/quickstart',
+    icon: BookOpen,
   },
 ];
 
@@ -30,14 +30,14 @@ export default function HomePage() {
         <section className="relative z-10 max-w-3xl">
           <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-300/50 bg-amber-100/70 px-3 py-1 text-sm font-medium text-amber-950 shadow-sm shadow-amber-900/10 dark:border-amber-300/25 dark:bg-amber-300/10 dark:text-amber-100">
             <BookOpen className="size-4" />
-            Realtime multiplayer documentation
+            Gunbound repo documentation
           </div>
           <h1 className="max-w-3xl text-4xl font-black leading-[1.05] text-neutral-950 sm:text-5xl lg:text-6xl dark:text-white">
-            Build the Gunbound stack without losing the thread.
+            Understand how the Gunbound repo works before you touch it.
           </h1>
           <p className="mt-6 max-w-2xl text-base leading-8 text-neutral-700 sm:text-lg dark:text-neutral-300">
-            Practical notes for SpacetimeDB reducers, subscriptions, auth, and the game client.
-            Start with the core flow, then jump into the exact system you are touching.
+            Practical notes for the Next.js client, the SpacetimeDB module, generated bindings,
+            docs, and the development flow around them.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link

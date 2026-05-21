@@ -1,0 +1,48 @@
+---
+title: Project Overview
+description: How the Gunbound repo fits together at a high level.
+---
+
+Gunbound is a Next.js client backed by a SpacetimeDB module, with a docs site living in the same repository. The important part is not the file count, it is the flow: the client reads generated bindings, calls reducers, and subscribes to tables that the server module owns.
+
+## Repo Map
+
+| Path | Responsibility |
+| --- | --- |
+| `src/` | Main game client, lobby, hooks, and shared game logic. |
+| `server/spacetimedb/` | Authoritative schema and reducers for the realtime backend. |
+| `src/features/game/spacetime/module_bindings/` | Generated TypeScript bindings from SpacetimeDB. |
+| `docs/` | The docs app itself. |
+| `scripts/dev.ts` | The terminal process manager behind `bun run dev`. |
+| `public/` | Static assets used by the client and docs app. |
+
+## Runtime Flow
+
+1. The app boots and the SpacetimeDB provider reads the stored token from browser storage.
+2. The client connects to the local or cloud SpacetimeDB endpoint from `src/features/game/spacetime/config.ts`.
+3. The provider subscribes to the tables the UI needs.
+4. UI actions call generated reducers.
+5. Reducers mutate server-side tables.
+6. Subscriptions push those table changes back to the client.
+
+That means the database module is not just a persistence layer. It is the source of truth for shared state.
+
+## What Owns What
+
+- Game rules and multiplayer state belong in `server/spacetimedb/src/index.ts` and `server/spacetimedb/src/schema.ts`.
+- Client-side rendering and interaction belong in `src/features/game/` and `src/features/lobby/`.
+- SpacetimeDB type safety comes from regenerated bindings, not handwritten copies.
+- Docs should explain the flow, not re-implement it.
+
+## Local Endpoints
+
+- Next.js runs on `http://localhost:3000`.
+- The default local SpacetimeDB websocket URI is `ws://127.0.0.1:3002`.
+- The docs app is separate and can be started from `docs/` when needed.
+
+## Change Rules
+
+- Edit the schema or reducers first when the backend behavior changes.
+- Regenerate bindings after any schema or reducer change.
+- Do not hand edit generated files in `src/features/game/spacetime/module_bindings/`.
+- Prefer the existing feature folders over adding new top-level concepts.

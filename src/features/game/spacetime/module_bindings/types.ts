@@ -36,6 +36,35 @@ export const Credential = __t.object("Credential", {
 });
 export type Credential = __Infer<typeof Credential>;
 
+export const FriendRequest = __t.object("FriendRequest", {
+  id: __t.u64(),
+  requesterIdentity: __t.identity(),
+  recipientIdentity: __t.identity(),
+  get status() {
+    return RequestStatus;
+  },
+  createdAt: __t.timestamp(),
+  resolvedAt: __t.option(__t.timestamp()),
+});
+export type FriendRequest = __Infer<typeof FriendRequest>;
+
+export const Friendship = __t.object("Friendship", {
+  id: __t.u64(),
+  ownerIdentity: __t.identity(),
+  buddyIdentity: __t.identity(),
+  createdAt: __t.timestamp(),
+});
+export type Friendship = __Infer<typeof Friendship>;
+
+export const LobbyChatMessage = __t.object("LobbyChatMessage", {
+  id: __t.u64(),
+  channel: __t.u32(),
+  senderIdentity: __t.identity(),
+  message: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type LobbyChatMessage = __Infer<typeof LobbyChatMessage>;
+
 export const Player = __t.object("Player", {
   identity: __t.identity(),
   name: __t.string(),
@@ -53,8 +82,17 @@ export const Player = __t.object("Player", {
   totalLosses: __t.u32(),
   totalRoundsPlayed: __t.u32(),
   isAdmin: __t.option(__t.bool()),
+  country: __t.option(__t.string()),
 });
 export type Player = __Infer<typeof Player>;
+
+// The tagged union or sum type for the algebraic type `RequestStatus`.
+export const RequestStatus = __t.enum("RequestStatus", {
+  Pending: __t.unit(),
+  Accepted: __t.unit(),
+  Declined: __t.unit(),
+});
+export type RequestStatus = __Infer<typeof RequestStatus>;
 
 export const Room = __t.object("Room", {
   id: __t.u64(),
@@ -68,6 +106,19 @@ export const Room = __t.object("Room", {
   createdAt: __t.timestamp(),
 });
 export type Room = __Infer<typeof Room>;
+
+export const RoomInvite = __t.object("RoomInvite", {
+  id: __t.u64(),
+  roomId: __t.u64(),
+  requesterIdentity: __t.identity(),
+  recipientIdentity: __t.identity(),
+  get status() {
+    return RequestStatus;
+  },
+  createdAt: __t.timestamp(),
+  resolvedAt: __t.option(__t.timestamp()),
+});
+export type RoomInvite = __Infer<typeof RoomInvite>;
 
 export const RoomMember = __t.object("RoomMember", {
   id: __t.u64(),

@@ -1,4 +1,4 @@
-import { defaultSuddenDeathTurn, defaultTargetScore, getPhaseDuration } from "@/features/game/constants/gameplay";
+import { defaultSuddenDeathTurn, getPhaseDuration } from "@/features/game/constants/gameplay";
 import { worldHeight, worldWidth } from "@/features/game/constants/world";
 import { normalizeSeed } from "@/features/game/engine/random";
 import { createTerrain } from "@/features/game/engine/terrain";
@@ -39,7 +39,7 @@ export function createStartedMatchState(config: MatchConfig): StartedMatchState 
     projectile: null,
     winner: null,
     round: 1,
-    targetScore: defaultTargetScore,
+    targetScore: config.targetScore,
     suddenDeathTurn: defaultSuddenDeathTurn,
     suddenDeathActive: false,
     power: 0,

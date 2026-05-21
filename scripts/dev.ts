@@ -71,9 +71,9 @@ const DEFS: ProcDef[] = [
   {
     id: "stdb",
     label: "SpacetimeDB",
-    desc: "Local DB server :3001",
+    desc: "Local DB server :3002",
     cmd: "spacetime",
-    args: ["start", "--listen-addr", "0.0.0.0:3001"],
+    args: ["start", "--listen-addr", "0.0.0.0:3002"],
     color: f.byellow,
     autoStart: true,
     readyPattern: /listening|started|ready/i,
@@ -86,7 +86,7 @@ const DEFS: ProcDef[] = [
     args: [
       "dev", "gunbound",
       "--no-config",
-      "--server", "http://127.0.0.1:3001",
+      "--server", "http://127.0.0.1:3002",
       "--module-path", "server/spacetimedb",
       "--client-lang", "typescript",
       "--module-bindings-path",

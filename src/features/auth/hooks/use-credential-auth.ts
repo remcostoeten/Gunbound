@@ -24,20 +24,22 @@ type UseCredentialAuthResult = {
   register(username: string, password: string): Promise<RegisterResult>;
   login(username: string, password: string): Promise<LoginResult>;
   isConnected: boolean;
+  credentialsReady: boolean;
+  connectionError: Error | undefined;
 };
 
 export function useCredentialAuth(): UseCredentialAuthResult {
   const connection = useSpacetimeDB();
   const [state, setState] = useState<AuthState>("idle");
-  const [credentialRows] = useTable(tables.credential);
-  const isConnected = Boolean(connection.identity && connection.getConnection());
+  const [credentialRows, credentialsReady] = useTable(tables.credential);
+  const isConnected = connection.isActive && Boolean(connection.getConnection());
 
   const register = useCallback(
     async (username: string, password: string): Promise<RegisterResult> => {
       const validated = validateCredentials(username, password);
       const conn = connection.getConnection();
       if (!conn) throw new Error("not connected to server");
-      const currentToken = readStoredToken();
+      const currentToken = connection.token ?? readStoredToken();
       if (!currentToken) throw new Error("no active session token to register");
 
       setState("working");
@@ -62,6 +64,7 @@ export function useCredentialAuth(): UseCredentialAuthResult {
   const login = useCallback(
     async (username: string, password: string): Promise<LoginResult> => {
       const validated = validateCredentials(username, password);
+      if (!credentialsReady) throw new Error("account list is still loading");
       setState("working");
       try {
         const row = credentialRows.find(r => r.username === validated.username);
@@ -80,10 +83,17 @@ export function useCredentialAuth(): UseCredentialAuthResult {
         setState("idle");
       }
     },
-    [credentialRows]
+    [credentialRows, credentialsReady]
   );
 
-  return { state, register, login, isConnected };
+  return {
+    state,
+    register,
+    login,
+    isConnected,
+    credentialsReady,
+    connectionError: connection.connectionError
+  };
 }
 
 function validateCredentials(username: string, password: string): { username: string; password: string } {

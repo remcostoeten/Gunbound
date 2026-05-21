@@ -1,45 +1,43 @@
-# docs
+# Gunbound Docs
 
-This is a Next.js application generated with
-[Create Fumadocs](https://github.com/fuma-nama/fumadocs).
+This folder is the Fumadocs app for the Gunbound repo.
 
-Run development server:
+## Run it
+
+From the repo root:
 
 ```bash
-npm run dev
-# or
-pnpm dev
-# or
-yarn dev
+bun run dev
 ```
 
-Open http://localhost:3000 with your browser to see the result.
+That starts the main app workflow. The docs app itself can be run on its own:
 
-## Explore
+```bash
+cd docs
+bun run dev
+```
 
-In the project, you can see:
+## Check it
 
-- `lib/source.ts`: Code for content source adapter, [`loader()`](https://fumadocs.dev/docs/headless/source-api) provides the interface to access your content.
-- `lib/layout.shared.tsx`: Shared options for layouts, optional but preferred to keep.
+```bash
+cd docs
+bun run types:check
+bun run build
+```
 
-| Route                     | Description                                            |
-| ------------------------- | ------------------------------------------------------ |
-| `app/(home)`              | The route group for your landing page and other pages. |
-| `app/docs`                | The documentation layout and pages.                    |
-| `app/api/search/route.ts` | The Route Handler for search.                          |
+## Where content lives
 
-### Fumadocs MDX
+- `content/docs/` contains the MDX pages.
+- `src/app/` contains the docs app routes and layouts.
+- `src/lib/source.ts` wires Fumadocs to the MDX source tree.
+- `src/components/` contains shared docs UI.
 
-A `source.config.ts` config file has been included, you can customise different options like frontmatter schema.
+## What this docs app is for
 
-Read the [Introduction](https://fumadocs.dev/docs/mdx) for further details.
+The docs are meant to explain:
 
-## Learn More
-
-To learn more about Next.js and Fumadocs, take a look at the following
-resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js
-  features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-- [Fumadocs](https://fumadocs.dev) - learn about Fumadocs
+- how the client and SpacetimeDB module fit together
+- how to run the repo locally
+- where generated bindings live
+- which files you edit for gameplay, lobby, auth, and docs changes
+- the common git and verification workflow around those changes

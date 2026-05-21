@@ -14,7 +14,7 @@ interface Props {
 }
 
 export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
-  const { register, login, state, isConnected } = useCredentialAuth();
+  const { register, login, state, isConnected, credentialsReady, connectionError } = useCredentialAuth();
   const [username, setUsername] = useState("");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
@@ -30,7 +30,9 @@ export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
     if (!username.trim()) return setError("ENTER A USERNAME");
     if (!pw) return setError("ENTER YOUR PASSWORD");
     if (isRegister && pw !== pw2) return setError("PASSWORDS DO NOT MATCH");
+    if (connectionError) return setError(connectionError.message.toUpperCase());
     if (!isConnected) return setError("CONNECTING — TRY AGAIN IN A MOMENT");
+    if (!isRegister && !credentialsReady) return setError("ACCOUNT LIST IS STILL LOADING");
 
     try {
       if (isRegister) {
@@ -38,11 +40,7 @@ export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
         onAuthed(result.username);
       } else {
         const result = await login(username, pw);
-        // The stored token has changed; reload so the SpacetimeDB connection
-        // is rebuilt with the recovered identity. onAuthed is fired post-reload
-        // by the new session restoring `username` through the player table.
-        sessionStorage.setItem("gunbound:post-login", result.username);
-        window.location.reload();
+        onAuthed(result.username);
       }
     } catch (err) {
       setError(messageFromError(err));

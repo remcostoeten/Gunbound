@@ -549,7 +549,7 @@ conn.subscriptionBuilder()
 - Real-time updates when underlying data changes
 - Full control over what data clients can access
 
-> ⚠️ **Do NOT use Row Level Security (RLS)** — it is deprecated.
+> ⚠️ **Prefer views.** Fall back to `spacetimedb.clientVisibilityFilter.sql(...)` on TypeScript modules: as of SDK 2.2.0 the TS codegen silently skips view accessors, so the only working visibility mechanism on TS is the SQL filter. Migrate to views when codegen catches up.
 
 > ⚠️ **CRITICAL:** Procedural views (views that compute results in code) can ONLY access data via index lookups, NOT `.iter()`.
 > If you need a view that scans/filters across many rows (including the entire table), return a **query** built with the query builder (`ctx.from...`).

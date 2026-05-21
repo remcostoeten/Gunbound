@@ -1,3 +1,11 @@
+import type { MapType } from "@/features/game/types/shared";
+
+export type LobbyRoomSettings = {
+  mapType: MapType;
+  targetScore: number;
+  roundLimit: number;
+};
+
 export type LobbyRoom = {
   id: bigint;
   code: string;
@@ -5,6 +13,7 @@ export type LobbyRoom = {
   hostName: string;
   memberCount: number;
   capacity: number;
+  settings?: LobbyRoomSettings;
   highlight?: boolean;
 };
 
@@ -25,8 +34,13 @@ export type LobbyTopIcon = {
 export type LobbyActionTone = "purple" | "blue";
 
 export type LobbyChatMsg = {
-  id: number;
+  id: number | string;
   author: string;
   text: string;
   tone: "self" | "system" | "other";
+  createdAtMicros?: bigint;
+  friendRequest?: {
+    id: bigint;
+    requesterName: string;
+  };
 };
