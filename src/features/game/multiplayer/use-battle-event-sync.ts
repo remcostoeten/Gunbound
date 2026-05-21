@@ -155,7 +155,7 @@ export function useBattleEventSync(roomSession: RoomSession): UseBattleEventSync
         command,
         roomSession,
         connection.getConnection() as BattleEventConnection | null,
-      ).finally(() => {
+      ).catch(() => {
         pendingCommand.current = false;
       });
       return true;

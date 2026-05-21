@@ -163,6 +163,24 @@ function getExpectedRoundEventTick(ctx: ModuleContext, roundId: bigint): bigint 
   return maxTick + 1n;
 }
 
+function getExpectedBattleTurn(ctx: ModuleContext, roundId: bigint): number {
+  let turn = 1;
+  const events = [...ctx.db.roundEvent.round_event_round_id.filter(roundId)].sort((a, b) => {
+    if (a.tick > b.tick) return 1;
+    if (a.tick < b.tick) return -1;
+    return 0;
+  });
+
+  for (const event of events) {
+    const parsed = parseRoundEventPayload(event.kind, event.payload);
+    if (parsed.turn !== turn) continue;
+    if (event.kind === 'battle_move' || event.kind === 'battle_fire') {
+      turn = turn === 1 ? 2 : 1;
+    }
+  }
+  return turn;
+}
+
 function assertRoundTurnActor(ctx: ModuleContext, roomId: bigint, turn: number): void {
   for (const member of ctx.db.roomMember.room_member_room_id.filter(roomId)) {
     if (member.slotIndex === turn - 1) {
@@ -666,6 +684,10 @@ export const record_round_event = spacetimedb.reducer(
       throw new SenderError('round event tick out of order');
     }
     const parsedPayload = parseRoundEventPayload(kind, payload);
+    const expectedTurn = getExpectedBattleTurn(ctx, roundId);
+    if (parsedPayload.turn !== expectedTurn) {
+      throw new SenderError('not this turn');
+    }
 
     let isMember = false;
     for (const member of ctx.db.roomMember.room_member_room_id.filter(round.roomId)) {
