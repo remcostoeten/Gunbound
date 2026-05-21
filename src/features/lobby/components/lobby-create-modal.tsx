@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useLobbyRooms } from "../spacetime/use-lobby-rooms";
 import { generateRoomCode } from "../spacetime/generate-code";
+import { mapPresentationOptions } from "@/features/game/constants/map-presentation";
+import type { MapType } from "@/features/game/types/shared";
 
 type Props = {
   onClose: () => void;
@@ -14,18 +16,20 @@ const CODE_PATTERN = /^[A-Z2-9]{4,8}$/;
 export function LobbyCreateModal({ onClose, onCreated }: Props) {
   const { createRoom } = useLobbyRooms();
   const [code, setCode] = useState(() => generateRoomCode());
+  const [mapType, setMapType] = useState<MapType>(mapPresentationOptions[0].value);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const normalized = code.trim().toUpperCase();
   const valid = CODE_PATTERN.test(normalized);
+  const selectedMap = mapPresentationOptions.find((option) => option.value === mapType) ?? mapPresentationOptions[0];
 
   async function submit() {
     if (!valid || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const created = await createRoom({ code: normalized });
+      const created = await createRoom({ code: normalized, mapType });
       onCreated(created);
       onClose();
     } catch (e) {
@@ -64,6 +68,38 @@ export function LobbyCreateModal({ onClose, onCreated }: Props) {
           <p className="gb-field-hint">
             4–8 characters. Letters and digits 2–9. Share this code so a friend can join.
           </p>
+
+          <div className="gb-field">
+            <span>Map</span>
+            <div className="gb-map-preview">
+              <img
+                src={selectedMap.previewImage}
+                alt={selectedMap.label}
+                className="gb-map-preview-img"
+              />
+              <div className="gb-map-preview-info">
+                <span className="gb-map-preview-label">{selectedMap.label}</span>
+                <span className="gb-map-preview-desc">{selectedMap.description}</span>
+              </div>
+            </div>
+            <div className="gb-map-thumbs">
+              {mapPresentationOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`gb-map-thumb ${option.value === mapType ? "gb-map-thumb-on" : ""}`}
+                  onClick={() => setMapType(option.value)}
+                  disabled={busy}
+                  aria-pressed={option.value === mapType}
+                  title={option.label}
+                >
+                  <img src={option.previewImage} alt={option.label} />
+                  <span>{option.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {error && <p className="gb-field-error">{error}</p>}
         </div>
         <div className="gb-modal-foot">

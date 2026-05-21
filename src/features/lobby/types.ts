@@ -15,6 +15,8 @@ export type LobbyRoom = {
   capacity: number;
   settings?: LobbyRoomSettings;
   highlight?: boolean;
+  mine?: boolean;
+  yourTurn?: boolean;
 };
 
 export type LobbyBuddy = {

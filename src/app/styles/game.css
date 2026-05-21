@@ -4,6 +4,28 @@
    the shadcn :root tokens used by the lobby/auth/intro shell.
    ============================================================ */
 
+.game-shell-exit {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 90;
+  padding: 6px 12px;
+  background: rgba(11, 29, 56, 0.78);
+  color: #fed55d;
+  border: 1px solid rgba(254, 213, 93, 0.55);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  font-family: inherit;
+  text-transform: uppercase;
+}
+.game-shell-exit:hover {
+  background: rgba(16, 41, 74, 0.92);
+  border-color: #fed55d;
+}
+
 .game-shell {
   --panel: rgba(16, 41, 74, 0.84);
   --panel-strong: rgba(11, 29, 56, 0.92);

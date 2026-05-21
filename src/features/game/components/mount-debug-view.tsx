@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { mobilePresentationOptions } from "@/features/game/constants/mobile-presentation";
 import { getMobileSpriteFrame, getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
-import { getRiderSpriteFrame, getRiderSpriteSource } from "@/features/game/engine/rider-sprites";
+import { getMobileRiderMount, getMountedRiderFrame, getRiderSpriteSource } from "@/features/game/engine/rider-sprites";
 import type { RiderType } from "@/features/game/engine/rider-sprites";
 import type { MobileType, Vec2 } from "@/features/game/types/shared";
 
@@ -166,6 +166,9 @@ export function MountDebugView(): React.JSX.Element {
       context.translate(-position.x, 0);
     }
     context.imageSmoothingEnabled = false;
+    if (shouldDrawRider(type)) {
+      drawDebugRider(context, type, position, visualTime, scale);
+    }
     context.drawImage(
       image,
       frame * mobileSource.width,
@@ -177,9 +180,6 @@ export function MountDebugView(): React.JSX.Element {
       destinationWidth,
       destinationHeight
     );
-    if (shouldDrawRider(type)) {
-      drawDebugRider(context, type, position, visualTime, scale);
-    }
     context.restore();
     drawUnitLabel(context, type, position, selected);
   }
@@ -195,11 +195,13 @@ export function MountDebugView(): React.JSX.Element {
     }
 
     const riderSource = getRiderSpriteSource(activeCharacter);
-    const frame = getRiderSpriteFrame(visualTime + debugMobileTypes.indexOf(type) * 0.09, 4.5, riderSource.frameCount);
-    const destinationWidth = riderSource.width * riderSource.battleScale * scale;
-    const destinationHeight = riderSource.height * riderSource.battleScale * scale;
-    const destinationX = position.x - destinationWidth * 0.5 + (riderSource.battleTranslateX + riderOffset.x) * scale;
-    const destinationY = position.y - destinationHeight + (riderSource.battleTranslateY + riderOffset.y) * scale;
+    const mount = getMobileRiderMount(type);
+    const frame = getMountedRiderFrame(activeCharacter);
+    const riderScale = scale * mount.scale;
+    const destinationWidth = riderSource.width * riderSource.battleScale * riderScale;
+    const destinationHeight = riderSource.height * riderSource.battleScale * riderScale;
+    const destinationX = position.x - destinationWidth * 0.5 + (riderSource.battleTranslateX + mount.x + riderOffset.x) * scale;
+    const destinationY = position.y - destinationHeight + (riderSource.battleTranslateY + mount.y + riderOffset.y) * scale;
 
     context.drawImage(
       riderCanvas,

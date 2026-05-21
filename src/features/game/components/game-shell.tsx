@@ -163,9 +163,10 @@ const CHANNEL_CHAT: ChannelChatMessage[] = [
 
 type GameShellProps = {
     spacetimeRoomId?: bigint;
+    onExitToLobby?: () => void;
 };
 
-export function GameShell({ spacetimeRoomId }: GameShellProps) {
+export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
     const scene = useGameState(selectScene);
     const players = useGameState(selectPlayers);
     const winner = useGameState(selectWinner);
@@ -319,6 +320,16 @@ export function GameShell({ spacetimeRoomId }: GameShellProps) {
     return (
         <main className={battleImmersive ? "game-shell game-shell--immersive" : "game-shell"}>
             <GameCanvas />
+            {spacetimeRoomId !== undefined && onExitToLobby ? (
+                <button
+                    type="button"
+                    className="game-shell-exit"
+                    onClick={onExitToLobby}
+                    title="Back to lobby — the match keeps running"
+                >
+                    ← Lobby
+                </button>
+            ) : null}
             {scene === "playing" ? <Hud /> : null}
             {scene === "playing" ? <HistoryPanel /> : null}
             {scene === "playing" ? <TurnBanner /> : null}

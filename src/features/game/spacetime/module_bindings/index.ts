@@ -36,8 +36,10 @@ import {
 // Import all reducer arg schemas
 import CreateRoomReducer from "./create_room_reducer";
 import EndRoundReducer from "./end_round_reducer";
+import JoinQueueReducer from "./join_queue_reducer";
 import JoinRoomByCodeReducer from "./join_room_by_code_reducer";
 import KickFromRoomReducer from "./kick_from_room_reducer";
+import LeaveQueueReducer from "./leave_queue_reducer";
 import LeaveRoomReducer from "./leave_room_reducer";
 import RecordRoundEventReducer from "./record_round_event_reducer";
 import RegisterCredentialReducer from "./register_credential_reducer";
@@ -50,6 +52,7 @@ import SendFriendRequestReducer from "./send_friend_request_reducer";
 import SendLobbyChatReducer from "./send_lobby_chat_reducer";
 import SendRoomInviteReducer from "./send_room_invite_reducer";
 import SetEmptyDataEnabledReducer from "./set_empty_data_enabled_reducer";
+import SetLobbyPresenceReducer from "./set_lobby_presence_reducer";
 import SetPlayerCountryReducer from "./set_player_country_reducer";
 import SetPlayerNameReducer from "./set_player_name_reducer";
 import SetPlayerProfileReducer from "./set_player_profile_reducer";
@@ -75,6 +78,7 @@ import RoomMemberRow from "./room_member_table";
 import RoundRow from "./round_table";
 import RoundEventRow from "./round_event_table";
 import RoundStatRow from "./round_stat_table";
+import WaitingPlayerRow from "./waiting_player_table";
 
 /** Type-only namespace exports for generated type groups. */
 
@@ -286,14 +290,27 @@ const tablesSchema = __schema({
       { name: 'round_stat_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, RoundStatRow),
+  waitingPlayer: __table({
+    name: 'waiting_player',
+    indexes: [
+      { accessor: 'identity', name: 'waiting_player_identity_idx_btree', algorithm: 'btree', columns: [
+        'identity',
+      ] },
+    ],
+    constraints: [
+      { name: 'waiting_player_identity_key', constraint: 'unique', columns: ['identity'] },
+    ],
+  }, WaitingPlayerRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
   __reducerSchema("create_room", CreateRoomReducer),
   __reducerSchema("end_round", EndRoundReducer),
+  __reducerSchema("join_queue", JoinQueueReducer),
   __reducerSchema("join_room_by_code", JoinRoomByCodeReducer),
   __reducerSchema("kick_from_room", KickFromRoomReducer),
+  __reducerSchema("leave_queue", LeaveQueueReducer),
   __reducerSchema("leave_room", LeaveRoomReducer),
   __reducerSchema("record_round_event", RecordRoundEventReducer),
   __reducerSchema("register_credential", RegisterCredentialReducer),
@@ -306,6 +323,7 @@ const reducersSchema = __reducers(
   __reducerSchema("send_lobby_chat", SendLobbyChatReducer),
   __reducerSchema("send_room_invite", SendRoomInviteReducer),
   __reducerSchema("set_empty_data_enabled", SetEmptyDataEnabledReducer),
+  __reducerSchema("set_lobby_presence", SetLobbyPresenceReducer),
   __reducerSchema("set_player_country", SetPlayerCountryReducer),
   __reducerSchema("set_player_name", SetPlayerNameReducer),
   __reducerSchema("set_player_profile", SetPlayerProfileReducer),

@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { useSpacetimeDB, useTable } from "spacetimedb/react";
 
 import { tables } from "@/features/game/spacetime";
-import { readStoredToken, writeStoredToken } from "@/features/game/spacetime/token-storage";
+import { readStoredToken, writeStoredToken, writeStoredUsername } from "@/features/game/spacetime/token-storage";
 import {
   decryptToken,
   encryptToken,
@@ -53,6 +53,7 @@ export function useCredentialAuth(): UseCredentialAuthResult {
           username: validated.username,
           encryptedToken
         });
+        writeStoredUsername(validated.username);
         return { username: validated.username };
       } finally {
         setState("idle");
@@ -78,6 +79,7 @@ export function useCredentialAuth(): UseCredentialAuthResult {
           throw new Error("could not decrypt account");
         }
         writeStoredToken(token);
+        writeStoredUsername(validated.username);
         return { username: validated.username };
       } finally {
         setState("idle");

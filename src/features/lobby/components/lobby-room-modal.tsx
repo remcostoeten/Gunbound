@@ -170,13 +170,15 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
         <div className="gb-modal" onClick={(e) => e.stopPropagation()}>
           <div className="gb-modal-head">
             <span className="gb-modal-name">Room not available</span>
-            <button className="gb-modal-x" onClick={onClose}>✕</button>
+            <button className="gb-modal-x" onClick={leave}>✕</button>
           </div>
           <div className="gb-modal-body">
-            <p className="gb-field-hint">This room may have closed. Try another.</p>
+            <p className="gb-field-hint">
+              This room has closed. Leave to clear your membership so you can join another.
+            </p>
           </div>
           <div className="gb-modal-foot">
-            <button className="gb-modal-btn" onClick={onClose}>Close</button>
+            <button className="gb-modal-btn gb-modal-btn-start" onClick={leave}>Leave</button>
           </div>
         </div>
       </div>

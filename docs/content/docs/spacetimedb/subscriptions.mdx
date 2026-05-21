@@ -8,8 +8,8 @@ description: useTable hooks, filtered queries, and reactive updates
 Subscriptions are how the client receives real-time updates from SpacetimeDB. When the server mutates a table via a reducer, all subscribed clients are notified and re-render automatically.
 
 The client uses two mechanisms:
-1. **Broad subscription**: `subscribeToAll()` subscribes to all public tables
-2. **Filtered subscription**: `useTable()` React hook receives filtered rows from subscribed tables
+1. **Broad subscription**: `subscribeToAllTables()` subscribes to all public tables
+2. **Query-specific subscription**: `useTable()` can subscribe to a table query, including filtered query builders such as `tables.room.where(...)`
 
 ## Provider Setup
 
@@ -43,16 +43,7 @@ The provider wraps the entire app, ensuring the connection is available to all c
 ```typescript
 function onConnect(conn: DbConnection) {
   // Subscribe to all public tables
-  conn.subscriptionBuilder().subscribeToAll();
-
-  // Handle subscription events
-  conn.subscriptionBuilder()
-    .onApplied(() => {
-      console.log('Initial subscription applied');
-    })
-    .onError((err) => {
-      console.error('Subscription error:', err);
-    });
+  conn.subscriptionBuilder().subscribeToAllTables();
 }
 
 function onConnectError(err: Error) {
@@ -61,18 +52,19 @@ function onConnectError(err: Error) {
 ```
 
 Once subscribed, all public table data flows to the client in real-time.
+`subscribeToAllTables()` is a broad convenience API; after it is initiated, that subscription cannot be canceled. Prefer query-specific subscriptions for large tables or narrow screens.
 
 ## useTable Hook
 
 The `useTable` hook reads data from a subscribed table:
 
 ```typescript
-const [rows, isLoading] = useTable(tables.player);
+const [rows, isReady] = useTable(tables.player);
 ```
 
 Returns a tuple:
 - `rows`: Array of row objects from the table
-- `isLoading`: Boolean indicating if subscription is still loading initial data
+- `isReady`: Boolean indicating whether the subscription has applied. Treat `!isReady` as "initial data is not ready yet", not as a generic network loading state.
 
 ### Basic Usage
 
@@ -81,9 +73,9 @@ import { useTable } from 'spacetimedb/react';
 import { tables } from '@/features/game/spacetime';
 
 function PlayerList() {
-  const [players, isLoading] = useTable(tables.player);
+  const [players, isReady] = useTable(tables.player);
 
-  if (isLoading) return <div>Loading players...</div>;
+  if (!isReady) return <div>Loading players...</div>;
 
   return (
     <ul>
@@ -95,12 +87,19 @@ function PlayerList() {
 }
 ```
 
-### Filtering in JavaScript
+### Filtered Queries
 
-`useTable` always returns all rows from a table. Filter in JavaScript:
+`useTable` can subscribe directly to a filtered query builder:
 
 ```typescript
-const [allRooms, isLoading] = useTable(tables.room);
+const waitingRoomQuery = tables.room.where((r) => r.status.eq('waiting'));
+const [waitingRooms, roomsReady] = useTable(waitingRoomQuery);
+```
+
+For app-level derived views, it is still fine to filter and sort in JavaScript after reading a table:
+
+```typescript
+const [allRooms, roomsReady] = useTable(tables.room);
 
 // Filter to non-ended rooms
 const activeRooms = allRooms.filter(r => r.status !== 'ended');
@@ -142,10 +141,10 @@ export function useLobbyRooms(): {
   createRoom(code?: string): Promise<void>;
   joinRoomByCode(code: string): Promise<void>;
   quickJoin(): Promise<void>;
-  isLoading: boolean;
+  isReady: boolean;
 } {
   const connection = useSpacetimeDB();
-  const [dbRooms, roomsLoading] = useTable(tables.room);
+  const [dbRooms, roomsReady] = useTable(tables.room);
   const [players] = useTable(tables.player);
 
   // Filter to non-ended rooms
@@ -186,7 +185,7 @@ export function useLobbyRooms(): {
     await joinRoomByCode(rooms[0].code);
   }, [rooms, joinRoomByCode]);
 
-  return { rooms, createRoom, joinRoomByCode, quickJoin, isLoading: roomsLoading };
+  return { rooms, createRoom, joinRoomByCode, quickJoin, isReady: roomsReady };
 }
 ```
 
@@ -204,7 +203,7 @@ Per-room subscription and actions:
 // src/features/lobby/spacetime/use-room-session.ts
 export function useRoomSession(roomId: bigint) {
   const connection = useSpacetimeDB();
-  const [members, membersLoading] = useTable(tables.roomMember);
+  const [members, membersReady] = useTable(tables.roomMember);
   const [players] = useTable(tables.player);
   const [messages] = useTable(tables.chatMessage);
 
@@ -273,7 +272,7 @@ export function useRoomSession(roomId: bigint) {
     setReady,
     selectMobile,
     leave,
-    isLoading: membersLoading,
+    isReady: membersReady,
   };
 }
 ```
@@ -348,10 +347,10 @@ const roomStats = useMemo(() =>
 
 ### Subscribe Only to What You Need
 
-If you only need active rooms (not ended), the hook still receives all rooms. This is acceptable because:
+If you only need active rooms (not ended), you can subscribe to a filtered query with `tables.room.where(...)`. If the table is small or the derived view is UI-specific, filtering after a broad table read can still be acceptable because:
 1. Filtering in JavaScript is fast
 2. The network overhead is minimal (binary encoding)
-3. The alternative (server-side filtering) is more complex
+3. The broad result can be reused by multiple nearby views
 
 For very large tables (thousands of rows), consider adding server-side views to reduce network bandwidth.
 
@@ -364,11 +363,25 @@ useEffect(() => {
   if (!connection) return;
   
   // Subscribe to all public tables once
-  connection.subscriptionBuilder().subscribeToAll();
+  connection.subscriptionBuilder().subscribeToAllTables();
 }, [connection]);
 ```
 
 Subsequent component mounts don't re-subscribe; they reuse the existing subscription via the provider.
+The broad `subscribeToAllTables()` subscription cannot be canceled after initiation. Components that mount and unmount frequently should prefer `useTable(query, { enabled })` or explicit `subscriptionBuilder().subscribe([...])` calls whose handles can be managed.
+
+### Subscription Events
+
+Attach lifecycle callbacks to the same builder chain that starts the subscription:
+
+```typescript
+conn.subscriptionBuilder()
+  .onApplied(() => console.log('Room subscription ready'))
+  .onError((err) => console.error('Room subscription failed:', err))
+  .subscribe(["SELECT * FROM room WHERE status != 'ended'"]);
+```
+
+Calling `onApplied()` or `onError()` on a builder without a final `subscribe(...)` call only configures that builder; it does not start a subscription.
 
 ## Debugging Subscriptions
 
@@ -377,11 +390,11 @@ To debug what data the client is receiving:
 ```typescript
 // Temporary debug hook
 function useDebugTable(table: any) {
-  const [rows, loading] = useTable(table);
+  const [rows, isReady] = useTable(table);
   useEffect(() => {
     console.log(`Table ${table.name}:`, rows);
   }, [rows]);
-  return [rows, loading];
+  return [rows, isReady];
 }
 
 // Usage:

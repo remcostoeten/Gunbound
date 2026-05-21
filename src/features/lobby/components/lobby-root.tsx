@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSpacetimeDB } from "spacetimedb/react";
 import { playTrack, registerTrack } from "@/lib/music-bus";
 import { LobbyTopbar } from "./lobby-topbar";
@@ -10,24 +10,33 @@ import { LobbyBottom } from "./lobby-bottom";
 import { LobbyRoomModal } from "./lobby-room-modal";
 import { LobbyCreateModal } from "./lobby-create-modal";
 import { LobbyInboxModal } from "./lobby-inbox-modal";
+import { LobbyMyInfoModal } from "./lobby-my-info-modal";
+import { LobbyRoomSearchModal } from "./lobby-room-search-modal";
+import { LobbyLeaderboardModal } from "./lobby-leaderboard-modal";
 import { LobbyToastStack } from "./lobby-toast-stack";
+import { useMatchmakingQueue } from "../spacetime/use-matchmaking-queue";
+import { useYourTurnInRoom } from "../spacetime/use-your-turn-in-room";
 import { useLobbyState } from "../hooks/use-lobby-state";
 import { useLobbyChat } from "../spacetime/use-lobby-chat";
 import { useLobbyFriends, type IncomingRoomInviteView } from "../spacetime/use-lobby-friends";
 import { useLobbyRooms, type LobbyRoomView } from "../spacetime/use-lobby-rooms";
-import { ROOM_STATUS, useCurrentPlayer, useEmptyDataMode, usePlayerCountrySync } from "@/features/game/spacetime";
+import { ROOM_STATUS, useCurrentPlayer, useCurrentRoom, useEmptyDataMode, usePlayerCountrySync } from "@/features/game/spacetime";
 import type { LobbyChatMsg } from "../types";
 import type { LobbyRoom } from "../types";
 
 type Props = {
   username?: string | null;
+  pendingRoomCode?: string | null;
+  onPendingRoomConsumed?: () => void;
   onReplay: () => void;
+  onLogout?: () => void;
   onEnterBattle?: (roomId: bigint) => void;
 };
 
 const lobbyMp3 = "/audio/lobby.mp3";
 
-function toLobbyRoom(view: LobbyRoomView): LobbyRoom {
+function toLobbyRoom(view: LobbyRoomView, mineRoomId?: bigint, yourTurn?: boolean): LobbyRoom {
+  const mine = mineRoomId !== undefined && view.id === mineRoomId;
   return {
     id: view.id,
     code: view.code,
@@ -35,23 +44,43 @@ function toLobbyRoom(view: LobbyRoomView): LobbyRoom {
     hostName: view.hostName,
     memberCount: view.memberCount,
     capacity: view.capacity,
-    settings: view.settings
+    settings: view.settings,
+    mine,
+    yourTurn: mine ? yourTurn : undefined,
   };
 }
 
-export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
+export function LobbyRoot({
+  username,
+  pendingRoomCode,
+  onPendingRoomConsumed,
+  onReplay,
+  onLogout,
+  onEnterBattle,
+}: Props) {
   const connection = useSpacetimeDB();
   const [inboxOpen, setInboxOpen] = useState(false);
+  const [myInfoOpen, setMyInfoOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const { player } = useCurrentPlayer();
   usePlayerCountrySync();
   const emptyDataMode = useEmptyDataMode();
   const selfName = player?.name?.trim() || username || null;
   const s = useLobbyState(selfName, emptyDataMode.enabled);
   const { rooms: roomViews, joinRoomByCode, quickJoin } = useLobbyRooms();
+  const matchmaking = useMatchmakingQueue();
+  const { room: currentDbRoom, isReady: currentRoomReady } = useCurrentRoom();
+  const selfIdentityHex = player?.identity.toHexString();
+  const isYourTurn = useYourTurnInRoom(currentDbRoom?.id, selfIdentityHex);
+  const wasSearchingRef = useRef(false);
   const lobbyChat = useLobbyChat(1);
   const lobbyFriends = useLobbyFriends();
 
-  const rooms = useMemo(() => roomViews.map(toLobbyRoom), [roomViews]);
+  const rooms = useMemo(
+    () => roomViews.map((view) => toLobbyRoom(view, currentDbRoom?.id, isYourTurn)),
+    [roomViews, currentDbRoom, isYourTurn],
+  );
   const messages = useMemo<LobbyChatMsg[]>(() => {
     const requestMessages = lobbyFriends.incomingRequests.map<LobbyChatMsg>((request) => ({
       id: `friend-request-${request.id.toString()}`,
@@ -79,6 +108,97 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
     playTrack("lobby");
   }, []);
 
+  const connectionRef = useRef(connection);
+  connectionRef.current = connection;
+  const presenceActiveRef = useRef(false);
+  useEffect(() => {
+    if (presenceActiveRef.current) return;
+    const conn = connection.getConnection();
+    if (!conn) return;
+    presenceActiveRef.current = true;
+    try {
+      conn.reducers.setLobbyPresence({ active: true });
+    } catch {
+      presenceActiveRef.current = false;
+    }
+  }, [connection]);
+  useEffect(() => {
+    return () => {
+      if (!presenceActiveRef.current) return;
+      presenceActiveRef.current = false;
+      const conn = connectionRef.current.getConnection();
+      if (!conn) return;
+      try {
+        conn.reducers.setLobbyPresence({ active: false });
+      } catch {
+        // ignore — disconnect will mark offline anyway
+      }
+    };
+  }, []);
+
+  const restoredRoomRef = useRef(false);
+  useEffect(() => {
+    if (restoredRoomRef.current) return;
+    if (s.activeRoom) return;
+    if (!currentDbRoom) return;
+    if (currentDbRoom.status === ROOM_STATUS.IN_MATCH) return;
+    const view = roomViews.find((r) => r.id === currentDbRoom.id);
+    if (!view) return;
+    restoredRoomRef.current = true;
+    s.setActiveRoom(toLobbyRoom(view));
+  }, [currentDbRoom, roomViews, s]);
+
+  const joinAttemptedCodeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pendingRoomCode) return;
+    if (joinAttemptedCodeRef.current === pendingRoomCode) return;
+    if (!currentRoomReady) return;
+    if (currentDbRoom) {
+      const view = roomViews.find((r) => r.id === currentDbRoom.id);
+      if (view && view.code === pendingRoomCode) {
+        joinAttemptedCodeRef.current = pendingRoomCode;
+        s.setActiveRoom(toLobbyRoom(view));
+        onPendingRoomConsumed?.();
+        return;
+      }
+      joinAttemptedCodeRef.current = pendingRoomCode;
+      s.pushToast(`Already in a room — leave it first to join ${pendingRoomCode}`);
+      onPendingRoomConsumed?.();
+      return;
+    }
+    const conn = connection.getConnection();
+    if (!conn) return;
+    joinAttemptedCodeRef.current = pendingRoomCode;
+    (async () => {
+      try {
+        await joinRoomByCode(pendingRoomCode);
+      } catch (e) {
+        s.pushToast(messageFromError(e));
+        onPendingRoomConsumed?.();
+      }
+    })();
+  }, [pendingRoomCode, currentDbRoom, currentRoomReady, roomViews, connection, joinRoomByCode, s, onPendingRoomConsumed]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (s.activeRoom) {
+      url.searchParams.set("room", s.activeRoom.code);
+    } else {
+      url.searchParams.delete("room");
+    }
+    if (url.toString() !== window.location.href) {
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, [s.activeRoom]);
+
+  useEffect(() => {
+    if (!s.activeRoom) return;
+    if (!pendingRoomCode) return;
+    if (s.activeRoom.code !== pendingRoomCode) return;
+    onPendingRoomConsumed?.();
+  }, [s.activeRoom, pendingRoomCode, onPendingRoomConsumed]);
+
   useEffect(() => {
     if (!username) return;
     const desired = username.trim();
@@ -91,7 +211,44 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
     });
   }, [username, player, connection]);
 
+  useEffect(() => {
+    if (matchmaking.inQueue) {
+      wasSearchingRef.current = true;
+      return;
+    }
+    if (!wasSearchingRef.current) return;
+    if (!currentDbRoom || s.activeRoom) return;
+    const view = roomViews.find(r => r.id === currentDbRoom.id);
+    if (view) {
+      wasSearchingRef.current = false;
+      s.setActiveRoom(toLobbyRoom(view));
+    }
+  }, [matchmaking.inQueue, currentDbRoom, roomViews, s]);
+
+  const handleWaiting = useCallback(async () => {
+    try {
+      if (matchmaking.inQueue) {
+        await matchmaking.leaveQueue();
+        s.pushToast("Left the matchmaking queue");
+      } else {
+        wasSearchingRef.current = true;
+        await matchmaking.joinQueue();
+        if (!matchmaking.inQueue) {
+          s.pushToast("Match found! Opening room…");
+        } else {
+          s.pushToast("Looking for an opponent…");
+        }
+      }
+    } catch (e) {
+      s.pushToast(messageFromError(e));
+    }
+  }, [matchmaking, s]);
+
   const handleRoomClick = useCallback(async (r: LobbyRoom) => {
+    if (r.mine && r.status === "Playing") {
+      onEnterBattle?.(r.id);
+      return;
+    }
     if (r.status === "Playing") {
       s.pushToast(`Room ${r.code} is already playing`);
       return;
@@ -106,7 +263,7 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
     } catch (e) {
       s.pushToast(messageFromError(e));
     }
-  }, [joinRoomByCode, s]);
+  }, [joinRoomByCode, onEnterBattle, s]);
 
   const handleQuickjoin = useCallback(async () => {
     try {
@@ -194,14 +351,20 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
       <div className="gb-frame">
         <LobbyTopbar
           onExit={onReplay}
-          onIconClick={(label) => s.pushToast(`${label} is not available yet`)}
+          onLogout={onLogout}
+          onIconClick={(label) => {
+            if (label === "My Info") { setMyInfoOpen(true); return; }
+            if (label === "Rankings") { setLeaderboardOpen(true); return; }
+            s.pushToast(`${label} is not available yet`);
+          }}
         />
         <LobbyActionRow
-          onWaiting={() => s.pushToast("You are now waiting for an invite")}
+          onWaiting={handleWaiting}
+          inQueue={matchmaking.inQueue}
           onQuickjoin={handleQuickjoin}
           onCreate={() => s.setCreating(true)}
           onFriend={() => setInboxOpen(true)}
-          onSearch={() => s.pushToast("Enter a room number…")}
+          onSearch={() => setSearchOpen(true)}
           canToggleEmptyData={player?.isAdmin === true}
           emptyDataEnabled={emptyDataMode.enabled}
           onToggleEmptyData={handleToggleEmptyData}
@@ -242,6 +405,25 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
           onClose={() => setInboxOpen(false)}
           onFriendResponse={handleFriendRequestResponse}
           onRoomInviteResponse={handleRoomInviteResponse}
+        />
+      )}
+      {myInfoOpen && player && (
+        <LobbyMyInfoModal player={player} onClose={() => setMyInfoOpen(false)} />
+      )}
+      {leaderboardOpen && (
+        <LobbyLeaderboardModal
+          selfIdentityHex={player?.identity.toHexString()}
+          onClose={() => setLeaderboardOpen(false)}
+        />
+      )}
+      {searchOpen && (
+        <LobbyRoomSearchModal
+          onClose={() => setSearchOpen(false)}
+          onJoin={async (code) => {
+            await joinRoomByCode(code);
+            const target = roomViews.find(r => r.code === code.toUpperCase());
+            if (target) s.setActiveRoom(toLobbyRoom(target));
+          }}
         />
       )}
 

@@ -304,6 +304,24 @@ export const RoomInvite = table(
 );
 
 /**
+ * One row per player currently in the matchmaking queue.
+ *
+ * When a second player calls `join_queue`, the server pairs them immediately:
+ * both rows are removed and a shared room is created. If no partner is
+ * available the row persists until `leave_queue` or disconnect.
+ */
+export const WaitingPlayer = table(
+  {
+    name: 'waiting_player',
+    public: true
+  },
+  {
+    identity: t.identity().primaryKey(),
+    joinedAt: t.timestamp()
+  }
+);
+
+/**
  * Account credentials for cross-device login.
  *
  * Each row binds a chosen `username` to the player's SpacetimeDB `identity`.
@@ -350,7 +368,8 @@ const spacetimedb = schema({
   friendRequest: FriendRequest,
   friendship: Friendship,
   roomInvite: RoomInvite,
-  credential: Credential
+  credential: Credential,
+  waitingPlayer: WaitingPlayer
 });
 
 // Per-subscriber visibility filters for the social tables. Tables stay

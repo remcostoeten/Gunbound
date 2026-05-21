@@ -81,6 +81,12 @@ export function useBattleEventSync(roomSession: RoomSession): UseBattleEventSync
     if (!roomSession.activeRound) return;
     if (scene !== "playing") return;
 
+    let unprocessedCount = 0;
+    for (const event of roomSession.roundEvents) {
+      if (!processedEventIds.current.has(event.id.toString())) unprocessedCount += 1;
+    }
+    const inCatchUp = unprocessedCount > 1;
+
     for (const event of roomSession.roundEvents) {
       const eventId = event.id.toString();
       if (processedEventIds.current.has(eventId)) continue;
@@ -90,10 +96,15 @@ export function useBattleEventSync(roomSession: RoomSession): UseBattleEventSync
         continue;
       }
 
+      const turnBefore = useGameStore.getState().turn;
       if (!applyBattlePayload(event.kind, payload)) break;
       processedEventIds.current.add(eventId);
+
+      if (inCatchUp && (event.kind === BATTLE_EVENT_KIND.MOVE || event.kind === BATTLE_EVENT_KIND.FIRE)) {
+        fastForwardUntilTurnAdvances(turnBefore);
+      }
     }
-  }, [roomSession.activeRound, roomSession.roundEvents, scene]);
+  }, [roomSession.activeRound, roomSession.roundEvents, scene, turn]);
 
   useEffect(() => {
     const activeRound = roomSession.activeRound;
@@ -280,4 +291,21 @@ function computeStatsForMember(
 function readTrailingDamage(text: string): number {
   const match = / for (\d+)\./.exec(text);
   return match ? Number(match[1]) : 0;
+}
+
+/**
+ * Synchronously advances the simulation in 60Hz steps until either the
+ * turn counter changes or a safety cap fires. Used on rejoin/refresh so a
+ * client catching up across many turns lands on the current state without
+ * sitting through a minute of animated replay.
+ */
+function fastForwardUntilTurnAdvances(turnBefore: number): void {
+  const MAX_STEPS = 600;
+  const STEP_SECONDS = 1 / 60;
+  for (let i = 0; i < MAX_STEPS; i += 1) {
+    const state = useGameStore.getState();
+    if (state.scene !== "playing") return;
+    if (state.turn !== turnBefore) return;
+    state.stepSimulation(STEP_SECONDS);
+  }
 }

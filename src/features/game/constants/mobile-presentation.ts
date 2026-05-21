@@ -103,7 +103,7 @@ const mobilePresentationMap: Record<MobileType, MobilePresentation> = {
   },
   sate: {
     value: "sate",
-    label: "Sate",
+    label: "A.Sate",
     hp: "104",
     move: "Medium",
     shot: "Pulse",

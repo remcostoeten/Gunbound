@@ -9,7 +9,7 @@ import { createProjectileRenderStyle, getProjectileImpactStyle, getProjectileTra
 import { getSkyPalette, getTerrainPalette } from "@/features/game/engine/terrain-theme";
 import { getMobileSpriteFrame, getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
 import { getLaunchRadians, getMuzzlePosition } from "@/features/game/engine/physics";
-import { getMobileRiderSpriteSource, getRiderSpriteFrame } from "@/features/game/engine/rider-sprites";
+import { getMobileRiderMount, getMobileRiderSpriteSource } from "@/features/game/engine/rider-sprites";
 import { useGameLoop } from "@/features/game/hooks/use-game-loop";
 import { useInput } from "@/features/game/hooks/use-input";
 import { useGameStore } from "@/features/game/store/game-store";
@@ -786,15 +786,15 @@ function drawMobileSprite(context: CanvasRenderingContext2D, player: Player, spr
     context.scale(-1, 1);
     context.translate(-player.mobile.position.x, 0);
   }
+  drawMountedRider(context, player, spriteCache);
   context.drawImage(
     sprite, frame * spriteSource.width, 0, spriteSource.width, spriteSource.height,
     destinationX, destinationY, destinationWidth, destinationHeight
   );
-  drawMountedRider(context, player, spriteCache, visualTime);
   context.restore();
 }
 
-function drawMountedRider(context: CanvasRenderingContext2D, player: Player, spriteCache: SpriteCache, visualTime: number): void {
+function drawMountedRider(context: CanvasRenderingContext2D, player: Player, spriteCache: SpriteCache): void {
   const riderSprite = getCachedRiderSprite(spriteCache, player.mobile.type);
   const riderSource = getMobileRiderSpriteSource(player.mobile.type);
   if (riderSprite === null || riderSource === null) {
@@ -805,11 +805,20 @@ function drawMountedRider(context: CanvasRenderingContext2D, player: Player, spr
     return;
   }
 
-  const frame = getRiderSpriteFrame(visualTime + player.id * 0.13, 4.5, riderSource.frameCount);
-  const destinationWidth = riderSource.width * riderSource.battleScale;
-  const destinationHeight = riderSource.height * riderSource.battleScale;
-  const destinationX = player.mobile.position.x - destinationWidth * 0.5 + riderSource.battleTranslateX;
-  const destinationY = player.mobile.position.y - destinationHeight + riderSource.battleTranslateY;
+  const mount = getMobileRiderMount(player.mobile.type);
+  const frame = 0;
+  const destinationWidth = riderSource.width * riderSource.battleScale * mount.scale;
+  const destinationHeight = riderSource.height * riderSource.battleScale * mount.scale;
+  const destinationX =
+    player.mobile.position.x -
+    destinationWidth * 0.5 +
+    riderSource.battleTranslateX +
+    mount.x;
+  const destinationY =
+    player.mobile.position.y -
+    destinationHeight +
+    riderSource.battleTranslateY +
+    mount.y;
 
   context.drawImage(
     riderSprite,
