@@ -146,8 +146,8 @@ import { SpacetimeDBProvider, useTable, Identity } from 'spacetimedb/react';
 conn.reducers.doSomething({ value: 'test' });
 conn.reducers.updateItem({ itemId: 1n, newValue: 42 });
 
-// ✅ CORRECT DATA ACCESS — useTable returns [rows, isLoading]
-const [items, isLoading] = useTable(tables.item);
+// ✅ CORRECT DATA ACCESS — useTable returns [rows, isReady]
+const [items, isReady] = useTable(tables.item);
 ```
 
 ### ⛔ DO NOT:
@@ -191,7 +191,7 @@ const [items, isLoading] = useTable(tables.item);
 | `@spacetimedb/sdk` | `spacetimedb` | 404 / missing subpath |
 | `conn.reducers.foo("val")` | `conn.reducers.foo({ param: "val" })` | Wrong reducer syntax |
 | Inline `connectionBuilder` | `useMemo(() => ..., [])` | Reconnects every render |
-| `const rows = useTable(table)` | `const [rows, isLoading] = useTable(table)` | Tuple destructuring |
+| `const rows = useTable(table)` | `const [rows, isReady] = useTable(table)` | Tuple destructuring |
 | Optimistic UI updates | Let subscriptions drive state | Desync issues |
 | `<SpacetimeDBProvider builder={...}>` | `connectionBuilder={...}` | Wrong prop name |
 
@@ -527,7 +527,7 @@ if (scheduleAt.tag === 'Time') {
 ### Subscription patterns (client-side)
 ```typescript
 // Subscribe to ALL public tables (simplest)
-conn.subscriptionBuilder().subscribeToAll();
+conn.subscriptionBuilder().subscribeToAllTables();
 
 // Subscribe to specific tables with SQL
 conn.subscriptionBuilder().subscribe([
@@ -539,7 +539,7 @@ conn.subscriptionBuilder().subscribe([
 conn.subscriptionBuilder()
   .onApplied(() => console.log('Initial data loaded'))
   .onError((e) => console.error('Subscription failed:', e))
-  .subscribeToAll();
+  .subscribe(['SELECT * FROM message']);
 ```
 
 ### Private table + view pattern (RECOMMENDED)
@@ -634,8 +634,8 @@ const builder = useMemo(() =>
   []  // Empty deps - only create once
 );
 
-// useTable returns tuple [rows, isLoading]
-const [rows, isLoading] = useTable(tables.myTable);
+// useTable returns tuple [rows, isReady]
+const [rows, isReady] = useTable(tables.myTable);
 
 // Compare identities using toHexString()
 const isOwner = row.ownerId.toHexString() === myIdentity.toHexString();

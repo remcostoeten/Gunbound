@@ -296,7 +296,7 @@ await conn.reducers.createRoom({ code: 'TEST1' });
 conn.subscriptionBuilder()
   .onApplied(() => console.log('Subscription ready'))
   .onError((e) => console.error('Subscription error:', e))
-  .subscribeToAll();
+  .subscribe(['SELECT * FROM player']);
 ```
 
 ### Check localStorage

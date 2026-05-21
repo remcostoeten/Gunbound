@@ -4,6 +4,8 @@ npm-debug.log*
 dist
 .vercel
 tsconfig.tsbuildinfo
+playwright-report/
+test-results/
 
 # SpacetimeDB local artifacts
 server/spacetime.local.json

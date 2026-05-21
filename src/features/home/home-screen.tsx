@@ -8,7 +8,9 @@ import { LobbyRoot } from "@/features/lobby";
 import { GameShell } from "@/features/game/components/game-shell";
 import {
   GunboundSpacetimeProvider,
+  ROOM_STATUS,
   useCurrentPlayer,
+  useCurrentRoom,
 } from "@/features/game/spacetime";
 import { readStoredToken } from "@/features/game/spacetime/token-storage";
 
@@ -32,6 +34,7 @@ export function HomeScreen() {
 function HomeScreenInner({ bumpSession }: { bumpSession: () => void }) {
   const connection = useSpacetimeDB();
   const { player, isReady: playerReady } = useCurrentPlayer();
+  const { room: currentDbRoom, isReady: currentRoomReady } = useCurrentRoom();
 
   const [stage, setStage] = useState<Stage>("checking");
   const [replayKey, setReplayKey] = useState(0);
@@ -54,14 +57,20 @@ function HomeScreenInner({ bumpSession }: { bumpSession: () => void }) {
     if (stage !== "checking") return;
     if (!connection.identity) return;
     if (!playerReady) return;
+    if (!currentRoomReady) return;
     resumedRef.current = true;
     if (player && player.name.trim().length > 0) {
       setUsername(player.name);
-      setStage("lobby");
+      if (currentDbRoom && currentDbRoom.status === ROOM_STATUS.IN_MATCH) {
+        setBattleRoomId(currentDbRoom.id);
+        setStage("battle");
+      } else {
+        setStage("lobby");
+      }
     } else {
       setStage("auth");
     }
-  }, [stage, connection.identity, playerReady, player]);
+  }, [stage, connection.identity, playerReady, player, currentRoomReady, currentDbRoom]);
 
   useEffect(() => {
     if (stage !== "checking") return;

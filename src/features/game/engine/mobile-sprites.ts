@@ -57,7 +57,7 @@ export function getMobileSpriteSource(type: MobileType): SpriteSource {
     return {
       width: 64,
       height: 64,
-      frameCount: 5,
+      frameCount: 4,
       path: "/mobiles/generated/dragon-sheet.png",
       previewScale: 1.08,
       previewTranslateX: -2,

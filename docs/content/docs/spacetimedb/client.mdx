@@ -37,7 +37,7 @@ export function GunboundSpacetimeProvider({ children }: { children: React.ReactN
 
 function onConnect(conn: DbConnection) {
   // Subscribe to all public tables
-  conn.subscriptionBuilder().subscribeToAll();
+  conn.subscriptionBuilder().subscribeToAllTables();
 }
 
 function onConnectError(err: Error) {
@@ -49,7 +49,7 @@ function onConnectError(err: Error) {
 - Use `useMemo` with empty deps to create the builder only once (prevents reconnects on render)
 - Read stored token from localStorage on mount
 - Pass token to builder so the connection uses the authenticated identity
-- Subscribe to all tables in `onConnect` callback
+- Subscribe to all tables in `onConnect` callback when you intentionally want one broad, non-cancelable public-table subscription
 
 ## Mounting the Provider
 
@@ -161,9 +161,9 @@ import { useTable } from 'spacetimedb/react';
 import { tables } from '@/features/game/spacetime';
 
 function RoomList() {
-  const [rooms, isLoading] = useTable(tables.room);
+  const [rooms, isReady] = useTable(tables.room);
 
-  if (isLoading) return <div>Loading rooms...</div>;
+  if (!isReady) return <div>Loading rooms...</div>;
 
   return (
     <ul>
@@ -178,10 +178,17 @@ function RoomList() {
 ```
 
 **Returns:**
-- `[rows, isLoading]` tuple
-- `rows` is an array of all rows in the table
-- `isLoading` is true while subscription is being established
+- `[rows, isReady]` tuple
+- `rows` is an array of rows from the table query
+- `isReady` is true after the subscription has applied
 - Re-renders automatically when data changes
+
+`useTable` can receive a filtered query builder, not just a whole table:
+
+```typescript
+const roomQuery = tables.room.where((row) => row.code.eq('ABC12'));
+const [rooms, isReady] = useTable(roomQuery);
+```
 
 ## Composing Hooks
 
@@ -236,7 +243,7 @@ export interface LobbyRoomView {
 
 export function useLobbyRooms() {
   const connection = useSpacetimeDB();
-  const [dbRooms, roomsLoading] = useTable(tables.room);
+  const [dbRooms, roomsReady] = useTable(tables.room);
   const [players] = useTable(tables.player);
 
   // Filter non-ended rooms
@@ -282,7 +289,7 @@ export function useLobbyRooms() {
     rooms,
     createRoom,
     joinRoomByCode,
-    isLoading: roomsLoading,
+    isReady: roomsReady,
   };
 }
 
@@ -320,13 +327,13 @@ async function handleJoinRoom(code: string) {
 
 ## Loading States
 
-Use `isLoading` flag to show loading UI:
+Use the `isReady` flag to show initial loading UI. This is "subscription applied" readiness, not a generic network loading state:
 
 ```typescript
 function RoomsList() {
-  const { rooms, isLoading } = useLobbyRooms();
+  const { rooms, isReady } = useLobbyRooms();
 
-  if (isLoading) {
+  if (!isReady) {
     return <div>Loading rooms...</div>;
   }
 
@@ -499,7 +506,10 @@ const builder = useMemo(() => {
         .onApplied(() => {
           console.log('Subscription ready — showing UI');
         })
-        .subscribeToAll();
+        .onError((err) => {
+          console.error('Subscription failed:', err);
+        })
+        .subscribe(["SELECT * FROM room WHERE status != 'ended'"]);
     });
 }, []);
 ```

@@ -5,6 +5,7 @@ import type { Player } from "@/features/game/spacetime/module_bindings/types";
 type Props = {
   player: Player;
   onClose: () => void;
+  title?: string;
 };
 
 function xpToNextLevel(level: number): number {
@@ -18,7 +19,7 @@ function xpProgress(xp: bigint, level: number): number {
   return Math.min(100, Math.max(0, Number((progress * BigInt(100)) / (cap - base))));
 }
 
-export function LobbyMyInfoModal({ player, onClose }: Props) {
+export function LobbyMyInfoModal({ player, onClose, title = "My Info" }: Props) {
   const winRate =
     player.totalWins + player.totalLosses > 0
       ? Math.round((player.totalWins / (player.totalWins + player.totalLosses)) * 100)
@@ -32,7 +33,7 @@ export function LobbyMyInfoModal({ player, onClose }: Props) {
     <div className="gb-modal-back" onClick={onClose}>
       <div className="gb-modal gb-profile-modal" onClick={(e) => e.stopPropagation()}>
         <div className="gb-modal-head">
-          <span className="gb-modal-name">My Info</span>
+          <span className="gb-modal-name">{title}</span>
           <button className="gb-modal-x" onClick={onClose}>✕</button>
         </div>
 

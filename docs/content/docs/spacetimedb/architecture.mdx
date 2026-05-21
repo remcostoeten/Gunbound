@@ -287,10 +287,10 @@ Strategic indexes enable fast queries:
 The client uses a single high-level subscription:
 
 ```typescript
-conn.subscriptionBuilder().subscribeToAll();
+conn.subscriptionBuilder().subscribeToAllTables();
 ```
 
-This subscribes to all public tables. The server then pushes real-time updates as:
+This subscribes to all public tables. The broad subscription cannot be canceled after it is initiated, so prefer query-specific `useTable(tables.table.where(...))` subscriptions for large or narrow views. The server then pushes real-time updates as:
 1. Reducer calls mutate tables
 2. Server broadcasts changes to all connected clients
 3. Client's `useTable()` hooks re-render with new data

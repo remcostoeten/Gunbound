@@ -163,9 +163,10 @@ const CHANNEL_CHAT: ChannelChatMessage[] = [
 
 type GameShellProps = {
     spacetimeRoomId?: bigint;
+    onExitToLobby?: () => void;
 };
 
-export function GameShell({ spacetimeRoomId }: GameShellProps) {
+export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
     const scene = useGameState(selectScene);
     const players = useGameState(selectPlayers);
     const winner = useGameState(selectWinner);
