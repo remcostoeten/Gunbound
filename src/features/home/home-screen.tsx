@@ -12,7 +12,12 @@ import {
   useCurrentPlayer,
   useCurrentRoom,
 } from "@/features/game/spacetime";
-import { readStoredToken } from "@/features/game/spacetime/token-storage";
+import {
+  clearStoredToken,
+  clearStoredUsername,
+  readStoredToken,
+  readStoredUsername,
+} from "@/features/game/spacetime/token-storage";
 
 type Stage = "checking" | "intro" | "auth" | "lobby" | "battle";
 
@@ -39,16 +44,23 @@ function HomeScreenInner({ bumpSession }: { bumpSession: () => void }) {
   const [stage, setStage] = useState<Stage>("checking");
   const [replayKey, setReplayKey] = useState(0);
   const [fading, setFading] = useState(false);
-  const [username, setUsername] = useState<string | null>(null);
+  const [username, setUsername] = useState<string | null>(() => readStoredUsername() ?? null);
   const [battleRoomId, setBattleRoomId] = useState<bigint | undefined>(undefined);
   const [pendingRoomCode, setPendingRoomCode] = useState<string | null>(null);
   const resumedRef = useRef(false);
 
   useEffect(() => {
     setPendingRoomCode(readRoomCodeFromUrl());
-    if (!readStoredToken()) {
+    const token = readStoredToken();
+    const storedName = readStoredUsername();
+    if (!token) {
       resumedRef.current = true;
       setStage("intro");
+    } else if (storedName) {
+      // Token + username already in storage — skip the checking wait and go straight to lobby.
+      resumedRef.current = true;
+      setUsername(storedName);
+      setStage("lobby");
     }
   }, []);
 
@@ -115,12 +127,32 @@ function HomeScreenInner({ bumpSession }: { bumpSession: () => void }) {
     setReplayKey((k) => k + 1);
   }
 
+  function handleLogout() {
+    const conn = connection.getConnection();
+    if (conn) {
+      conn.reducers.setLobbyPresence({ active: false });
+    }
+    clearStoredToken();
+    clearStoredUsername();
+    clearRoomCodeFromUrl();
+    setFading(false);
+    setUsername(null);
+    setBattleRoomId(undefined);
+    setPendingRoomCode(null);
+    resumedRef.current = true;
+    bumpSession();
+    setStage("auth");
+  }
+
   return (
     <>
       {stage === "battle" ? (
         <div className="home-stack">
           <div className="home-layer home-battle-layer">
-            <GameShell spacetimeRoomId={battleRoomId} />
+            <GameShell
+              spacetimeRoomId={battleRoomId}
+              onExitToLobby={() => setStage("lobby")}
+            />
           </div>
         </div>
       ) : (
@@ -132,6 +164,7 @@ function HomeScreenInner({ bumpSession }: { bumpSession: () => void }) {
                 pendingRoomCode={pendingRoomCode}
                 onPendingRoomConsumed={() => setPendingRoomCode(null)}
                 onReplay={handleReplay}
+                onLogout={handleLogout}
                 onEnterBattle={(roomId) => {
                   setBattleRoomId(roomId);
                   setStage("battle");
