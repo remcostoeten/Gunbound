@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSpacetimeDB } from "spacetimedb/react";
 import { playTrack, registerTrack } from "@/lib/music-bus";
-import { LobbyTopbar } from "./lobby-topbar";
+import { LOBBY_TOP_ICONS } from "../config/top-icons";
 import { LobbyActionRow } from "./lobby-action-row";
 import { LobbyBody } from "./lobby-body";
 import { LobbyBottom } from "./lobby-bottom";
@@ -349,22 +349,29 @@ export function LobbyRoot({
       <div className="gb-clouds" />
 
       <div className="gb-frame">
-        <LobbyTopbar
-          onExit={onReplay}
-          onLogout={onLogout}
-          onIconClick={(label) => {
-            if (label === "My Info") { setMyInfoOpen(true); return; }
-            if (label === "Rankings") { setLeaderboardOpen(true); return; }
-            s.pushToast(`${label} is not available yet`);
-          }}
-        />
         <LobbyActionRow
+          onBack={onLogout ?? onReplay}
           onWaiting={handleWaiting}
           inQueue={matchmaking.inQueue}
           onQuickjoin={handleQuickjoin}
           onCreate={() => s.setCreating(true)}
           onFriend={() => setInboxOpen(true)}
           onSearch={() => setSearchOpen(true)}
+          onIconClick={(label) => {
+            const icon = LOBBY_TOP_ICONS.find((i) => i.label === label);
+            if (!icon?.implemented) {
+              s.pushToast(`${label} is not available yet`);
+              return;
+            }
+            if (label === "My Info") {
+              setMyInfoOpen(true);
+              return;
+            }
+            if (label === "Rankings") {
+              setLeaderboardOpen(true);
+              return;
+            }
+          }}
           canToggleEmptyData={player?.isAdmin === true}
           emptyDataEnabled={emptyDataMode.enabled}
           onToggleEmptyData={handleToggleEmptyData}
