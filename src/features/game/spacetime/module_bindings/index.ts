@@ -50,6 +50,7 @@ import SendFriendRequestReducer from "./send_friend_request_reducer";
 import SendLobbyChatReducer from "./send_lobby_chat_reducer";
 import SendRoomInviteReducer from "./send_room_invite_reducer";
 import SetEmptyDataEnabledReducer from "./set_empty_data_enabled_reducer";
+import SetPlayerCountryReducer from "./set_player_country_reducer";
 import SetPlayerNameReducer from "./set_player_name_reducer";
 import SetPlayerProfileReducer from "./set_player_profile_reducer";
 import SetReadyReducer from "./set_ready_reducer";
@@ -305,6 +306,7 @@ const reducersSchema = __reducers(
   __reducerSchema("send_lobby_chat", SendLobbyChatReducer),
   __reducerSchema("send_room_invite", SendRoomInviteReducer),
   __reducerSchema("set_empty_data_enabled", SetEmptyDataEnabledReducer),
+  __reducerSchema("set_player_country", SetPlayerCountryReducer),
   __reducerSchema("set_player_name", SetPlayerNameReducer),
   __reducerSchema("set_player_profile", SetPlayerProfileReducer),
   __reducerSchema("set_ready", SetReadyReducer),

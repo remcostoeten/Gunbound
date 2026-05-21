@@ -300,7 +300,8 @@ function insertPlayer(ctx: ModuleContext, name: string): void {
     totalWins: 0,
     totalLosses: 0,
     totalRoundsPlayed: 0,
-    isAdmin: hasBootstrapAdminCredential(ctx, ctx.sender)
+    isAdmin: hasBootstrapAdminCredential(ctx, ctx.sender),
+    country: undefined
   });
 }
 
@@ -405,6 +406,31 @@ export const set_player_profile = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
     setPlayerDisplayName(ctx, name);
+  }
+);
+
+/**
+ * Stores the caller's ISO 3166-1 alpha-2 country code (e.g. "US", "NL").
+ * Pass an empty string to clear the value when geolocation opts out.
+ */
+export const set_player_country = spacetimedb.reducer(
+  { country: t.string() },
+  (ctx, { country }) => {
+    const trimmed = country.trim().toUpperCase();
+    const next = trimmed.length === 0 ? undefined : trimmed;
+    if (next !== undefined && !/^[A-Z]{2}$/.test(next)) {
+      throw new SenderError('country must be a 2-letter ISO code');
+    }
+
+    const existing = ctx.db.player.identity.find(ctx.sender);
+    if (!existing) throw new SenderError('player not found');
+    if (existing.country === next) return;
+
+    ctx.db.player.identity.update({
+      ...existing,
+      country: next,
+      updatedAt: ctx.timestamp
+    });
   }
 );
 

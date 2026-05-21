@@ -33,7 +33,8 @@ export const Player = table(
     totalWins: t.u32(),
     totalLosses: t.u32(),
     totalRoundsPlayed: t.u32(),
-    isAdmin: t.bool().optional()
+    isAdmin: t.bool().optional(),
+    country: t.string().optional()
   }
 );
 
@@ -351,5 +352,29 @@ const spacetimedb = schema({
   roomInvite: RoomInvite,
   credential: Credential
 });
+
+// Per-subscriber visibility filters for the social tables. Tables stay
+// `public` so the TypeScript client bindings continue to expose them, but
+// the server only delivers rows where the subscriber is a party. Without
+// these filters any authenticated client could subscribe to the raw tables
+// and enumerate the full social graph.
+//
+// Migrate to `spacetimedb.view(...)` when the TypeScript codegen begins
+// emitting view accessors (2.2.0 silently skips them).
+export const friendshipOwnerVisibility = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM friendship WHERE ownerIdentity = :sender'
+);
+
+export const friendRequestRecipientVisibility = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM friend_request WHERE recipientIdentity = :sender'
+);
+
+export const friendRequestRequesterVisibility = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM friend_request WHERE requesterIdentity = :sender'
+);
+
+export const roomInviteRecipientVisibility = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM room_invite WHERE recipientIdentity = :sender'
+);
 
 export default spacetimedb;

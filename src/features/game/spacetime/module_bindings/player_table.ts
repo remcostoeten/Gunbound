@@ -27,4 +27,5 @@ export default __t.row({
   totalLosses: __t.u32().name("total_losses"),
   totalRoundsPlayed: __t.u32().name("total_rounds_played"),
   isAdmin: __t.option(__t.bool()).name("is_admin"),
+  country: __t.option(__t.string()),
 });

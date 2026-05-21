@@ -82,6 +82,7 @@ export const Player = __t.object("Player", {
   totalLosses: __t.u32(),
   totalRoundsPlayed: __t.u32(),
   isAdmin: __t.option(__t.bool()),
+  country: __t.option(__t.string()),
 });
 export type Player = __Infer<typeof Player>;
 

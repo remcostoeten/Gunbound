@@ -940,6 +940,16 @@
   height: 14px;
   border-radius: 1px;
 }
+.gb-flag-unknown {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.gb-flag-glyph {
+  font-size: 10px;
+  line-height: 1;
+  filter: grayscale(1) opacity(0.85);
+  text-shadow: none;
+}
 .gb-buddy-name {
   flex: 1;
 }

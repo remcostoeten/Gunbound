@@ -21,6 +21,7 @@ export type LobbyFriendView = {
   presence: LobbyFriendPresence;
   statusLabel: string;
   lastSeenLabel: string;
+  country: string | null;
 };
 
 export type IncomingFriendRequestView = {
@@ -106,6 +107,7 @@ export function useLobbyFriends(): {
           presence,
           statusLabel: presence === "online" ? "Online" : presence === "away" ? "Away" : "Offline",
           lastSeenLabel: player ? formatLastSeen(player.lastSeen.microsSinceUnixEpoch, player.isOnline) : "Last seen unknown",
+          country: player?.country ?? null,
         };
       })
       .sort((a, b) => {

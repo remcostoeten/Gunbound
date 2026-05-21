@@ -4,6 +4,7 @@ import { Facehash } from "facehash";
 import { useMemo, useState } from "react";
 import { useTable } from "spacetimedb/react";
 import { useLobbyFriends, type LobbyFriendView } from "../spacetime/use-lobby-friends";
+import { resolveFlagAsset } from "../config/flags";
 import { tables } from "@/features/game/spacetime";
 import type { Player } from "@/features/game/spacetime/module_bindings/types";
 
@@ -133,20 +134,7 @@ function renderOnlinePlayer(
       <div className="gb-buddy-row">
         <button className="gb-buddy-main gb-buddy-btn" type="button" onClick={() => onBuddyClick(player.name)}>
           <Facehash name={player.name} size={24} variant="gradient" showInitial={false} className="gb-buddy-face" />
-          <span
-            className="gb-flag"
-            style={{
-              background: "linear-gradient(180deg, #bf0a30 50%, #ffffff 50%)",
-            }}
-          >
-            <img
-              src="/flags/us.svg"
-              alt=""
-              width={20}
-              height={14}
-              className="gb-flag-img"
-            />
-          </span>
+          <PlayerFlag country={player.country ?? null} name={player.name} />
           <span className="gb-buddy-name">{player.name}</span>
           <span className="gb-buddy-tag">Lv {String(player.level)}</span>
           <span className="gb-buddy-dot" />
@@ -177,20 +165,7 @@ function renderBuddy(
       <div className="gb-buddy-row">
         <button className="gb-buddy-main gb-buddy-btn" type="button" onClick={() => onBuddyClick(buddy.name)}>
           <Facehash name={buddy.name} size={24} variant="gradient" showInitial={false} className="gb-buddy-face" />
-          <span
-            className="gb-flag"
-            style={{
-              background: "linear-gradient(180deg, #bf0a30 50%, #ffffff 50%)",
-            }}
-          >
-            <img
-              src="/flags/us.svg"
-              alt=""
-              width={20}
-              height={14}
-              className="gb-flag-img"
-            />
-          </span>
+          <PlayerFlag country={buddy.country} name={buddy.name} />
           <span className="gb-buddy-name">{buddy.name}</span>
           <span className="gb-buddy-tag" title={buddy.lastSeenLabel}>
             {statusText}
@@ -208,6 +183,23 @@ function renderBuddy(
         </button>
       </div>
     </li>
+  );
+}
+
+function PlayerFlag({ country, name }: { country: string | null; name: string }): React.JSX.Element {
+  const asset = resolveFlagAsset(country);
+  if (!asset) {
+    return (
+      <span className="gb-flag gb-flag-unknown" aria-hidden="true" title={`${name} — country unknown`}>
+        <span className="gb-flag-glyph">🌐</span>
+      </span>
+    );
+  }
+  const code = (country ?? "").toUpperCase();
+  return (
+    <span className="gb-flag" title={`${name} — ${code}`}>
+      <img src={asset} alt={code} width={20} height={14} className="gb-flag-img" />
+    </span>
   );
 }
 
