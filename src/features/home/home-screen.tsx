@@ -30,6 +30,7 @@ export function HomeScreen() {
     setFading(false);
     setUsername(null);
     setBattleRoomId(undefined);
+    setSpacetimeSessionKey((value) => value + 1);
     setStage("intro");
     setReplayKey((k) => k + 1);
   }
