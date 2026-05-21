@@ -6,7 +6,6 @@ import { playTrack, registerTrack } from "@/lib/music-bus";
 import { LobbyTopbar } from "./lobby-topbar";
 import { LobbyActionRow } from "./lobby-action-row";
 import { LobbyBody } from "./lobby-body";
-import { LobbyChannelBar } from "./lobby-channel-bar";
 import { LobbyBottom } from "./lobby-bottom";
 import { LobbyRoomModal } from "./lobby-room-modal";
 import { LobbyCreateModal } from "./lobby-create-modal";
@@ -16,7 +15,7 @@ import { useLobbyState } from "../hooks/use-lobby-state";
 import { useLobbyChat } from "../spacetime/use-lobby-chat";
 import { useLobbyFriends, type IncomingRoomInviteView } from "../spacetime/use-lobby-friends";
 import { useLobbyRooms, type LobbyRoomView } from "../spacetime/use-lobby-rooms";
-import { ROOM_STATUS, useCurrentPlayer, useEmptyDataMode } from "@/features/game/spacetime";
+import { ROOM_STATUS, useCurrentPlayer, useEmptyDataMode, usePlayerCountrySync } from "@/features/game/spacetime";
 import type { LobbyChatMsg } from "../types";
 import type { LobbyRoom } from "../types";
 
@@ -44,11 +43,12 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
   const connection = useSpacetimeDB();
   const [inboxOpen, setInboxOpen] = useState(false);
   const { player } = useCurrentPlayer();
+  usePlayerCountrySync();
   const emptyDataMode = useEmptyDataMode();
   const selfName = player?.name?.trim() || username || null;
   const s = useLobbyState(selfName, emptyDataMode.enabled);
   const { rooms: roomViews, joinRoomByCode, quickJoin } = useLobbyRooms();
-  const lobbyChat = useLobbyChat(s.channel);
+  const lobbyChat = useLobbyChat(1);
   const lobbyFriends = useLobbyFriends();
 
   const rooms = useMemo(() => roomViews.map(toLobbyRoom), [roomViews]);
@@ -211,7 +211,6 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
           onRoomClick={handleRoomClick}
           onBuddyClick={(name) => { s.setWhisperTo(name); s.pushToast(`Whisper to ${name}`); }}
         />
-        <LobbyChannelBar channel={s.channel} onSelect={s.selectChannel} />
         <LobbyBottom
           onBack={onReplay}
           messages={messages}

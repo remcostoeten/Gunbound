@@ -12,7 +12,6 @@ export function useLobbyChat(channel: number): {
   messages: LobbyChatMsg[];
   isReady: boolean;
   sendChat(text: string): Promise<void>;
-  sendFriendRequest(username: string): Promise<void>;
 } {
   const connection = useSpacetimeDB();
   const identity = connection.identity;
@@ -77,14 +76,5 @@ export function useLobbyChat(channel: number): {
     [channel, connection],
   );
 
-  const sendFriendRequest = useCallback(
-    async (username: string): Promise<void> => {
-      const conn = connection.getConnection();
-      if (!conn) throw new Error("not connected");
-      await conn.reducers.sendFriendRequest({ username: username.trim() });
-    },
-    [connection],
-  );
-
-  return { messages, isReady, sendChat, sendFriendRequest };
+  return { messages, isReady, sendChat };
 }
