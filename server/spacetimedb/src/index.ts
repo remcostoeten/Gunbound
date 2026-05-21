@@ -290,7 +290,7 @@ function insertPlayer(ctx: ModuleContext, name: string): void {
     createdAt: ctx.timestamp,
     updatedAt: ctx.timestamp,
     displayNameSetAt: name.length > 0 ? ctx.timestamp : undefined,
-    isOnline: true,
+    isOnline: false,
     lastSeen: ctx.timestamp,
     xp: 0n,
     level: 0,
@@ -346,6 +346,8 @@ export const onClientConnected = spacetimedb.clientConnected(ctx => {
   const currentDay = ctx.timestamp.microsSinceUnixEpoch / MICROS_PER_DAY;
   const existing = ctx.db.player.identity.find(ctx.sender);
 
+  cleanupOrphanWaitingRooms(ctx);
+
   if (existing) {
     let { loginStreak, longestStreak, xp, level } = existing;
 
@@ -361,7 +363,6 @@ export const onClientConnected = spacetimedb.clientConnected(ctx => {
     ctx.db.player.identity.update({
       ...existing,
       updatedAt: ctx.timestamp,
-      isOnline: true,
       lastSeen: ctx.timestamp,
       loginStreak,
       longestStreak,
@@ -395,7 +396,85 @@ export const onClientDisconnected = spacetimedb.clientDisconnected(ctx => {
 
   const queueEntry = ctx.db.waitingPlayer.identity.find(ctx.sender);
   if (queueEntry) ctx.db.waitingPlayer.identity.delete(ctx.sender);
+
+  evictFromWaitingRooms(ctx);
 });
+
+/**
+ * On reconnect, drops the sender from any pre-match room whose other
+ * members are all currently offline. Handles the legacy case where
+ * disconnects accumulated stale memberships before eviction existed.
+ */
+function cleanupOrphanWaitingRooms(ctx: ModuleContext): void {
+  const memberships: { memberId: bigint; roomId: bigint }[] = [];
+  for (const member of ctx.db.roomMember.iter()) {
+    if (member.identity.toHexString() === ctx.sender.toHexString()) {
+      memberships.push({ memberId: member.id, roomId: member.roomId });
+    }
+  }
+
+  for (const { memberId, roomId } of memberships) {
+    const room = ctx.db.room.id.find(roomId);
+    if (!room || room.status !== ROOM_STATUS.WAITING) continue;
+
+    let anyPeerOnline = false;
+    const peerIds: bigint[] = [];
+    for (const peer of ctx.db.roomMember.room_member_room_id.filter(roomId)) {
+      peerIds.push(peer.id);
+      if (peer.identity.toHexString() === ctx.sender.toHexString()) continue;
+      const peerPlayer = ctx.db.player.identity.find(peer.identity);
+      if (peerPlayer && peerPlayer.isOnline) {
+        anyPeerOnline = true;
+        break;
+      }
+    }
+
+    if (anyPeerOnline) continue;
+
+    for (const id of peerIds) {
+      ctx.db.roomMember.id.delete(id);
+    }
+    ctx.db.room.id.update({ ...room, status: ROOM_STATUS.ENDED });
+  }
+}
+
+/**
+ * Removes the disconnecting user from any rooms that are still in the
+ * pre-match `waiting` phase. In-match rooms keep their members so a
+ * mid-match reconnect can resume from where they left off; waiting rooms
+ * would otherwise accumulate ghosts that block fresh joins forever.
+ */
+function evictFromWaitingRooms(ctx: ModuleContext): void {
+  const memberships: { memberId: bigint; roomId: bigint }[] = [];
+  for (const member of ctx.db.roomMember.iter()) {
+    if (member.identity.toHexString() === ctx.sender.toHexString()) {
+      memberships.push({ memberId: member.id, roomId: member.roomId });
+    }
+  }
+
+  for (const { memberId, roomId } of memberships) {
+    const room = ctx.db.room.id.find(roomId);
+    if (!room || room.status !== ROOM_STATUS.WAITING) continue;
+
+    ctx.db.roomMember.id.delete(memberId);
+
+    let remaining = 0;
+    let firstRemaining: bigint | undefined;
+    for (const peer of ctx.db.roomMember.room_member_room_id.filter(roomId)) {
+      remaining += 1;
+      if (firstRemaining === undefined) firstRemaining = peer.id;
+    }
+
+    if (remaining === 0) {
+      ctx.db.room.id.update({ ...room, status: ROOM_STATUS.ENDED });
+    } else if (room.hostIdentity.toHexString() === ctx.sender.toHexString()) {
+      const nextHost = ctx.db.roomMember.id.find(firstRemaining!);
+      if (nextHost) {
+        ctx.db.room.id.update({ ...room, hostIdentity: nextHost.identity });
+      }
+    }
+  }
+}
 
 /**
  * Sets the caller's profile data.
@@ -449,11 +528,27 @@ export const set_player_name = spacetimedb.reducer(
 );
 
 /**
- * Admin-only: toggles whether lobby fixture data should be hidden.
+ * Marks the caller as actively present in the lobby (or not).
  *
- * This replaces the old client-side `NEXT_PUBLIC_EMPTY_DATA` flag with
- * runtime server state so an admin can change it without rebuilding.
+ * `isOnline` previously tracked the raw WebSocket connection, which meant a
+ * user sitting on the login screen with a stored token still showed up as
+ * online. Presence is now driven explicitly by the client: lobby mount sets
+ * it to true, leaving the lobby (logout / replay / battle exit) sets false.
  */
+export const set_lobby_presence = spacetimedb.reducer(
+  { active: t.bool() },
+  (ctx, { active }) => {
+    const existing = ctx.db.player.identity.find(ctx.sender);
+    if (!existing) return;
+    ctx.db.player.identity.update({
+      ...existing,
+      updatedAt: ctx.timestamp,
+      isOnline: active,
+      lastSeen: ctx.timestamp
+    });
+  }
+);
+
 export const set_empty_data_enabled = spacetimedb.reducer(
   { enabled: t.bool() },
   (ctx, { enabled }) => {
@@ -611,7 +706,6 @@ export const leave_room = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, { roomId }) => {
     const room = ctx.db.room.id.find(roomId);
-    if (!room) throw new SenderError('room not found');
 
     for (const member of ctx.db.roomMember.room_member_room_id.filter(roomId)) {
       if (member.identity.toHexString() === ctx.sender.toHexString()) {
@@ -619,6 +713,8 @@ export const leave_room = spacetimedb.reducer(
         break;
       }
     }
+
+    if (!room) return;
 
     let remaining = 0;
     for (const _ of ctx.db.roomMember.room_member_room_id.filter(roomId)) {

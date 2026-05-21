@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useSpacetimeDB, useTable } from "spacetimedb/react";
 
 import { tables } from "@/features/game/spacetime";
@@ -8,6 +8,7 @@ import { ROOM_STATUS, type RoomStatus } from "@/features/game/spacetime/room-sta
 import { parseMapType } from "@/features/game/constants/map-presentation";
 import { generateRoomCode, generateSeed } from "./generate-code";
 import type { LobbyRoomSettings } from "../types";
+import type { MapType } from "@/features/game/types/shared";
 const ROOM_CAPACITY = 2;
 
 export type LobbyRoomView = {
@@ -22,7 +23,7 @@ export type LobbyRoomView = {
   createdAtMicros: bigint;
 };
 
-type CreateOptions = { code?: string };
+type CreateOptions = { code?: string; mapType?: MapType };
 
 export function useLobbyRooms() {
   const connection = useSpacetimeDB();
@@ -72,12 +73,33 @@ export function useLobbyRooms() {
       });
   }, [allRooms, allMembers, allPlayers]);
 
+  const roomsRef = useRef(rooms);
+  useEffect(() => { roomsRef.current = rooms; }, [rooms]);
+
   const createRoom = useCallback(
     async (options: CreateOptions = {}): Promise<string> => {
       const conn = connection.getConnection();
       if (!conn) throw new Error("not connected");
       const code = (options.code ?? generateRoomCode()).trim().toUpperCase();
       await conn.reducers.createRoom({ code, seed: generateSeed() });
+
+      if (options.mapType) {
+        const deadline = Date.now() + 2000;
+        let created = roomsRef.current.find((r) => r.code === code);
+        while (!created && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          created = roomsRef.current.find((r) => r.code === code);
+        }
+        if (created && created.settings.mapType !== options.mapType) {
+          await conn.reducers.updateRoomSettings({
+            roomId: created.id,
+            mapType: options.mapType,
+            targetScore: created.settings.targetScore,
+            roundLimit: created.settings.roundLimit,
+          });
+        }
+      }
+
       return code;
     },
     [connection]

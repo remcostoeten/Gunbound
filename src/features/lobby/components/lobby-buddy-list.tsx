@@ -2,7 +2,7 @@
 
 import { Facehash } from "facehash";
 import { useMemo, useState } from "react";
-import { useTable } from "spacetimedb/react";
+import { useSpacetimeDB, useTable } from "spacetimedb/react";
 import { useLobbyFriends, type LobbyFriendView } from "../spacetime/use-lobby-friends";
 import { resolveFlagAsset } from "../config/flags";
 import { tables } from "@/features/game/spacetime";
@@ -13,6 +13,8 @@ type Props = { onBuddyClick: (name: string) => void };
 type BuddyView = "online" | "buddies";
 
 export function LobbyBuddyList({ onBuddyClick }: Props) {
+  const connection = useSpacetimeDB();
+  const selfIdentityHex = connection.identity?.toHexString() ?? null;
   const [players, isReady] = useTable(tables.player);
   const [view, setView] = useState<BuddyView>("online");
   const [draftName, setDraftName] = useState("");
@@ -23,7 +25,10 @@ export function LobbyBuddyList({ onBuddyClick }: Props) {
     hasFriendIdentity,
     hasPendingRequestForIdentity,
   } = useLobbyFriends();
-  const onlinePlayers = useMemo(() => getOnlinePlayers(players), [players]);
+  const onlinePlayers = useMemo(
+    () => getOnlinePlayers(players, selfIdentityHex),
+    [players, selfIdentityHex],
+  );
   const visibleCount = view === "online" ? onlinePlayers.length : friends.length;
   const trimmedDraftName = draftName.trim();
 
@@ -203,9 +208,10 @@ function PlayerFlag({ country, name }: { country: string | null; name: string })
   );
 }
 
-function getOnlinePlayers(players: readonly Player[]): Player[] {
+function getOnlinePlayers(players: readonly Player[], selfIdentityHex: string | null): Player[] {
   return players
     .filter((player) => player.isOnline && player.name.trim().length > 0)
+    .filter((player) => player.identity.toHexString() !== selfIdentityHex)
     .slice()
     .sort((a, b) => a.name.localeCompare(b.name));
 }

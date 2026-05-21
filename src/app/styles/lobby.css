@@ -1696,6 +1696,82 @@
   }
 }
 
+.gb-map-preview {
+  display: flex;
+  gap: 12px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+}
+.gb-map-preview-img {
+  width: 140px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  image-rendering: pixelated;
+}
+.gb-map-preview-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  justify-content: center;
+}
+.gb-map-preview-label {
+  font-weight: 700;
+  color: #ffd55a;
+  font-size: 13px;
+}
+.gb-map-preview-desc {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.3;
+}
+.gb-map-thumbs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+}
+.gb-map-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 10px;
+  font-weight: 600;
+  transition: border-color 120ms, color 120ms, background 120ms;
+
+  &:hover:not(:disabled) {
+    border-color: rgba(255, 213, 90, 0.5);
+    color: #fff;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+.gb-map-thumb img {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: 2px;
+  image-rendering: pixelated;
+}
+.gb-map-thumb-on {
+  background: rgba(255, 213, 90, 0.18);
+  border-color: #ffd55a;
+  color: #ffd55a;
+}
+
 /* Player profile modal */
 .gb-profile-modal {
   width: min(400px, 92vw);

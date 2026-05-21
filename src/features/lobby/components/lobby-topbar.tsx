@@ -14,10 +14,6 @@ export function LobbyTopbar({ onExit, onIconClick }: Props) {
         <div className="gb-tab-main">
           <span className="gb-tab-main-text">GAME LIST</span>
         </div>
-        <div className="gb-tab-sub">
-          <span>Normal Zone</span>
-          <span className="gb-tab-sub-count">2</span>
-        </div>
       </div>
 
       <div className="gb-iconrow">

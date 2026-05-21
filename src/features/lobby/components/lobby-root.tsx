@@ -25,6 +25,8 @@ import type { LobbyRoom } from "../types";
 
 type Props = {
   username?: string | null;
+  pendingRoomCode?: string | null;
+  onPendingRoomConsumed?: () => void;
   onReplay: () => void;
   onEnterBattle?: (roomId: bigint) => void;
 };
@@ -43,7 +45,13 @@ function toLobbyRoom(view: LobbyRoomView): LobbyRoom {
   };
 }
 
-export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
+export function LobbyRoot({
+  username,
+  pendingRoomCode,
+  onPendingRoomConsumed,
+  onReplay,
+  onEnterBattle,
+}: Props) {
   const connection = useSpacetimeDB();
   const [inboxOpen, setInboxOpen] = useState(false);
   const [myInfoOpen, setMyInfoOpen] = useState(false);
@@ -56,7 +64,7 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
   const s = useLobbyState(selfName, emptyDataMode.enabled);
   const { rooms: roomViews, joinRoomByCode, quickJoin } = useLobbyRooms();
   const matchmaking = useMatchmakingQueue();
-  const { room: currentDbRoom } = useCurrentRoom();
+  const { room: currentDbRoom, isReady: currentRoomReady } = useCurrentRoom();
   const wasSearchingRef = useRef(false);
   const lobbyChat = useLobbyChat(1);
   const lobbyFriends = useLobbyFriends();
@@ -88,6 +96,96 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
     registerTrack("lobby", lobbyMp3, 0.45);
     playTrack("lobby");
   }, []);
+
+  const connectionRef = useRef(connection);
+  connectionRef.current = connection;
+  const presenceActiveRef = useRef(false);
+  useEffect(() => {
+    if (presenceActiveRef.current) return;
+    const conn = connection.getConnection();
+    if (!conn) return;
+    presenceActiveRef.current = true;
+    try {
+      conn.reducers.setLobbyPresence({ active: true });
+    } catch {
+      presenceActiveRef.current = false;
+    }
+  }, [connection]);
+  useEffect(() => {
+    return () => {
+      if (!presenceActiveRef.current) return;
+      presenceActiveRef.current = false;
+      const conn = connectionRef.current.getConnection();
+      if (!conn) return;
+      try {
+        conn.reducers.setLobbyPresence({ active: false });
+      } catch {
+        // ignore — disconnect will mark offline anyway
+      }
+    };
+  }, []);
+
+  const restoredRoomRef = useRef(false);
+  useEffect(() => {
+    if (restoredRoomRef.current) return;
+    if (s.activeRoom) return;
+    if (!currentDbRoom) return;
+    const view = roomViews.find((r) => r.id === currentDbRoom.id);
+    if (!view) return;
+    restoredRoomRef.current = true;
+    s.setActiveRoom(toLobbyRoom(view));
+  }, [currentDbRoom, roomViews, s]);
+
+  const joinAttemptedCodeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pendingRoomCode) return;
+    if (joinAttemptedCodeRef.current === pendingRoomCode) return;
+    if (!currentRoomReady) return;
+    if (currentDbRoom) {
+      const view = roomViews.find((r) => r.id === currentDbRoom.id);
+      if (view && view.code === pendingRoomCode) {
+        joinAttemptedCodeRef.current = pendingRoomCode;
+        s.setActiveRoom(toLobbyRoom(view));
+        onPendingRoomConsumed?.();
+        return;
+      }
+      joinAttemptedCodeRef.current = pendingRoomCode;
+      s.pushToast(`Already in a room — leave it first to join ${pendingRoomCode}`);
+      onPendingRoomConsumed?.();
+      return;
+    }
+    const conn = connection.getConnection();
+    if (!conn) return;
+    joinAttemptedCodeRef.current = pendingRoomCode;
+    (async () => {
+      try {
+        await joinRoomByCode(pendingRoomCode);
+      } catch (e) {
+        s.pushToast(messageFromError(e));
+        onPendingRoomConsumed?.();
+      }
+    })();
+  }, [pendingRoomCode, currentDbRoom, currentRoomReady, roomViews, connection, joinRoomByCode, s, onPendingRoomConsumed]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (s.activeRoom) {
+      url.searchParams.set("room", s.activeRoom.code);
+    } else {
+      url.searchParams.delete("room");
+    }
+    if (url.toString() !== window.location.href) {
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, [s.activeRoom]);
+
+  useEffect(() => {
+    if (!s.activeRoom) return;
+    if (!pendingRoomCode) return;
+    if (s.activeRoom.code !== pendingRoomCode) return;
+    onPendingRoomConsumed?.();
+  }, [s.activeRoom, pendingRoomCode, onPendingRoomConsumed]);
 
   useEffect(() => {
     if (!username) return;
