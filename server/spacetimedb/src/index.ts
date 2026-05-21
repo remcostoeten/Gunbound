@@ -392,6 +392,9 @@ export const onClientDisconnected = spacetimedb.clientDisconnected(ctx => {
     isOnline: false,
     lastSeen: ctx.timestamp
   });
+
+  const queueEntry = ctx.db.waitingPlayer.identity.find(ctx.sender);
+  if (queueEntry) ctx.db.waitingPlayer.identity.delete(ctx.sender);
 });
 
 /**
@@ -1271,6 +1274,70 @@ export const update_credential_token = spacetimedb.reducer(
     });
   }
 );
+
+/**
+ * Enters the matchmaking queue or immediately pairs with a waiting opponent.
+ *
+ * If another player is already waiting, both are removed from the queue and
+ * placed into a fresh room — no extra action required on either side. If the
+ * queue is empty, the caller's row is inserted and they wait for the next
+ * `join_queue` call from another player.
+ *
+ * Idempotent: calling while already in the queue is a no-op.
+ * Throws if the caller is already in an active room.
+ */
+export const join_queue = spacetimedb.reducer((ctx) => {
+  const alreadyWaiting = ctx.db.waitingPlayer.identity.find(ctx.sender);
+  if (alreadyWaiting) return;
+
+  assertNotInActiveRoom(ctx);
+
+  let partnerIdentity: Identity | null = null;
+  for (const entry of ctx.db.waitingPlayer.iter()) {
+    if (entry.identity.toHexString() !== ctx.sender.toHexString()) {
+      partnerIdentity = entry.identity;
+      break;
+    }
+  }
+
+  if (partnerIdentity) {
+    ctx.db.waitingPlayer.identity.delete(partnerIdentity);
+
+    const room = ctx.db.room.insert({
+      id: 0n,
+      code: 'QTEMP',
+      hostIdentity: partnerIdentity,
+      status: ROOM_STATUS.WAITING,
+      seed: ctx.timestamp.microsSinceUnixEpoch,
+      mapType: DEFAULT_MAP_TYPE,
+      targetScore: DEFAULT_TARGET_SCORE,
+      roundLimit: DEFAULT_ROUND_LIMIT,
+      createdAt: ctx.timestamp
+    });
+
+    const code = 'Q' + room.id.toString(36).toUpperCase().slice(-3).padStart(3, '0');
+    ctx.db.room.id.update({ ...room, code });
+
+    ctx.db.roomMember.insert({
+      id: 0n, roomId: room.id, identity: partnerIdentity,
+      slotIndex: 0, teamIndex: undefined, mobileType: '', isReady: false, joinedAt: ctx.timestamp
+    });
+    ctx.db.roomMember.insert({
+      id: 0n, roomId: room.id, identity: ctx.sender,
+      slotIndex: 1, teamIndex: undefined, mobileType: '', isReady: false, joinedAt: ctx.timestamp
+    });
+  } else {
+    ctx.db.waitingPlayer.insert({ identity: ctx.sender, joinedAt: ctx.timestamp });
+  }
+});
+
+/**
+ * Leaves the matchmaking queue. No-op if not currently queued.
+ */
+export const leave_queue = spacetimedb.reducer((ctx) => {
+  const entry = ctx.db.waitingPlayer.identity.find(ctx.sender);
+  if (entry) ctx.db.waitingPlayer.identity.delete(ctx.sender);
+});
 
 /**
  * Host-only: removes a member from the room by force.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSpacetimeDB } from "spacetimedb/react";
 import { playTrack, registerTrack } from "@/lib/music-bus";
 import { LobbyTopbar } from "./lobby-topbar";
@@ -12,12 +12,14 @@ import { LobbyCreateModal } from "./lobby-create-modal";
 import { LobbyInboxModal } from "./lobby-inbox-modal";
 import { LobbyMyInfoModal } from "./lobby-my-info-modal";
 import { LobbyRoomSearchModal } from "./lobby-room-search-modal";
+import { LobbyLeaderboardModal } from "./lobby-leaderboard-modal";
 import { LobbyToastStack } from "./lobby-toast-stack";
+import { useMatchmakingQueue } from "../spacetime/use-matchmaking-queue";
 import { useLobbyState } from "../hooks/use-lobby-state";
 import { useLobbyChat } from "../spacetime/use-lobby-chat";
 import { useLobbyFriends, type IncomingRoomInviteView } from "../spacetime/use-lobby-friends";
 import { useLobbyRooms, type LobbyRoomView } from "../spacetime/use-lobby-rooms";
-import { ROOM_STATUS, useCurrentPlayer, useEmptyDataMode, usePlayerCountrySync } from "@/features/game/spacetime";
+import { ROOM_STATUS, useCurrentPlayer, useCurrentRoom, useEmptyDataMode, usePlayerCountrySync } from "@/features/game/spacetime";
 import type { LobbyChatMsg } from "../types";
 import type { LobbyRoom } from "../types";
 
@@ -46,12 +48,16 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
   const [inboxOpen, setInboxOpen] = useState(false);
   const [myInfoOpen, setMyInfoOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const { player } = useCurrentPlayer();
   usePlayerCountrySync();
   const emptyDataMode = useEmptyDataMode();
   const selfName = player?.name?.trim() || username || null;
   const s = useLobbyState(selfName, emptyDataMode.enabled);
   const { rooms: roomViews, joinRoomByCode, quickJoin } = useLobbyRooms();
+  const matchmaking = useMatchmakingQueue();
+  const { room: currentDbRoom } = useCurrentRoom();
+  const wasSearchingRef = useRef(false);
   const lobbyChat = useLobbyChat(1);
   const lobbyFriends = useLobbyFriends();
 
@@ -94,6 +100,39 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
       // ignore — display falls back to Player-<hex>
     });
   }, [username, player, connection]);
+
+  useEffect(() => {
+    if (matchmaking.inQueue) {
+      wasSearchingRef.current = true;
+      return;
+    }
+    if (!wasSearchingRef.current) return;
+    if (!currentDbRoom || s.activeRoom) return;
+    const view = roomViews.find(r => r.id === currentDbRoom.id);
+    if (view) {
+      wasSearchingRef.current = false;
+      s.setActiveRoom(toLobbyRoom(view));
+    }
+  }, [matchmaking.inQueue, currentDbRoom, roomViews, s]);
+
+  const handleWaiting = useCallback(async () => {
+    try {
+      if (matchmaking.inQueue) {
+        await matchmaking.leaveQueue();
+        s.pushToast("Left the matchmaking queue");
+      } else {
+        wasSearchingRef.current = true;
+        await matchmaking.joinQueue();
+        if (!matchmaking.inQueue) {
+          s.pushToast("Match found! Opening room…");
+        } else {
+          s.pushToast("Looking for an opponent…");
+        }
+      }
+    } catch (e) {
+      s.pushToast(messageFromError(e));
+    }
+  }, [matchmaking, s]);
 
   const handleRoomClick = useCallback(async (r: LobbyRoom) => {
     if (r.status === "Playing") {
@@ -200,11 +239,13 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
           onExit={onReplay}
           onIconClick={(label) => {
             if (label === "My Info") { setMyInfoOpen(true); return; }
+            if (label === "Rankings") { setLeaderboardOpen(true); return; }
             s.pushToast(`${label} is not available yet`);
           }}
         />
         <LobbyActionRow
-          onWaiting={() => s.pushToast("You are now waiting for an invite")}
+          onWaiting={handleWaiting}
+          inQueue={matchmaking.inQueue}
           onQuickjoin={handleQuickjoin}
           onCreate={() => s.setCreating(true)}
           onFriend={() => setInboxOpen(true)}
@@ -253,6 +294,12 @@ export function LobbyRoot({ username, onReplay, onEnterBattle }: Props) {
       )}
       {myInfoOpen && player && (
         <LobbyMyInfoModal player={player} onClose={() => setMyInfoOpen(false)} />
+      )}
+      {leaderboardOpen && (
+        <LobbyLeaderboardModal
+          selfIdentityHex={player?.identity.toHexString()}
+          onClose={() => setLeaderboardOpen(false)}
+        />
       )}
       {searchOpen && (
         <LobbyRoomSearchModal

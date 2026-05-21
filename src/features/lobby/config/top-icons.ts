@@ -7,4 +7,5 @@ export const LOBBY_TOP_ICONS: LobbyTopIcon[] = [
   { label: "My Info",   glyph: "👤", bg: "#e8f6ff" },
   { label: "Gamble",    glyph: "💣", bg: "#c43030" },
   { label: "StageZone", glyph: "🏰", bg: "#9fb1c7" },
+  { label: "Rankings",  glyph: "🏆", bg: "#1a6e3c" },
 ];

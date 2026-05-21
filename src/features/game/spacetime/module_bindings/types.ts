@@ -165,3 +165,9 @@ export const RoundStat = __t.object("RoundStat", {
 });
 export type RoundStat = __Infer<typeof RoundStat>;
 
+export const WaitingPlayer = __t.object("WaitingPlayer", {
+  identity: __t.identity(),
+  joinedAt: __t.timestamp(),
+});
+export type WaitingPlayer = __Infer<typeof WaitingPlayer>;
+

@@ -4,6 +4,7 @@ import { LobbyActionButton } from "./lobby-action-button";
 
 type Props = {
   onWaiting: () => void;
+  inQueue?: boolean;
   onQuickjoin: () => void;
   onCreate: () => void;
   onFriend: () => void;
@@ -15,6 +16,7 @@ type Props = {
 
 export function LobbyActionRow({
   onWaiting,
+  inQueue = false,
   onQuickjoin,
   onCreate,
   onFriend,
@@ -25,7 +27,7 @@ export function LobbyActionRow({
 }: Props) {
   return (
     <div className="gb-actionrow">
-      <LobbyActionButton label="Waiting"   glyph="🧙" tone="purple" onClick={onWaiting} />
+      <LobbyActionButton label={inQueue ? "Cancel" : "Waiting"} glyph={inQueue ? "⏳" : "🧙"} tone="purple" onClick={onWaiting} active={inQueue} />
       <LobbyActionButton label="Quickjoin" glyph="⚡" tone="purple" onClick={onQuickjoin} />
       <LobbyActionButton label="Create"    glyph="🔧" tone="purple" badge="P3" onClick={onCreate} />
       {canToggleEmptyData && (
