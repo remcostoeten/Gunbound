@@ -10,6 +10,13 @@ type ModuleContext = ReducerCtx<InferSchema<typeof spacetimedb>>;
 
 const ROUND_STATUS_ACTIVE = 'active';
 const ROUND_STATUS_FINISHED = 'finished';
+const MAX_ROUND_EVENT_PAYLOAD_LENGTH = 1024;
+const VALID_ROUND_EVENT_KINDS = new Set([
+  'battle_move',
+  'battle_switch_weapon',
+  'battle_fire'
+]);
+const VALID_BATTLE_WEAPONS = new Set(['primary', 'secondary']);
 const REQUEST_STATUS_PENDING = { tag: 'Pending' } as const;
 const REQUEST_STATUS_ACCEPTED = { tag: 'Accepted' } as const;
 const REQUEST_STATUS_DECLINED = { tag: 'Declined' } as const;
@@ -103,6 +110,69 @@ function computeRoundXp(isWinner: boolean, isDraw: boolean, damageDealt: number,
   const damageBonus = Math.min(Math.floor(damageDealt / 10), 100);
   const accuracyBonus = Math.min(directHits, 10) * 5;
   return base + damageBonus + accuracyBonus;
+}
+
+type RoundEventPayload = {
+  v?: unknown;
+  turn?: unknown;
+  direction?: unknown;
+  weapon?: unknown;
+  angle?: unknown;
+  power?: unknown;
+};
+
+function parseRoundEventPayload(kind: string, payload: string): { turn: number } {
+  let value: RoundEventPayload;
+  try {
+    value = JSON.parse(payload) as RoundEventPayload;
+  } catch {
+    throw new SenderError('invalid round event payload');
+  }
+
+  if (value.v !== 1) throw new SenderError('unsupported round event version');
+  if (value.turn !== 1 && value.turn !== 2) throw new SenderError('invalid round event turn');
+
+  if (kind === 'battle_move') {
+    if (value.direction !== -1 && value.direction !== 1) {
+      throw new SenderError('invalid move direction');
+    }
+  } else if (kind === 'battle_switch_weapon') {
+    if (typeof value.weapon !== 'string' || !VALID_BATTLE_WEAPONS.has(value.weapon)) {
+      throw new SenderError('invalid weapon');
+    }
+  } else if (kind === 'battle_fire') {
+    if (typeof value.weapon !== 'string' || !VALID_BATTLE_WEAPONS.has(value.weapon)) {
+      throw new SenderError('invalid weapon');
+    }
+    if (typeof value.angle !== 'number' || value.angle < 0 || value.angle > 180) {
+      throw new SenderError('invalid firing angle');
+    }
+    if (typeof value.power !== 'number' || value.power < 0 || value.power > 1.1) {
+      throw new SenderError('invalid firing power');
+    }
+  }
+
+  return { turn: value.turn };
+}
+
+function getExpectedRoundEventTick(ctx: ModuleContext, roundId: bigint): bigint {
+  let maxTick = 0n;
+  for (const event of ctx.db.roundEvent.round_event_round_id.filter(roundId)) {
+    if (event.tick > maxTick) maxTick = event.tick;
+  }
+  return maxTick + 1n;
+}
+
+function assertRoundTurnActor(ctx: ModuleContext, roomId: bigint, turn: number): void {
+  for (const member of ctx.db.roomMember.room_member_room_id.filter(roomId)) {
+    if (member.slotIndex === turn - 1) {
+      if (member.identity.toHexString() !== ctx.sender.toHexString()) {
+        throw new SenderError('not your turn');
+      }
+      return;
+    }
+  }
+  throw new SenderError('turn has no room member');
 }
 
 function isActiveRoomStatus(status: string): boolean {
@@ -586,6 +656,16 @@ export const record_round_event = spacetimedb.reducer(
     if (round.status !== ROUND_STATUS_ACTIVE) {
       throw new SenderError('round is not active');
     }
+    if (!VALID_ROUND_EVENT_KINDS.has(kind)) {
+      throw new SenderError('unknown round event kind');
+    }
+    if (payload.length > MAX_ROUND_EVENT_PAYLOAD_LENGTH) {
+      throw new SenderError('round event payload too large');
+    }
+    if (tick !== getExpectedRoundEventTick(ctx, roundId)) {
+      throw new SenderError('round event tick out of order');
+    }
+    const parsedPayload = parseRoundEventPayload(kind, payload);
 
     let isMember = false;
     for (const member of ctx.db.roomMember.room_member_room_id.filter(round.roomId)) {
@@ -595,6 +675,7 @@ export const record_round_event = spacetimedb.reducer(
       }
     }
     if (!isMember) throw new SenderError('only room members may record events');
+    assertRoundTurnActor(ctx, round.roomId, parsedPayload.turn);
 
     ctx.db.roundEvent.insert({
       id: 0n,
@@ -622,6 +703,9 @@ export const end_round = spacetimedb.reducer(
   (ctx, { roundId, winnerIdentity }) => {
     const round = ctx.db.round.id.find(roundId);
     if (!round) throw new SenderError('round not found');
+    if (round.status !== ROUND_STATUS_ACTIVE) {
+      throw new SenderError('round is not active');
+    }
 
     const room = ctx.db.room.id.find(round.roomId);
     if (!room) throw new SenderError('room not found');
@@ -637,6 +721,17 @@ export const end_round = spacetimedb.reducer(
     });
 
     const isDraw = winnerIdentity === undefined;
+    let winnerIsMember = isDraw;
+
+    if (!isDraw) {
+      for (const member of ctx.db.roomMember.room_member_room_id.filter(round.roomId)) {
+        if (member.identity.toHexString() === winnerIdentity!.toHexString()) {
+          winnerIsMember = true;
+          break;
+        }
+      }
+    }
+    if (!winnerIsMember) throw new SenderError('winner is not a room member');
 
     for (const member of ctx.db.roomMember.room_member_room_id.filter(round.roomId)) {
       const player = ctx.db.player.identity.find(member.identity);

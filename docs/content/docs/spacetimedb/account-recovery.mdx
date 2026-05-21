@@ -16,6 +16,7 @@ The system relies on three components:
 1. **SpacetimeDB Identity**: Assigned on first connection, persists in database
 2. **Credential Table**: Public table storing encrypted tokens (salt=username)
 3. **Player Table**: Personal data linked to identity (name, stats, etc.)
+4. **Home Screen Session Key**: Forces the provider to remount after login so the new token is picked up immediately
 
 ```
 ┌─────────────────────────────┐
@@ -71,7 +72,7 @@ The system relies on three components:
 When the user first opens the app, SpacetimeDB creates a session with a temporary identity:
 
 ```typescript
-// src/app/page.tsx
+// src/features/home/home-screen.tsx
 <GunboundSpacetimeProvider>
   <HomeScreen />
 </GunboundSpacetimeProvider>
@@ -81,8 +82,8 @@ The provider reads the token from localStorage. Since it's empty, a new session 
 
 ```typescript
 const builder = DbConnection.builder()
-  .withUri(SPACETIMEDB_URI)
-  .withDatabaseName(MODULE_NAME)
+  .withUri(SPACETIME_URI)
+  .withDatabaseName(SPACETIME_MODULE)
   .withToken(undefined)  // No token yet
   .onConnect(onConnect);
 ```
@@ -275,10 +276,7 @@ async function submit(e: FormEvent) {
   // ...
   try {
     const result = await login(username, pw);
-    // The stored token has changed; reload so the SpacetimeDB connection
-    // is rebuilt with the recovered identity.
-    sessionStorage.setItem("gunbound:post-login", result.username);
-    window.location.reload();
+    onAuthed(result.username);
   } catch (err) {
     setError(messageFromError(err));
   }
@@ -364,45 +362,26 @@ export async function decryptToken(
 
 ### Step 5: Reload and Rebuild Connection
 
-After successful decryption and storing the token:
+After successful decryption and storing the token, the auth view calls `onAuthed`. The home
+screen then bumps `spacetimeSessionKey`, which remounts the provider with the recovered token:
 
 ```typescript
-sessionStorage.setItem("gunbound:post-login", result.username);
-window.location.reload();
-```
-
-The page reloads. The provider now reads the stored token from localStorage:
-
-```typescript
-const token = readStoredToken();  // "0x123abc..." — the recovered token
+const token = readStoredToken();  // recovered token from localStorage
 
 const builder = DbConnection.builder()
-  .withUri(SPACETIMEDB_URI)
-  .withDatabaseName(MODULE_NAME)
-  .withToken(token)  // ← Use recovered token
+  .withUri(SPACETIME_URI)
+  .withDatabaseName(SPACETIME_MODULE)
+  .withToken(token)
   .onConnect(onConnect);
 ```
 
 SpacetimeDB validates the token signature and establishes the connection with the **original identity** (from Device A). All player data, stats, and game state are now available.
 
-### Step 6: Post-Login Detection
+### Step 6: Advance To Lobby
 
-The home screen detects the post-login flag set during reload:
-
-```typescript
-// src/features/home/home-screen.tsx
-useEffect(() => {
-  if (typeof window === "undefined") return;
-  const pending = window.sessionStorage.getItem(POST_LOGIN_KEY);
-  if (!pending) return;
-  window.sessionStorage.removeItem(POST_LOGIN_KEY);
-  setUsername(pending);
-  setStage("lobby");  // Skip intro + auth, go straight to lobby
-  setFading(true);
-}, []);
-```
-
-The user is automatically taken to the lobby with their recovered account.
+The auth view calls `onAuthed(username)`. In the current app, `HomeScreen` stores the
+username, increments `spacetimeSessionKey`, and switches straight to the lobby stage. That
+remounts the provider with the recovered token and skips the intro screen.
 
 ## Identity Persistence
 
@@ -418,7 +397,7 @@ This is why all stats, room membership, and chat messages persist — they're al
 
 ## Token Expiration
 
-SpacetimeDB tokens are valid for the lifetime of the session. If a token expires (e.g., server restart), the user must login again. The token storage key is `gunbound:spacetime:token`.
+SpacetimeDB tokens are valid for the lifetime of the session. If a token expires (e.g., server restart), the user must login again. The token storage key is `gunbound:spacetime-token`.
 
 ## Security Properties
 

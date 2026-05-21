@@ -28,7 +28,7 @@ import type {
 import type { DamagePopup, ExplosionVisual, TurnAnnouncement } from "@/features/game/types/effects";
 import type { MatchEvent } from "@/features/game/types/events";
 import type { GameState, InputState, MatchConfig } from "@/features/game/types/state";
-import type { BonusType } from "@/features/game/types/shared";
+import type { BonusType, WeaponType } from "@/features/game/types/shared";
 
 type GameStoreState = GameState & {
   input: InputState;
@@ -44,6 +44,9 @@ type GameStoreState = GameState & {
   releaseCharge(): void;
   attemptMove(direction: -1 | 1): void;
   switchWeapon(): void;
+  applyBattleMove(direction: -1 | 1): void;
+  applyBattleWeaponSwitch(weapon?: WeaponType): void;
+  applyBattleFire(input: { angle: number; power: number; weapon: WeaponType }): void;
 };
 
 export const defaultSetup: MatchConfig = {
@@ -432,37 +435,10 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
     },
     releaseCharge: function releaseCharge(): void {
       const state = get();
-      if (state.scene !== "playing" || !state.charging || state.terrain === null) {
-        return;
-      }
-
-      const players = clonePlayers(state.players);
-      const currentPlayer = players[state.turn - 1];
-      const power = clamp(state.power, 0.08, 1);
-      const projectile = createProjectile(currentPlayer.mobile, state.turn, power);
-      const shouldConsumeCharge = shouldConsumeSpecialCharge(currentPlayer.mobile.weapon, currentPlayer.mobile.specialCharges, state.turnCount);
-
-      if (shouldConsumeCharge) {
-        currentPlayer.mobile.specialCharges -= 1;
-      }
-
-      set({
-        players,
-        charging: false,
-        projectile,
-        power,
-        phase: "fire",
-        phaseTimer: getPhaseDuration("fire"),
-        phaseDuration: getPhaseDuration("fire"),
-        history: appendMatchEventEntries(state.history, [
-          {
-            round: state.round,
-            turn: state.turn,
-            kind: "shot",
-            text: currentPlayer.name + " fired " + getWeaponDisplayName(currentPlayer.mobile.type, currentPlayer.mobile.weapon) + "."
-          }
-        ]),
-        message: currentPlayer.name + " fired."
+      fireCurrentShot(state, set, {
+        angle: state.players[state.turn - 1].mobile.angle,
+        power: state.power,
+        weapon: state.players[state.turn - 1].mobile.weapon
       });
     },
     attemptMove: function attemptMove(direction: -1 | 1): void {
@@ -544,8 +520,98 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         ]),
         message: currentPlayer.name + " selected " + nextWeapon + "."
       });
+    },
+    applyBattleMove: function applyBattleMove(direction: -1 | 1): void {
+      get().attemptMove(direction);
+    },
+    applyBattleWeaponSwitch: function applyBattleWeaponSwitch(weapon?: WeaponType): void {
+      if (weapon === undefined) {
+        get().switchWeapon();
+        return;
+      }
+
+      const state = get();
+      if (state.scene !== "playing" || state.projectile !== null || state.charging) {
+        return;
+      }
+      if (state.phase === "resolve" || state.phase === "end" || state.phase === "fire") {
+        return;
+      }
+
+      const players = clonePlayers(state.players);
+      const currentPlayer = players[state.turn - 1];
+      if (currentPlayer.mobile.weapon === weapon) return;
+      if (weapon === "secondary" && !canSelectWeapon(weapon, currentPlayer.mobile.specialCharges, state.turnCount)) {
+        return;
+      }
+      currentPlayer.mobile.weapon = weapon;
+
+      set({
+        players,
+        history: appendMatchEventEntries(state.history, [
+          {
+            round: state.round,
+            turn: state.turn,
+            kind: "weapon-switch",
+            text: currentPlayer.name + " selected " + getWeaponDisplayName(currentPlayer.mobile.type, weapon) + "."
+          }
+        ]),
+        message: currentPlayer.name + " selected " + weapon + "."
+      });
+    },
+    applyBattleFire: function applyBattleFire(input: { angle: number; power: number; weapon: WeaponType }): void {
+      fireCurrentShot(get(), set, input);
     }
   };
+}
+
+function fireCurrentShot(
+  state: GameStoreState,
+  set: Parameters<StateCreator<GameStoreState>>[0],
+  input: { angle: number; power: number; weapon: WeaponType }
+): void {
+  if (state.scene !== "playing" || state.terrain === null) {
+    return;
+  }
+  if (state.projectile !== null || state.phase === "resolve" || state.phase === "end") {
+    return;
+  }
+
+  const players = clonePlayers(state.players);
+  const currentPlayer = players[state.turn - 1];
+  currentPlayer.mobile.angle = clamp(input.angle, 16, 84);
+  currentPlayer.mobile.weapon = input.weapon;
+
+  const power = clamp(input.power, 0.08, 1);
+  const projectile = createProjectile(currentPlayer.mobile, state.turn, power);
+  const shouldConsumeCharge = shouldConsumeSpecialCharge(currentPlayer.mobile.weapon, currentPlayer.mobile.specialCharges, state.turnCount);
+
+  if (shouldConsumeCharge) {
+    currentPlayer.mobile.specialCharges -= 1;
+  }
+
+  set({
+    players,
+    charging: false,
+    projectile,
+    power,
+    input: {
+      aimUp: false,
+      aimDown: false
+    },
+    phase: "fire",
+    phaseTimer: getPhaseDuration("fire"),
+    phaseDuration: getPhaseDuration("fire"),
+    history: appendMatchEventEntries(state.history, [
+      {
+        round: state.round,
+        turn: state.turn,
+        kind: "shot",
+        text: currentPlayer.name + " fired " + getWeaponDisplayName(currentPlayer.mobile.type, currentPlayer.mobile.weapon) + "."
+      }
+    ]),
+    message: currentPlayer.name + " fired."
+  });
 }
 
 function clonePlayers(players: [Player, Player]): [Player, Player] {

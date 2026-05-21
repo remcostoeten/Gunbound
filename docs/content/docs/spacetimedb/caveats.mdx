@@ -174,17 +174,18 @@ On production deploys, schema migrations should be backwards-compatible or handl
 
 The module name (`gunbound`) must match across:
 - `spacetime publish gunbound ...`
-- Database name in `SPACETIMEDB_URI`
-- `MODULE_NAME` in client config
+- `SPACETIME_MODULE` in client config
+- the database name used by the provider
 
 If mismatched, the client can't connect.
 
 ### Connection URI
 
-The default local SpacetimeDB URI is `http://localhost:3000` for a local server running on port 3000. For maincloud deployment, use the provided URI from SpacetimeDB.
+The default local SpacetimeDB URI is `ws://127.0.0.1:3002` for the local server started by
+`bun run spacetime:start`. For maincloud deployment, use the provided URI from SpacetimeDB.
 
 ```typescript
-const SPACETIMEDB_URI = process.env.NEXT_PUBLIC_SPACETIME_URI || 'http://localhost:3000';
+const SPACETIMEDB_URI = process.env.NEXT_PUBLIC_SPACETIMEDB_URI || 'ws://127.0.0.1:3002';
 ```
 
 ### Backup Strategy
@@ -281,7 +282,7 @@ From the browser console after app loads:
 ```typescript
 const { DbConnection, tables } = window.__gunbound__;
 const conn = DbConnection.builder()
-  .withUri('http://localhost:3000')
+  .withUri('ws://127.0.0.1:3002')
   .withDatabaseName('gunbound')
   .build();
 
@@ -301,8 +302,7 @@ conn.subscriptionBuilder()
 ### Check localStorage
 
 ```typescript
-localStorage.getItem('gunbound:spacetime:token');  // Should be a base64-encoded JWT
-localStorage.getItem('gunbound:post-login');       // Set after login, cleared on page load
+localStorage.getItem('gunbound:spacetime-token');   // Current session token
 ```
 
 ## Performance Notes

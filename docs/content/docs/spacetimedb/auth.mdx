@@ -302,7 +302,7 @@ The plaintext SpacetimeDB token is stored in localStorage:
 
 ```typescript
 // src/features/game/spacetime/token-storage.ts
-const TOKEN_KEY = 'gunbound:spacetime:token';
+const TOKEN_KEY = 'gunbound:spacetime-token';
 
 export function readStoredToken(): string | null {
   if (typeof window === 'undefined') return null;

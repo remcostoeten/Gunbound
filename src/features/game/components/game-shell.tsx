@@ -19,6 +19,7 @@ import {
     useGunboundSfx,
 } from "@/features/game/hooks/use-gunbound-sfx";
 import { defaultSetup, useGameStore } from "@/features/game/store/game-store";
+import { useBattleEventSync } from "@/features/game/multiplayer/use-battle-event-sync";
 import {
     selectMessage,
     selectPlayers,
@@ -175,6 +176,7 @@ export function GameShell({ spacetimeRoomId }: GameShellProps) {
     const restartMatch = useGameStore(selectRestartMatch);
     const returnToSetup = useGameStore(selectReturnToSetup);
     const roomSession = useRoomSession(spacetimeRoomId);
+    const battleSync = useBattleEventSync(roomSession);
     const [formState, setFormState] = useState<MatchConfig>(
         setup || defaultSetup,
     );
@@ -321,7 +323,11 @@ export function GameShell({ spacetimeRoomId }: GameShellProps) {
             {scene === "playing" ? <HistoryPanel /> : null}
             {scene === "playing" ? <TurnBanner /> : null}
             {scene === "playing" ? (
-                <div className="status-line">{message}</div>
+                <div className="status-line">
+                    {spacetimeRoomId !== undefined && !battleSync.canControl
+                        ? message + " Waiting for " + battleSync.activePlayerName + "."
+                        : message}
+                </div>
             ) : null}
             {scene === "playing" ? (
                 <div className="hud-bottom-wrapper">
