@@ -6,6 +6,7 @@ import type { LobbyChatMsg } from "../hooks/use-lobby-state";
 
 type Props = {
   onBack: () => void;
+  onOptions: () => void;
   messages: LobbyChatMsg[];
   onSend: (text: string) => void;
   whisperTo: string | null;
@@ -13,7 +14,7 @@ type Props = {
   onFriendRequestResponse: (requestId: bigint, accept: boolean) => void;
 };
 
-export function LobbyBottom({ onBack, messages, onSend, whisperTo, onClearWhisper, onFriendRequestResponse }: Props) {
+export function LobbyBottom({ onBack, onOptions, messages, onSend, whisperTo, onClearWhisper, onFriendRequestResponse }: Props) {
   return (
     <div className="gb-bottom">
       <LobbyChatPanel
@@ -25,7 +26,7 @@ export function LobbyBottom({ onBack, messages, onSend, whisperTo, onClearWhispe
       />
       <div className="gb-bottom-actions">
         <LobbyActionButton label="Event"  glyph="🎟" tone="purple" />
-        <LobbyActionButton label="Option" glyph="⚙" tone="blue" />
+        <LobbyActionButton label="Option" glyph="⚙" tone="blue" onClick={onOptions} />
         <LobbyActionButton label="Back"   glyph="↩" tone="blue" onClick={onBack} />
       </div>
     </div>

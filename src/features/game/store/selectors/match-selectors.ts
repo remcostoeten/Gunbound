@@ -33,3 +33,7 @@ export function selectRestartMatch(state: GameStoreState) {
 export function selectReturnToSetup(state: GameStoreState) {
   return state.returnToSetup;
 }
+
+export function selectSurrenderMatch(state: GameStoreState) {
+  return state.surrenderMatch;
+}

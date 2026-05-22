@@ -88,6 +88,7 @@ export const Room = table(
     mapType: t.string(),
     targetScore: t.u32(),
     roundLimit: t.u32(),
+    turnDurationMode: t.string().optional(),
     createdAt: t.timestamp()
   }
 );

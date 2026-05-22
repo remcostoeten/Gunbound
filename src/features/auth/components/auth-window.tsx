@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { playTrack } from "@/lib/music-bus";
 import { AuthField } from "./auth-field";
 import { AuthButton } from "./auth-button";
 import { useCredentialAuth, InvalidPasswordError } from "../hooks/use-credential-auth";
@@ -37,9 +38,11 @@ export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
     try {
       if (isRegister) {
         const result = await register(username, pw);
+        playTrack("lobby");
         onAuthed(result.username);
       } else {
         const result = await login(username, pw);
+        playTrack("lobby");
         onAuthed(result.username);
       }
     } catch (err) {

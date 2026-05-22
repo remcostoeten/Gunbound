@@ -10,14 +10,10 @@ import { getAudioVolume, subscribeAudioSettings } from "@/lib/audio-settings";
 type AudioPool = {
   context: AudioContext | null;
   gain: GainNode | null;
-  musicGain: GainNode | null;
-  bgMusic: HTMLAudioElement | null;
   sounds: Record<string, HTMLAudioElement>;
 };
 
 const BASE_SFX_GAIN = 0.14;
-const BASE_MUSIC_GAIN = 0.08;
-const BASE_BG_MUSIC_VOLUME = 0.12;
 
 const SOUND_PATHS: Record<string, string> = {
   "match-intro": "/sounds/anos-de-gunbound.mp3",
@@ -56,19 +52,14 @@ const SOUND_PATHS: Record<string, string> = {
 };
 
 export const lobbyMatchStartAudioEvent = "gunbound:lobby-match-start";
-export const lobbyAudioBlockedEvent = "gunbound:lobby-audio-blocked";
-export const lobbyAudioStartedEvent = "gunbound:lobby-audio-started";
 
 export function useGunboundSfx(): void {
   const poolRef = useRef<AudioPool>({
     context: null,
     gain: null,
-    musicGain: null,
-    bgMusic: null,
     sounds: {},
   });
   const prevSceneRef = useRef<string>("");
-  const lobbyStartedRef = useRef(false);
   const lobbyMatchStartCueAtRef = useRef(0);
   const trackerRef = useRef<AudioEventTracker>(createAudioEventTracker());
   const windAmbientNodeRef = useRef<{ source: AudioBufferSourceNode | null; gain: GainNode | null } | null>(null);
@@ -78,7 +69,6 @@ export function useGunboundSfx(): void {
     function unlockAudio(): void {
       ensureAudio(poolRef.current);
       initSounds(poolRef.current);
-      resumeLobbyMusicIfNeeded(poolRef.current);
     }
     window.addEventListener("pointerdown", unlockAudio, { passive: true });
     window.addEventListener("keydown", unlockAudio);
@@ -96,22 +86,21 @@ export function useGunboundSfx(): void {
     return subscribeAudioSettings(syncAudioVolumes);
   }, []);
 
-  useEffect(function startLobbyMusicImmediately(): void {
-    initSounds(poolRef.current);
-    startLobbyMusic(poolRef.current);
-    lobbyStartedRef.current = true;
-  }, []);
-
   useEffect(() => {
     function frame(): void {
-      syncAudioState(poolRef.current, prevSceneRef, lobbyStartedRef, lobbyMatchStartCueAtRef, trackerRef, windAmbientNodeRef);
+      syncAudioState(poolRef.current, prevSceneRef, lobbyMatchStartCueAtRef, trackerRef, windAmbientNodeRef);
       rafRef.current = window.requestAnimationFrame(frame);
     }
     rafRef.current = window.requestAnimationFrame(frame);
     return () => {
       window.cancelAnimationFrame(rafRef.current);
-      stopMusic(poolRef.current);
       stopWindAmbient(windAmbientNodeRef);
+      const pool = poolRef.current;
+      if (pool.context !== null) {
+        void pool.context.close();
+        pool.context = null;
+        pool.gain = null;
+      }
     };
   }, []);
 
@@ -153,56 +142,8 @@ function ensureAudio(pool: AudioPool): void {
   gain.gain.value = BASE_SFX_GAIN * getAudioVolume("sfx");
   gain.connect(context.destination);
 
-  const musicGain = context.createGain();
-  musicGain.gain.value = BASE_MUSIC_GAIN * getAudioVolume("music");
-  musicGain.connect(context.destination);
-
   pool.context = context;
   pool.gain = gain;
-  pool.musicGain = musicGain;
-}
-
-function stopMusic(pool: AudioPool): void {
-  if (pool.bgMusic) {
-    pool.bgMusic.pause();
-    pool.bgMusic.currentTime = 0;
-  }
-}
-
-function startLobbyMusic(pool: AudioPool): void {
-  if (pool.bgMusic !== null && !pool.bgMusic.paused) {
-    return;
-  }
-
-  if (pool.bgMusic) {
-    pool.bgMusic.pause();
-    pool.bgMusic = null;
-  }
-  const audio = new Audio("/sounds/lounge.mp3");
-  audio.loop = true;
-  audio.preload = "auto";
-  audio.volume = BASE_BG_MUSIC_VOLUME * getAudioVolume("music");
-  void audio
-    .play()
-    .then(function handleLobbyMusicStarted(): void {
-      window.dispatchEvent(new Event(lobbyAudioStartedEvent));
-    })
-    .catch(function handleLobbyMusicBlocked(): void {
-      window.dispatchEvent(new Event(lobbyAudioBlockedEvent));
-    });
-  pool.bgMusic = audio;
-}
-
-function resumeLobbyMusicIfNeeded(pool: AudioPool): void {
-  if (useGameStore.getState().scene !== "start") {
-    return;
-  }
-
-  if (pool.bgMusic !== null && !pool.bgMusic.paused) {
-    return;
-  }
-
-  startLobbyMusic(pool);
 }
 
 function playSfx(pool: AudioPool, name: string): void {
@@ -221,7 +162,6 @@ function getSfxVolume(name: string): number {
 function syncAudioState(
   pool: AudioPool,
   prevSceneRef: React.MutableRefObject<string>,
-  lobbyStartedRef: React.MutableRefObject<boolean>,
   lobbyMatchStartCueAtRef: React.MutableRefObject<number>,
   trackerRef: React.MutableRefObject<AudioEventTracker>,
   windAmbientNodeRef: React.MutableRefObject<{ source: AudioBufferSourceNode | null; gain: GainNode | null } | null>
@@ -234,7 +174,7 @@ function syncAudioState(
 
   applyAudioVolumes(pool);
 
-  routeSceneState(pool, state.scene, prevSceneRef, lobbyStartedRef, lobbyMatchStartCueAtRef, windAmbientNodeRef, context, gain);
+  routeSceneState(pool, state.scene, prevSceneRef, lobbyMatchStartCueAtRef, windAmbientNodeRef, context, gain);
 
   if (state.scene !== "playing") {
     prevSceneRef.current = state.scene;
@@ -253,14 +193,12 @@ function routeSceneState(
   pool: AudioPool,
   scene: GameState["scene"],
   prevSceneRef: React.MutableRefObject<string>,
-  lobbyStartedRef: React.MutableRefObject<boolean>,
   lobbyMatchStartCueAtRef: React.MutableRefObject<number>,
   windAmbientNodeRef: React.MutableRefObject<{ source: AudioBufferSourceNode | null; gain: GainNode | null } | null>,
   context: AudioContext,
   gain: GainNode
 ): void {
   if (scene === "playing" && prevSceneRef.current === "start") {
-    stopMusic(pool);
     if (window.performance.now() - lobbyMatchStartCueAtRef.current > 2500) {
       playSfx(pool, "super-shot");
     }
@@ -270,11 +208,6 @@ function routeSceneState(
   if (scene === "end" && prevSceneRef.current !== "end") {
     playSfx(pool, "adios");
     stopWindAmbient(windAmbientNodeRef);
-  }
-
-  if (scene === "start" && prevSceneRef.current === "end") {
-    startLobbyMusic(pool);
-    lobbyStartedRef.current = true;
   }
 }
 
@@ -347,14 +280,6 @@ function routeAudioCues(
 function applyAudioVolumes(pool: AudioPool): void {
   if (pool.gain !== null) {
     pool.gain.gain.value = BASE_SFX_GAIN * getAudioVolume("sfx");
-  }
-
-  if (pool.musicGain !== null) {
-    pool.musicGain.gain.value = BASE_MUSIC_GAIN * getAudioVolume("music");
-  }
-
-  if (pool.bgMusic !== null) {
-    pool.bgMusic.volume = BASE_BG_MUSIC_VOLUME * getAudioVolume("music");
   }
 }
 

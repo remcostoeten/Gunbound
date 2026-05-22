@@ -1,5 +1,20 @@
 type AudioChannel = "music" | "sfx";
 
+const UI_CLICK_KEY = "gunbound:ui-click-sounds";
+
+export function getUiClickEnabled(): boolean {
+  if (typeof window === "undefined") return true;
+  const stored = window.localStorage.getItem(UI_CLICK_KEY);
+  // Default on; only disabled when explicitly set to "false".
+  return stored !== "false";
+}
+
+export function setUiClickEnabled(enabled: boolean): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(UI_CLICK_KEY, String(enabled));
+  notifyAudioSettings();
+}
+
 type AudioSettings = Record<AudioChannel, number>;
 
 type Listener = () => void;

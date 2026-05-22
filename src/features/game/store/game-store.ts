@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import type { StateCreator } from "zustand";
-import { defaultRoundLimit, defaultSuddenDeathTurn, defaultTargetScore, getPhaseDuration } from "@/features/game/constants/gameplay";
+import { defaultRoundLimit, defaultSuddenDeathTurn, defaultTargetScore, defaultTurnDurationMode, getPhaseDuration } from "@/features/game/constants/gameplay";
 import { applyMobileGravity, markPlayersForFalling } from "@/features/game/engine/gravity";
 import { moveMobileAlongTerrain } from "@/features/game/engine/movement";
 import { applyExplosionDamage, stepProjectile } from "@/features/game/engine/physics";
@@ -10,7 +10,7 @@ import { advanceRoundTurn, getRoundWinner, resolveMatchContinuation, resolveRoun
 import { normalizeSeed } from "@/features/game/engine/random";
 import { carveCrater, clamp, getSurfaceY } from "@/features/game/engine/terrain";
 import { canSelectWeapon, getNextWeapon, getWeaponDisplayName, shouldConsumeSpecialCharge } from "@/features/game/engine/weapons";
-import { appendHistory, appendMatchEventEntries, createMatchEvent as buildMatchEvent } from "@/features/game/factories/create-match-event";
+import { appendHistory, appendMatchEventEntries, createMatchEvent as buildMatchEvent, resetHistoryEventCounter } from "@/features/game/factories/create-match-event";
 import { createPlaceholderPlayers } from "@/features/game/factories/create-player";
 import { createProjectile } from "@/features/game/factories/create-projectile";
 import { createStartedMatchState } from "@/features/game/factories/create-round-state";
@@ -38,6 +38,7 @@ type GameStoreState = GameState & {
   startMatch(config: MatchConfig): void;
   restartMatch(): void;
   returnToSetup(): void;
+  surrenderMatch(loser: 1 | 2): void;
   stepSimulation(dt: number): void;
   setAimKey(key: "up" | "down", active: boolean): void;
   beginCharge(): void;
@@ -61,6 +62,7 @@ export const defaultSetup: MatchConfig = {
   mapType: "rolling",
   targetScore: defaultTargetScore,
   roundLimit: defaultRoundLimit,
+  turnDurationMode: defaultTurnDurationMode,
   seedText: "gunbound-local"
 };
 
@@ -104,6 +106,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
     setup: defaultSetup,
     resolveTimer: 0,
     startMatch: function startMatch(config: MatchConfig): void {
+      resetHistoryEventCounter();
       const startedMatchState = createStartedMatchState(config);
 
       set({
@@ -119,6 +122,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       get().startMatch(get().setup);
     },
     returnToSetup: function returnToSetup(): void {
+      resetHistoryEventCounter();
       set({
         scene: "start",
         phase: "move",
@@ -137,6 +141,39 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         turnAnnouncement: null,
         history: [],
         message: "Set up a local match."
+      });
+    },
+    surrenderMatch: function surrenderMatch(loser: 1 | 2): void {
+      const state = get();
+      if (state.scene !== "playing") return;
+
+      const winner = loser === 1 ? 2 : 1;
+      const players = clonePlayers(state.players);
+      players[winner - 1].score = Math.max(players[winner - 1].score, state.targetScore);
+
+      set({
+        scene: "end",
+        phase: "end",
+        players,
+        projectile: null,
+        power: 0,
+        charging: false,
+        winner,
+        phaseTimer: 0,
+        phaseDuration: 0,
+        explosionVisual: null,
+        damagePopups: [],
+        turnAnnouncement: null,
+        history: appendMatchEventEntries(state.history, [
+          {
+            round: state.round,
+            turn: loser,
+            kind: "round-end",
+            text: players[loser - 1].name + " surrendered. " + players[winner - 1].name + " wins the match."
+          }
+        ]),
+        message: players[loser - 1].name + " surrendered. " + players[winner - 1].name + " wins.",
+        resolveTimer: 0
       });
     },
     stepSimulation: function stepSimulation(dt: number): void {
@@ -171,8 +208,8 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         nextPlayers = applyAimInput(nextPlayers, state.turn, state.input, dt);
         if (nextPlayers[state.turn - 1].mobile.angle !== state.players[state.turn - 1].mobile.angle && state.phase === "move") {
           nextPhase = "aim";
-          nextPhaseTimer = getPhaseDuration("aim");
-          nextPhaseDuration = getPhaseDuration("aim");
+          nextPhaseTimer = getPhaseDuration("aim", state.setup.turnDurationMode);
+          nextPhaseDuration = getPhaseDuration("aim", state.setup.turnDurationMode);
         }
       }
 
@@ -246,8 +283,8 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
           nextCharging = false;
           nextPhase = "fire";
           nextMessage = fired.message;
-          nextPhaseTimer = getPhaseDuration("fire");
-          nextPhaseDuration = getPhaseDuration("fire");
+          nextPhaseTimer = getPhaseDuration("fire", state.setup.turnDurationMode);
+          nextPhaseDuration = getPhaseDuration("fire", state.setup.turnDurationMode);
           nextHistory = appendMatchEventEntries(nextHistory, [
             {
               round: state.round,
@@ -336,8 +373,8 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
           suddenDeathTurn: state.suddenDeathTurn,
           suddenDeathActive: advanced.suddenDeathActive,
           turnCount: advanced.turnCount,
-          phaseTimer: getPhaseDuration("move"),
-          phaseDuration: getPhaseDuration("move"),
+          phaseTimer: getPhaseDuration("move", state.setup.turnDurationMode),
+          phaseDuration: getPhaseDuration("move", state.setup.turnDurationMode),
           tick: state.tick + 1,
           bonusBoxes: advanced.bonusBoxes,
           explosionVisual: nextExplosionVisual,
@@ -428,8 +465,8 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         charging: true,
         phase: "fire",
         power: Math.max(state.power, 0.08),
-        phaseTimer: getPhaseDuration("fire"),
-        phaseDuration: getPhaseDuration("fire"),
+        phaseTimer: getPhaseDuration("fire", state.setup.turnDurationMode),
+        phaseDuration: getPhaseDuration("fire", state.setup.turnDurationMode),
         message: currentPlayer.name + " is charging."
       });
     },
@@ -600,8 +637,8 @@ function fireCurrentShot(
       aimDown: false
     },
     phase: "fire",
-    phaseTimer: getPhaseDuration("fire"),
-    phaseDuration: getPhaseDuration("fire"),
+        phaseTimer: getPhaseDuration("fire", state.setup.turnDurationMode),
+        phaseDuration: getPhaseDuration("fire", state.setup.turnDurationMode),
     history: appendMatchEventEntries(state.history, [
       {
         round: state.round,

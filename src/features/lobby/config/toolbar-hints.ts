@@ -43,8 +43,8 @@ export const TOOLBAR_HINTS = {
     description: "Browse the global leaderboard and top players.",
   },
   friend: {
-    title: "Friend",
-    description: "Open your inbox for friend and room invites.",
+    title: "Inbox",
+    description: "Friend requests and room invites. Pending items show a badge.",
   },
   roomSearch: {
     title: "Room number",

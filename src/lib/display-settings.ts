@@ -1,16 +1,26 @@
 type DisplaySettings = {
   battleImmersive: boolean;
+  lobbyEmptyStateAnimated: boolean;
+  lobbyChatHeightPx: number;
 };
 
 type Listener = () => void;
 
 const STORAGE_KEY = "gunbound:display-settings";
+const LOBBY_CHAT_HEIGHT_MIN = 120;
+const LOBBY_CHAT_HEIGHT_MAX = 480;
+const LOBBY_CHAT_HEIGHT_DEFAULT = 180;
+
 const DEFAULT_SETTINGS: DisplaySettings = {
   battleImmersive: true,
+  lobbyEmptyStateAnimated: true,
+  lobbyChatHeightPx: LOBBY_CHAT_HEIGHT_DEFAULT,
 };
 
 let settings: DisplaySettings = {
   battleImmersive: DEFAULT_SETTINGS.battleImmersive,
+  lobbyEmptyStateAnimated: DEFAULT_SETTINGS.lobbyEmptyStateAnimated,
+  lobbyChatHeightPx: DEFAULT_SETTINGS.lobbyChatHeightPx,
 };
 let hydrated = false;
 const listeners = new Set<Listener>();
@@ -27,7 +37,51 @@ export function setBattleImmersive(value: boolean): void {
   }
 
   settings = {
+    ...settings,
     battleImmersive: value,
+  };
+  persistDisplaySettings();
+  notifyDisplaySettings();
+}
+
+export function getLobbyEmptyStateAnimated(): boolean {
+  hydrateDisplaySettings();
+  return settings.lobbyEmptyStateAnimated;
+}
+
+export function getLobbyChatHeightPx(): number {
+  hydrateDisplaySettings();
+  return settings.lobbyChatHeightPx;
+}
+
+export function setLobbyChatHeightPx(value: number): void {
+  hydrateDisplaySettings();
+  const clamped = clampLobbyChatHeight(value);
+  if (settings.lobbyChatHeightPx === clamped) {
+    return;
+  }
+
+  settings = {
+    ...settings,
+    lobbyChatHeightPx: clamped,
+  };
+  persistDisplaySettings();
+  notifyDisplaySettings();
+}
+
+export function clampLobbyChatHeight(value: number): number {
+  return Math.min(LOBBY_CHAT_HEIGHT_MAX, Math.max(LOBBY_CHAT_HEIGHT_MIN, Math.round(value)));
+}
+
+export function setLobbyEmptyStateAnimated(value: boolean): void {
+  hydrateDisplaySettings();
+  if (settings.lobbyEmptyStateAnimated === value) {
+    return;
+  }
+
+  settings = {
+    ...settings,
+    lobbyEmptyStateAnimated: value,
   };
   persistDisplaySettings();
   notifyDisplaySettings();
@@ -55,6 +109,10 @@ function hydrateDisplaySettings(): void {
     const parsed = JSON.parse(raw) as Partial<DisplaySettings>;
     settings = {
       battleImmersive: parsed.battleImmersive ?? DEFAULT_SETTINGS.battleImmersive,
+      lobbyEmptyStateAnimated: parsed.lobbyEmptyStateAnimated ?? DEFAULT_SETTINGS.lobbyEmptyStateAnimated,
+      lobbyChatHeightPx: clampLobbyChatHeight(
+        parsed.lobbyChatHeightPx ?? DEFAULT_SETTINGS.lobbyChatHeightPx,
+      ),
     };
   } catch {
     settings = { ...DEFAULT_SETTINGS };

@@ -3,31 +3,34 @@
 import { useEffect, useRef, useState } from "react";
 import { useRoomSession } from "../spacetime/use-room-session";
 import { ROOM_STATUS } from "@/features/game/spacetime/room-status";
-import { DEFAULT_MOBILE } from "@/features/game/mobiles/mobile-factory";
 import { getMapPresentation, mapPresentationOptions, parseMapType } from "@/features/game/constants/map-presentation";
-import type { MapType } from "@/features/game/types/shared";
+import { getMobilePresentation, mobilePresentationOptions } from "@/features/game/constants/mobile-presentation";
+import { getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
+import type { MapType, MobileType, TurnDurationMode } from "@/features/game/types/shared";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import type { LobbyRoom, LobbyRoomSettings } from "../types";
 
 type Props = {
   room: LobbyRoom;
-  onClose: () => void;
+  onDismiss: () => void;
+  onLeave: () => void;
   onStarted: (roomId: bigint) => void;
   onInvite: (roomId: bigint, username: string) => Promise<void>;
 };
 
-export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
+export function LobbyRoomModal({ room, onDismiss, onLeave, onStarted, onInvite }: Props) {
   const session = useRoomSession(room.id);
   const [chatDraft, setChatDraft] = useState("");
   const [inviteDraft, setInviteDraft] = useState("");
   const [settingsDraft, setSettingsDraft] = useState<LobbyRoomSettings>(() => getRoomSettings(room.settings));
   const [readyBusy, setReadyBusy] = useState(false);
+  const [mobileBusy, setMobileBusy] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [startBusy, setStartBusy] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const chatBodyRef = useRef<HTMLDivElement>(null);
   const startedRef = useRef(false);
-  const autoMobileRef = useRef(false);
   const syncedSettingsRef = useRef<LobbyRoomSettings>(getRoomSettings(room.settings));
 
   useEffect(() => {
@@ -36,20 +39,6 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
       behavior: "smooth"
     });
   }, [session.chat.length]);
-
-  useEffect(() => {
-    if (autoMobileRef.current) return;
-    if (!session.self) return;
-    if (session.self.mobileType !== undefined) {
-      autoMobileRef.current = true;
-      return;
-    }
-    autoMobileRef.current = true;
-    session.selectMobile(DEFAULT_MOBILE).catch((e) => {
-      autoMobileRef.current = false;
-      setError(messageFromError(e));
-    });
-  }, [session]);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -65,6 +54,7 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
       mapType: parseMapType(session.room.mapType),
       targetScore: session.room.targetScore,
       roundLimit: session.room.roundLimit,
+      turnDurationMode: parseTurnDurationMode(session.room.turnDurationMode),
     });
     setSettingsDraft((currentDraft) => {
       const previousSynced = syncedSettingsRef.current;
@@ -75,6 +65,10 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
 
   async function toggleReady() {
     if (!session.self || readyBusy) return;
+    if (!session.self.isReady && session.self.mobileType === undefined) {
+      setError("Choose a character before readying up.");
+      return;
+    }
     setReadyBusy(true);
     setError(null);
     try {
@@ -118,7 +112,22 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
     } catch {
       // ignore — closing anyway
     }
-    onClose();
+    onLeave();
+  }
+
+  async function chooseMobile(mobileType: MobileType) {
+    if (!session.self || mobileBusy || session.self.isReady) return;
+    if (session.room && session.room.status !== ROOM_STATUS.WAITING) return;
+    if (session.self.mobileType === mobileType) return;
+    setMobileBusy(true);
+    setError(null);
+    try {
+      await session.selectMobile(mobileType);
+    } catch (e) {
+      setError(messageFromError(e));
+    } finally {
+      setMobileBusy(false);
+    }
   }
 
   async function sendChat(e: React.FormEvent) {
@@ -151,11 +160,14 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
 
   if (!session.isLoaded) {
     return (
-      <div className="gb-modal-back" onClick={onClose}>
+      <div className="gb-modal-back" onClick={onDismiss}>
         <div className="gb-modal" onClick={(e) => e.stopPropagation()}>
-          <div className="gb-modal-head">
-            <span className="gb-modal-name">Joining {room.code}…</span>
+        <div className="gb-modal-head">
+          <span className="gb-modal-name">Joining {room.code}…</span>
+          <div className="gb-modal-head-actions">
+            <button type="button" className="gb-modal-min" onClick={onDismiss} aria-label="Minimize">−</button>
           </div>
+        </div>
           <div className="gb-modal-body">
             <p className="gb-field-hint">Connecting to room.</p>
           </div>
@@ -166,11 +178,14 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
 
   if (!session.room) {
     return (
-      <div className="gb-modal-back" onClick={onClose}>
+      <div className="gb-modal-back" onClick={onDismiss}>
         <div className="gb-modal" onClick={(e) => e.stopPropagation()}>
           <div className="gb-modal-head">
             <span className="gb-modal-name">Room not available</span>
-            <button className="gb-modal-x" onClick={leave}>✕</button>
+            <div className="gb-modal-head-actions">
+              <button type="button" className="gb-modal-min" onClick={onDismiss} aria-label="Minimize">−</button>
+              <button type="button" className="gb-modal-x" onClick={leave} aria-label="Leave room">✕</button>
+            </div>
           </div>
           <div className="gb-modal-body">
             <p className="gb-field-hint">
@@ -200,25 +215,33 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
     session.members.every((m) => m.isReady && m.mobileType !== undefined);
   const startEnabled = session.isHost && everyoneReady && !startBusy;
   const youAreReady = session.self?.isReady === true;
+  const yourMobile = session.self?.mobileType;
+  const yourMobilePresentation = yourMobile ? getMobilePresentation(yourMobile) : null;
+  const settingsLocked = session.room.status !== ROOM_STATUS.WAITING;
+  const mobileSelectionLocked = settingsLocked || youAreReady;
   const currentSettings = getRoomSettings({
     mapType: parseMapType(session.room.mapType),
     targetScore: session.room.targetScore,
     roundLimit: session.room.roundLimit,
+    turnDurationMode: parseTurnDurationMode(session.room.turnDurationMode),
   });
   const settingsChanged =
     settingsDraft.mapType !== currentSettings.mapType ||
     settingsDraft.targetScore !== currentSettings.targetScore ||
-    settingsDraft.roundLimit !== currentSettings.roundLimit;
-  const settingsLocked = session.room.status !== ROOM_STATUS.WAITING;
+    settingsDraft.roundLimit !== currentSettings.roundLimit ||
+    settingsDraft.turnDurationMode !== currentSettings.turnDurationMode;
   const selectedMap = getMapPresentation(settingsDraft.mapType);
 
   return (
-    <div className="gb-modal-back" onClick={onClose}>
+    <div className="gb-modal-back" onClick={onDismiss}>
       <div className="gb-modal" onClick={(e) => e.stopPropagation()}>
         <div className="gb-modal-head">
           <span className="gb-modal-no">{session.room.code}</span>
           <span className="gb-modal-name">Host: {session.members.find(m => m.isHost)?.name ?? "—"}</span>
-          <button className="gb-modal-x" onClick={leave}>✕</button>
+          <div className="gb-modal-head-actions">
+            <button type="button" className="gb-modal-min" onClick={onDismiss} aria-label="Minimize">−</button>
+            <button type="button" className="gb-modal-x" onClick={leave} aria-label="Leave room">✕</button>
+          </div>
         </div>
         <div className="gb-modal-body">
           {slots.map((slot, index) => {
@@ -235,10 +258,24 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
                 key={slot.key}
                 className={`gb-slot ${m.isHost ? "gb-slot-host" : ""}`}
               >
+                {m.mobileType ? (
+                  <div
+                    className="gb-slot-mobile-sprite"
+                    aria-hidden="true"
+                    style={getMobileSpriteStyle(m.mobileType)}
+                  />
+                ) : (
+                  <div className="gb-slot-mobile-sprite gb-slot-mobile-sprite-empty" aria-hidden="true" />
+                )}
                 <span className="gb-slot-tag">{m.isHost ? "HOST" : `P${index + 1}`}</span>
-                <span className="gb-slot-name">
-                  {m.name}{m.isSelf ? " (You)" : ""}
-                </span>
+                <div className="gb-slot-copy">
+                  <span className="gb-slot-name">
+                    {m.name}{m.isSelf ? " (You)" : ""}
+                  </span>
+                  <span className="gb-slot-mobile-label">
+                    {m.mobileType ? getMobilePresentation(m.mobileType).label : "No character selected"}
+                  </span>
+                </div>
                 <span className={`gb-slot-state ${m.isReady ? "gb-slot-on" : ""}`}>
                   {m.isReady ? "READY" : "Waiting"}
                 </span>
@@ -250,6 +287,51 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
             <span>Code: <b>{session.room.code}</b></span>
             <span>Players: <b>{session.members.length}/{room.capacity}</b></span>
             <span>Status: <b>{session.room.status === ROOM_STATUS.IN_MATCH ? "Playing" : "Waiting"}</b></span>
+          </div>
+
+          <div className="gb-mobile-picker">
+            <div className="gb-mobile-picker-head">
+              <span>Choose Character</span>
+              {yourMobilePresentation ? (
+                <b>{yourMobilePresentation.label}</b>
+              ) : (
+                <span className="gb-mobile-picker-hint">Pick one before ready</span>
+              )}
+            </div>
+            <div className="gb-mobile-grid" role="listbox" aria-label="Character selection">
+              {mobilePresentationOptions.map((option) => {
+                const selected = yourMobile === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    className={`gb-mobile-option${selected ? " gb-mobile-option-on" : ""}`}
+                    disabled={mobileBusy || mobileSelectionLocked}
+                    onClick={() => chooseMobile(option.value)}
+                    title={option.profile}
+                  >
+                    <div
+                      className="gb-mobile-option-sprite"
+                      aria-hidden="true"
+                      style={getMobileSpriteStyle(option.value)}
+                    />
+                    <span className="gb-mobile-option-name">{option.label}</span>
+                    <span className="gb-mobile-option-meta">{option.role}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {yourMobilePresentation ? (
+              <p className="gb-mobile-picker-detail">
+                {yourMobilePresentation.profile} HP {yourMobilePresentation.hp} · Move {yourMobilePresentation.move} · Shot {yourMobilePresentation.shot}
+              </p>
+            ) : (
+              <p className="gb-mobile-picker-detail">
+                Select your mobile. Both players need a character before the host can start.
+              </p>
+            )}
           </div>
 
           <form className="gb-room-invite" onSubmit={sendInvite}>
@@ -278,20 +360,34 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
                 <div className="gb-room-settings-grid">
                   <label className="gb-field">
                     <span>Map</span>
-                    <select
+                    <Select
                       value={settingsDraft.mapType}
-                      onChange={(e) => setSettingsDraft({
+                      onValueChange={(value) => setSettingsDraft({
                         ...settingsDraft,
-                        mapType: e.target.value as MapType,
+                        mapType: value as MapType,
                       })}
                       disabled={settingsBusy || settingsLocked}
                     >
-                      {mapPresentationOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="gb-map-select-trigger" aria-label="Select map">
+                        <span className="gb-map-select-current">
+                          <img src={selectedMap.previewImage} alt="" aria-hidden="true" />
+                          <span>{selectedMap.label}</span>
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent className="gb-map-select-content" align="start">
+                        {mapPresentationOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value} className="gb-map-select-item">
+                            <span className="gb-map-select-option">
+                              <img src={option.previewImage} alt="" aria-hidden="true" />
+                              <span>
+                                <b>{option.label}</b>
+                                <small>{option.description}</small>
+                              </span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </label>
                   <label className="gb-field">
                     <span>Target Score</span>
@@ -323,9 +419,24 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
                       ))}
                     </select>
                   </label>
+                  <label className="gb-field">
+                    <span>Turn Duration</span>
+                    <select
+                      value={settingsDraft.turnDurationMode}
+                      onChange={(e) => setSettingsDraft({
+                        ...settingsDraft,
+                        turnDurationMode: e.target.value as TurnDurationMode,
+                      })}
+                      disabled={settingsBusy || settingsLocked}
+                    >
+                      {TURN_DURATION_MODE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
                 <div className="gb-room-settings-copy">
-                  <span>{selectedMap.description}</span>
+                  <span>{selectedMap.description} {getTurnDurationModeDescription(settingsDraft.turnDurationMode)}</span>
                   <button
                     type="button"
                     className="gb-pill"
@@ -340,6 +451,7 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
               <div className="gb-room-settings-readonly">
                 <span>Target <b>{currentSettings.targetScore}</b></span>
                 <span>Rounds <b>{currentSettings.roundLimit}</b></span>
+                <span>Turns <b>{getTurnDurationModeLabel(currentSettings.turnDurationMode)}</b></span>
                 <span>{getMapPresentation(currentSettings.mapType).description}</span>
               </div>
             )}
@@ -387,7 +499,8 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
           <button
             className={`gb-modal-btn gb-modal-btn-ready ${youAreReady ? "on" : ""}`}
             onClick={toggleReady}
-            disabled={readyBusy || !session.self}
+            disabled={readyBusy || !session.self || (!youAreReady && yourMobile === undefined)}
+            title={yourMobile === undefined ? "Choose a character first" : undefined}
           >
             {youAreReady ? "Cancel Ready" : "Ready"}
           </button>
@@ -398,7 +511,9 @@ export function LobbyRoomModal({ room, onClose, onStarted, onInvite }: Props) {
               onClick={start}
               title={
                 !everyoneReady
-                  ? "Both players must be ready"
+                  ? session.members.some((member) => member.mobileType === undefined)
+                    ? "Both players must choose a character and ready up"
+                    : "Both players must be ready"
                   : undefined
               }
             >
@@ -419,15 +534,59 @@ function messageFromError(e: unknown): string {
 
 const TARGET_SCORE_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ROUND_LIMIT_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+const TURN_DURATION_MODE_OPTIONS: Array<{ value: TurnDurationMode; label: string; description: string }> = [
+  {
+    value: "timed",
+    label: "Timed",
+    description: "Current flow: reposition or take the shot before time expires.",
+  },
+  {
+    value: "infinite",
+    label: "Infinite",
+    description: "Async flow: players can close and resume later on their turn.",
+  },
+];
 
 function getRoomSettings(settings: LobbyRoomSettings | undefined): LobbyRoomSettings {
   return {
     mapType: settings?.mapType ?? mapPresentationOptions[0].value,
     targetScore: settings?.targetScore ?? 2,
     roundLimit: settings?.roundLimit ?? 5,
+    turnDurationMode: settings?.turnDurationMode ?? "timed",
   };
 }
 
 function settingsEqual(a: LobbyRoomSettings, b: LobbyRoomSettings): boolean {
-  return a.mapType === b.mapType && a.targetScore === b.targetScore && a.roundLimit === b.roundLimit;
+  return (
+    a.mapType === b.mapType &&
+    a.targetScore === b.targetScore &&
+    a.roundLimit === b.roundLimit &&
+    a.turnDurationMode === b.turnDurationMode
+  );
+}
+
+function parseTurnDurationMode(value: string | undefined): TurnDurationMode {
+  return value === "infinite" || value === "timed" ? value : "timed";
+}
+
+function getTurnDurationModeLabel(value: TurnDurationMode): string {
+  return TURN_DURATION_MODE_OPTIONS.find((option) => option.value === value)?.label ?? TURN_DURATION_MODE_OPTIONS[0].label;
+}
+
+function getTurnDurationModeDescription(value: TurnDurationMode): string {
+  return TURN_DURATION_MODE_OPTIONS.find((option) => option.value === value)?.description ?? TURN_DURATION_MODE_OPTIONS[0].description;
+}
+
+function getMobileSpriteStyle(mobileType: MobileType): React.CSSProperties {
+  const spriteSource = getMobileSpriteSource(mobileType);
+  const scaleX = shouldFlipMobileSprite(mobileType, 1) ? -spriteSource.roomScale : spriteSource.roomScale;
+
+  return {
+    backgroundImage: `url("${spriteSource.path}")`,
+    backgroundPosition: "0 0",
+    backgroundRepeat: "no-repeat",
+    backgroundSize: `${String(spriteSource.frameCount * 100)}% 100%`,
+    transform:
+      `scale(${String(scaleX)}, ${String(spriteSource.roomScale)}) translate(${String(spriteSource.roomTranslateX)}px, ${String(spriteSource.roomTranslateY)}px)`,
+  };
 }

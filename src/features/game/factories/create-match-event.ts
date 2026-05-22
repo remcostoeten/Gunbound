@@ -1,6 +1,13 @@
 import type { MatchEvent, MatchEventInput } from "@/features/game/types/events";
 
+let historyEventCounter = 0;
+
+export function resetHistoryEventCounter(): void {
+  historyEventCounter = 0;
+}
+
 export function createMatchEvent(input: MatchEventInput): MatchEvent {
+  historyEventCounter += 1;
   return {
     id:
       String(input.round) +
@@ -9,9 +16,7 @@ export function createMatchEvent(input: MatchEventInput): MatchEvent {
       "-" +
       input.kind +
       "-" +
-      String(input.text.length) +
-      "-" +
-      String(Math.abs(hashText(input.text))),
+      String(historyEventCounter),
     round: input.round,
     turn: input.turn,
     kind: input.kind,
@@ -29,10 +34,10 @@ export function appendHistory(history: MatchEvent[], entries: MatchEvent[]): Mat
   }
 
   if (nextHistory.length > 80) {
-    return nextHistory.slice(nextHistory.length - 80);
+    return ensureUniqueEventIds(nextHistory.slice(nextHistory.length - 80));
   }
 
-  return nextHistory;
+  return ensureUniqueEventIds(nextHistory);
 }
 
 export function createMatchEvents(entries: MatchEventInput[]): MatchEvent[] {
@@ -51,15 +56,25 @@ export function appendMatchEventEntries(history: MatchEvent[], entries: MatchEve
   return appendHistory(history, createMatchEvents(entries));
 }
 
-function hashText(text: string): number {
-  let hash = 0;
-  let index = 0;
+export function ensureUniqueEventIds(events: MatchEvent[]): MatchEvent[] {
+  const usedIds = new Set<string>();
+  let changed = false;
 
-  while (index < text.length) {
-    hash = (hash << 5) - hash + text.charCodeAt(index);
-    hash |= 0;
-    index += 1;
-  }
+  const nextEvents = events.map((event) => {
+    let id = event.id;
+    let suffix = 1;
 
-  return hash;
+    while (usedIds.has(id)) {
+      id = event.id + "~" + String(suffix);
+      suffix += 1;
+    }
+
+    usedIds.add(id);
+
+    if (id === event.id) return event;
+    changed = true;
+    return { ...event, id };
+  });
+
+  return changed ? nextEvents : events;
 }

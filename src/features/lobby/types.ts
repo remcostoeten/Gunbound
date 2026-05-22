@@ -1,9 +1,10 @@
-import type { MapType } from "@/features/game/types/shared";
+import type { MapType, TurnDurationMode } from "@/features/game/types/shared";
 
 export type LobbyRoomSettings = {
   mapType: MapType;
   targetScore: number;
   roundLimit: number;
+  turnDurationMode: TurnDurationMode;
 };
 
 export type LobbyRoom = {
@@ -31,6 +32,7 @@ export type LobbyTopIcon = {
   label: string;
   glyph: string;
   bg: string;
+  implemented: boolean;
 };
 
 export type LobbyActionTone = "purple" | "blue";

@@ -14,7 +14,8 @@ const MAX_ROUND_EVENT_PAYLOAD_LENGTH = 1024;
 const VALID_ROUND_EVENT_KINDS = new Set([
   'battle_move',
   'battle_switch_weapon',
-  'battle_fire'
+  'battle_fire',
+  'battle_surrender'
 ]);
 const VALID_BATTLE_WEAPONS = new Set(['primary', 'secondary']);
 const REQUEST_STATUS_PENDING = { tag: 'Pending' } as const;
@@ -25,10 +26,12 @@ const ROOM_MAX_MEMBERS = 2;
 const DEFAULT_MAP_TYPE = 'rolling';
 const DEFAULT_TARGET_SCORE = 2;
 const DEFAULT_ROUND_LIMIT = 5;
+const DEFAULT_TURN_DURATION_MODE = 'timed';
 const MIN_TARGET_SCORE = 1;
 const MAX_TARGET_SCORE = 9;
 const MIN_ROUND_LIMIT = 1;
 const MAX_ROUND_LIMIT = 15;
+const VALID_TURN_DURATION_MODES = new Set(['timed', 'infinite']);
 const CHAT_MESSAGE_MAX_LENGTH = 200;
 const LOBBY_CHANNEL_MIN = 1;
 const LOBBY_CHANNEL_MAX = 8;
@@ -186,6 +189,18 @@ function assertRoundTurnActor(ctx: ModuleContext, roomId: bigint, turn: number):
     if (member.slotIndex === turn - 1) {
       if (member.identity.toHexString() !== ctx.sender.toHexString()) {
         throw new SenderError('not your turn');
+      }
+      return;
+    }
+  }
+  throw new SenderError('turn has no room member');
+}
+
+function assertRoundEventActor(ctx: ModuleContext, roomId: bigint, turn: number): void {
+  for (const member of ctx.db.roomMember.room_member_room_id.filter(roomId)) {
+    if (member.slotIndex === turn - 1) {
+      if (member.identity.toHexString() !== ctx.sender.toHexString()) {
+        throw new SenderError('cannot record another player event');
       }
       return;
     }
@@ -590,6 +605,7 @@ export const create_room = spacetimedb.reducer(
       mapType: DEFAULT_MAP_TYPE,
       targetScore: DEFAULT_TARGET_SCORE,
       roundLimit: DEFAULT_ROUND_LIMIT,
+      turnDurationMode: DEFAULT_TURN_DURATION_MODE,
       createdAt: ctx.timestamp
     });
 
@@ -610,9 +626,10 @@ export const create_room = spacetimedb.reducer(
  * Host-only: updates the room rules while the lobby is waiting.
  */
 export const update_room_settings = spacetimedb.reducer(
-  { roomId: t.u64(), mapType: t.string(), targetScore: t.u32(), roundLimit: t.u32() },
-  (ctx, { roomId, mapType, targetScore, roundLimit }) => {
+  { roomId: t.u64(), mapType: t.string(), targetScore: t.u32(), roundLimit: t.u32(), turnDurationMode: t.string() },
+  (ctx, { roomId, mapType, targetScore, roundLimit, turnDurationMode }) => {
     if (!VALID_MAP_TYPES.has(mapType)) throw new SenderError('unknown map type');
+    if (!VALID_TURN_DURATION_MODES.has(turnDurationMode)) throw new SenderError('unknown turn duration mode');
     if (targetScore < MIN_TARGET_SCORE || targetScore > MAX_TARGET_SCORE) {
       throw new SenderError(`target score must be ${MIN_TARGET_SCORE}-${MAX_TARGET_SCORE}`);
     }
@@ -633,7 +650,8 @@ export const update_room_settings = spacetimedb.reducer(
       ...room,
       mapType,
       targetScore,
-      roundLimit
+      roundLimit,
+      turnDurationMode
     });
   }
 );
@@ -807,9 +825,11 @@ export const record_round_event = spacetimedb.reducer(
       throw new SenderError('round event tick out of order');
     }
     const parsedPayload = parseRoundEventPayload(kind, payload);
-    const expectedTurn = getExpectedBattleTurn(ctx, roundId);
-    if (parsedPayload.turn !== expectedTurn) {
-      throw new SenderError('not this turn');
+    if (kind !== 'battle_surrender') {
+      const expectedTurn = getExpectedBattleTurn(ctx, roundId);
+      if (parsedPayload.turn !== expectedTurn) {
+        throw new SenderError('not this turn');
+      }
     }
 
     let isMember = false;
@@ -820,7 +840,11 @@ export const record_round_event = spacetimedb.reducer(
       }
     }
     if (!isMember) throw new SenderError('only room members may record events');
-    assertRoundTurnActor(ctx, round.roomId, parsedPayload.turn);
+    if (kind === 'battle_surrender') {
+      assertRoundEventActor(ctx, round.roomId, parsedPayload.turn);
+    } else {
+      assertRoundTurnActor(ctx, round.roomId, parsedPayload.turn);
+    }
 
     ctx.db.roundEvent.insert({
       id: 0n,
@@ -1408,6 +1432,7 @@ export const join_queue = spacetimedb.reducer((ctx) => {
       mapType: DEFAULT_MAP_TYPE,
       targetScore: DEFAULT_TARGET_SCORE,
       roundLimit: DEFAULT_ROUND_LIMIT,
+      turnDurationMode: DEFAULT_TURN_DURATION_MODE,
       createdAt: ctx.timestamp
     });
 

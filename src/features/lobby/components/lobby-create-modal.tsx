@@ -9,11 +9,13 @@ import type { MapType } from "@/features/game/types/shared";
 type Props = {
   onClose: () => void;
   onCreated: (code: string) => void;
+  minimized?: boolean;
+  onMinimize?: () => void;
 };
 
 const CODE_PATTERN = /^[A-Z2-9]{4,8}$/;
 
-export function LobbyCreateModal({ onClose, onCreated }: Props) {
+export function LobbyCreateModal({ onClose, onCreated, minimized = false, onMinimize }: Props) {
   const { createRoom } = useLobbyRooms();
   const [code, setCode] = useState(() => generateRoomCode());
   const [mapType, setMapType] = useState<MapType>(mapPresentationOptions[0].value);
@@ -38,12 +40,17 @@ export function LobbyCreateModal({ onClose, onCreated }: Props) {
     }
   }
 
+  if (minimized) return null;
+
   return (
     <div className="gb-modal-back" onClick={onClose}>
       <div className="gb-modal" onClick={(e) => e.stopPropagation()}>
         <div className="gb-modal-head">
           <span className="gb-modal-name">Create Room</span>
-          <button className="gb-modal-x" onClick={onClose}>✕</button>
+          <div className="gb-modal-head-actions">
+            <button className="gb-modal-min" onClick={onMinimize} aria-label="Minimize">−</button>
+            <button className="gb-modal-x" onClick={onClose}>✕</button>
+          </div>
         </div>
         <div className="gb-modal-body">
           <label className="gb-field">

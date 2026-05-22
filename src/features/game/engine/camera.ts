@@ -2,17 +2,16 @@ import { worldHeight, worldWidth } from "@/features/game/constants/world";
 import type { ExplosionVisual } from "@/features/game/types/effects";
 import type { CameraFrame, CameraMode, CameraRig, CameraStepInput, CameraViewport } from "@/features/game/types/presentation";
 import type { Player, TerrainState } from "@/features/game/types/entities";
-import type { Vec2 } from "@/features/game/types/shared";
+import type { PlayerId, Vec2 } from "@/features/game/types/shared";
 
 const overviewViewport: CameraViewport = {
   width: worldWidth,
   height: worldHeight
 };
 
-const playerViewport: CameraViewport = {
-  width: 960,
-  height: 540
-};
+const playerViewportMinWidth = 960;
+const playerViewportPadding = 320;
+const playerViewportAspect = 9 / 16;
 
 const projectileViewport: CameraViewport = {
   width: 1120,
@@ -41,8 +40,8 @@ export function createCameraRig(): CameraRig {
 
 export function stepCameraRig(rig: CameraRig, input: CameraStepInput): CameraRig {
   const mode = resolveCameraMode(input);
-  const viewport = getViewportForMode(mode);
-  const target = clampCenter(resolveTarget(mode, input), viewport);
+  const viewport = getViewportForMode(mode, input);
+  const target = clampCenter(resolveTarget(mode, input, viewport), viewport);
   const smoothing = getSmoothing(mode, input);
   const lerpFactor = getAdaptiveLerpFactor(rig.center, target, input.dt, smoothing);
   const center = {
@@ -107,9 +106,9 @@ function resolveCameraMode(input: CameraStepInput): CameraMode {
   return "player";
 }
 
-function getViewportForMode(mode: CameraMode): CameraViewport {
+function getViewportForMode(mode: CameraMode, input: CameraStepInput): CameraViewport {
   if (mode === "player") {
-    return playerViewport;
+    return getAdaptivePlayerViewport(input.players);
   }
 
   if (mode === "projectile") {
@@ -123,7 +122,7 @@ function getViewportForMode(mode: CameraMode): CameraViewport {
   return overviewViewport;
 }
 
-function resolveTarget(mode: CameraMode, input: CameraStepInput): Vec2 {
+function resolveTarget(mode: CameraMode, input: CameraStepInput, viewport: CameraViewport): Vec2 {
   if (mode === "projectile" && input.projectile !== null) {
     return predictProjectilePosition(input.projectile);
   }
@@ -136,16 +135,47 @@ function resolveTarget(mode: CameraMode, input: CameraStepInput): Vec2 {
   }
 
   if (mode === "player") {
-    return getPlayerFocus(input.players[input.turn - 1]);
+    return getAdaptivePlayerFocus(input.players, input.turn, viewport);
   }
 
   return getOverviewFocus(input.players);
 }
 
+function getAdaptivePlayerViewport(players: [Player, Player]): CameraViewport {
+  const horizontalSpan = Math.abs(players[0].mobile.position.x - players[1].mobile.position.x);
+  const desiredWidth = clamp(
+    horizontalSpan + playerViewportPadding,
+    playerViewportMinWidth,
+    worldWidth
+  );
+  return {
+    width: desiredWidth,
+    height: desiredWidth * playerViewportAspect
+  };
+}
+
+function getAdaptivePlayerFocus(
+  players: [Player, Player],
+  turn: PlayerId,
+  viewport: CameraViewport
+): Vec2 {
+  const activeFocus = getPlayerFocus(players[turn - 1]);
+  const midpoint = getOverviewFocus(players);
+  const widthBlend = clamp(
+    (viewport.width - playerViewportMinWidth) / Math.max(1, worldWidth - playerViewportMinWidth),
+    0,
+    1
+  );
+  return {
+    x: lerp(activeFocus.x, midpoint.x, widthBlend),
+    y: lerp(activeFocus.y, midpoint.y, widthBlend)
+  };
+}
+
 function getPlayerFocus(player: Player): Vec2 {
   return {
     x: player.mobile.position.x + player.mobile.facing * 110,
-    y: player.mobile.position.y - 110
+    y: player.mobile.position.y + 40
   };
 }
 
@@ -156,7 +186,7 @@ function getOverviewFocus(players: [Player, Player]): Vec2 {
 
   return {
     x: (left + right) * 0.5,
-    y: averageY - 60
+    y: averageY + 50
   };
 }
 

@@ -27,6 +27,8 @@ export type TerrainTheme = "meadow" | "sunset" | "midnight";
 
 export type MapType = "rolling" | "canyon" | "crater" | "ridge";
 
+export type TurnDurationMode = "timed" | "infinite";
+
 export type PlayerAccent = "sky" | "coral" | "mint" | "gold";
 
 export type PlayerTitle = "Captain" | "Raider" | "Engineer" | "Oracle";

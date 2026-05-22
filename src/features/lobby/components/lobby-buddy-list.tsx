@@ -11,11 +11,15 @@ import { AppContextMenu, type AppContextMenuItem } from "@/components/context/ap
 import { tables } from "@/features/game/spacetime";
 import type { Player } from "@/features/game/spacetime/module_bindings/types";
 
-type Props = { onBuddyClick: (name: string) => void };
+type Props = {
+  onBuddyClick: (name: string) => void;
+  onFriendRequestResponse: (requestId: bigint, accept: boolean) => void;
+  onOpenInbox: () => void;
+};
 
 type BuddyView = "online" | "buddies" | "all";
 
-export function LobbyBuddyList({ onBuddyClick }: Props) {
+export function LobbyBuddyList({ onBuddyClick, onFriendRequestResponse, onOpenInbox }: Props) {
   const connection = useSpacetimeDB();
   const selfIdentityHex = connection.identity?.toHexString() ?? null;
   const [players, isReady] = useTable(tables.player);
@@ -24,6 +28,7 @@ export function LobbyBuddyList({ onBuddyClick }: Props) {
   const [profilePlayer, setProfilePlayer] = useState<Player | null>(null);
   const {
     friends,
+    incomingRequests,
     requestFriend,
     removeFriend,
     hasFriendIdentity,
@@ -37,6 +42,7 @@ export function LobbyBuddyList({ onBuddyClick }: Props) {
     () => getAllPlayers(players, selfIdentityHex),
     [players, selfIdentityHex],
   );
+
   const playerByHex = useMemo(() => {
     const map = new Map<string, Player>();
     for (const player of players) {
@@ -50,6 +56,7 @@ export function LobbyBuddyList({ onBuddyClick }: Props) {
       ? allPlayers.length
       : friends.length;
   const trimmedDraftName = draftName.trim();
+  const pendingRequestCount = incomingRequests.length;
 
   const submitBuddyForm = (event: React.FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
@@ -97,17 +104,46 @@ export function LobbyBuddyList({ onBuddyClick }: Props) {
             </button>
             <button
               type="button"
-              className={`gb-buddy-tab ${view === "buddies" ? "gb-buddy-tab-on" : ""}`}
+              className={`gb-buddy-tab ${view === "buddies" ? "gb-buddy-tab-on" : ""}${pendingRequestCount > 0 ? " gb-buddy-tab-alert" : ""}`}
               onClick={() => setView("buddies")}
               aria-pressed={view === "buddies"}
             >
               Buddies
+              {pendingRequestCount > 0 && (
+                <span className="gb-buddy-tab-badge" aria-label={`${String(pendingRequestCount)} pending friend requests`}>
+                  {String(pendingRequestCount)}
+                </span>
+              )}
             </button>
           </div>
           <span className="gb-buddy-head-title">
             {view === "online" ? "Live Users" : view === "all" ? "All Users" : "Buddy List"} ({String(visibleCount)})
           </span>
         </div>
+        {view === "buddies" && pendingRequestCount > 0 && (
+          <section className="gb-buddy-requests" aria-label="Pending friend requests">
+            <div className="gb-buddy-requests-head">
+              <span>Friend Requests</span>
+              <button type="button" className="gb-buddy-requests-inbox" onClick={onOpenInbox}>
+                Open inbox
+              </button>
+            </div>
+            <ul className="gb-buddy-request-list">
+              {incomingRequests.map((request) => (
+                <li className="gb-buddy-request-row" key={request.id.toString()}>
+                  <div className="gb-buddy-request-copy">
+                    <b>{request.requesterName}</b>
+                    <span>wants to add you.</span>
+                  </div>
+                  <div className="gb-buddy-request-actions">
+                    <button type="button" onClick={() => onFriendRequestResponse(request.id, true)}>Accept</button>
+                    <button type="button" onClick={() => onFriendRequestResponse(request.id, false)}>Decline</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         {view === "buddies" && (
           <form className="gb-buddy-add" onSubmit={submitBuddyForm}>
             <input
@@ -141,7 +177,7 @@ export function LobbyBuddyList({ onBuddyClick }: Props) {
             <span className="gb-empty-title">No users yet</span>
             <span className="gb-empty-sub">Registered players will appear here.</span>
           </div>
-        ) : view === "buddies" && friends.length === 0 ? (
+        ) : view === "buddies" && friends.length === 0 && pendingRequestCount === 0 ? (
           <div className="gb-empty gb-empty-buddy">
             <span className="gb-empty-glyph">👥</span>
             <span className="gb-empty-title">No buddies yet</span>
@@ -168,6 +204,7 @@ export function LobbyBuddyList({ onBuddyClick }: Props) {
                     deleteBuddy,
                     hasFriendIdentity(player.identity),
                     hasPendingRequestForIdentity(player.identity),
+                    player.identity.toHexString() === selfIdentityHex,
                   ),
                 )}
           </ul>
@@ -192,32 +229,47 @@ function renderPlayer(
   onRemoveBuddy: (identity: LobbyFriendView["identity"]) => void,
   isBuddy: boolean,
   isPending: boolean,
+  isSelf: boolean,
 ): React.JSX.Element {
   const actionLabel = isBuddy ? "Added" : isPending ? "Sent" : "Add";
   const contextItems: AppContextMenuItem[] = [
     { id: "profile", label: "View profile", icon: UserRound, onSelect: () => onOpenProfile(player) },
-    { id: "chat", label: "Start chat", icon: MessageCircle, onSelect: () => onBuddyClick(player.name) },
-    isBuddy
-      ? {
-          id: "delete-friend",
-          label: "Delete friend",
-          icon: UserMinus,
-          destructive: true,
-          onSelect: () => onRemoveBuddy(player.identity),
-        }
-      : {
-          id: "add-friend",
-          label: isPending ? "Friend request sent" : "Add friend",
-          icon: UserPlus,
-          disabled: isPending,
-          onSelect: () => onSaveBuddy(player.name),
-        },
+    ...(isSelf
+      ? []
+      : [
+          { id: "chat", label: "Start chat", icon: MessageCircle, onSelect: () => onBuddyClick(player.name) },
+          isBuddy
+            ? {
+                id: "delete-friend",
+                label: "Delete friend",
+                icon: UserMinus,
+                destructive: true,
+                onSelect: () => onRemoveBuddy(player.identity),
+              }
+            : {
+                id: "add-friend",
+                label: isPending ? "Friend request sent" : "Add friend",
+                icon: UserPlus,
+                disabled: isPending,
+                onSelect: () => onSaveBuddy(player.name),
+              },
+        ]),
   ];
   return (
     <li key={player.identity.toHexString()}>
       <AppContextMenu label={player.name} items={contextItems}>
         <div className="gb-buddy-row">
-          <button className="gb-buddy-main gb-buddy-btn" type="button" onClick={() => onBuddyClick(player.name)}>
+          <button
+            className="gb-buddy-main gb-buddy-btn"
+            type="button"
+            onClick={() => {
+              if (isSelf) {
+                onOpenProfile(player);
+              } else {
+                onBuddyClick(player.name);
+              }
+            }}
+          >
             <Facehash name={player.name} size={24} variant="gradient" showInitial={false} className="gb-buddy-face" />
             <PlayerFlag country={player.country ?? null} name={player.name} />
             <span className="gb-buddy-name">{player.name}</span>
@@ -226,16 +278,18 @@ function renderPlayer(
             </span>
             <span className={`gb-buddy-dot${player.isOnline ? "" : " gb-buddy-dot-offline"}`} />
           </button>
-          <button
-            className="gb-buddy-action"
-            type="button"
-            onClick={() => onSaveBuddy(player.name)}
-            disabled={isBuddy || isPending}
-            aria-label={isBuddy ? `${player.name} is already a buddy` : `Add ${player.name} as buddy`}
-            title={isBuddy ? "Saved" : isPending ? "Request sent" : "Add buddy"}
-          >
-            {actionLabel}
-          </button>
+          {!isSelf && (
+            <button
+              className="gb-buddy-action"
+              type="button"
+              onClick={() => onSaveBuddy(player.name)}
+              disabled={isBuddy || isPending}
+              aria-label={isBuddy ? `${player.name} is already a buddy` : `Add ${player.name} as buddy`}
+              title={isBuddy ? "Saved" : isPending ? "Request sent" : "Add buddy"}
+            >
+              {actionLabel}
+            </button>
+          )}
         </div>
       </AppContextMenu>
     </li>
@@ -314,18 +368,16 @@ function PlayerFlag({ country, name }: { country: string | null; name: string })
   );
 }
 
-function getOnlinePlayers(players: readonly Player[], selfIdentityHex: string | null): Player[] {
+function getOnlinePlayers(players: readonly Player[], _selfIdentityHex: string | null): Player[] {
   return players
     .filter((player) => player.isOnline && player.name.trim().length > 0)
-    .filter((player) => player.identity.toHexString() !== selfIdentityHex)
     .slice()
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function getAllPlayers(players: readonly Player[], selfIdentityHex: string | null): Player[] {
+function getAllPlayers(players: readonly Player[], _selfIdentityHex: string | null): Player[] {
   return players
     .filter((player) => player.name.trim().length > 0)
-    .filter((player) => player.identity.toHexString() !== selfIdentityHex)
     .slice()
     .sort((a, b) => {
       if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;

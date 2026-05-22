@@ -103,6 +103,7 @@ export const Room = __t.object("Room", {
   mapType: __t.string(),
   targetScore: __t.u32(),
   roundLimit: __t.u32(),
+  turnDurationMode: __t.option(__t.string()),
   createdAt: __t.timestamp(),
 });
 export type Room = __Infer<typeof Room>;

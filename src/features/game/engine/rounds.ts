@@ -2,7 +2,7 @@ import { worldWidth } from "@/features/game/constants/world";
 import { randomInt } from "@/features/game/engine/random";
 import { getWindLabel, rollWind } from "@/features/game/engine/wind";
 import { createBonusBox } from "@/features/game/factories/create-bonus-box";
-import { appendMatchEventEntries } from "@/features/game/factories/create-match-event";
+import { appendHistory, appendMatchEventEntries } from "@/features/game/factories/create-match-event";
 import { createNextRoundState } from "@/features/game/factories/create-round-state";
 import type { BonusBox, Mobile, Player, TerrainState } from "@/features/game/types/entities";
 import type { DamagePopup } from "@/features/game/types/effects";
@@ -346,16 +346,4 @@ function createDamagePopup(player: Player, value: number): DamagePopup {
     timer: 1,
     duration: 1
   };
-}
-
-function appendHistory(history: MatchEvent[], entries: MatchEvent[]): MatchEvent[] {
-  const nextHistory = history.slice();
-  let index = 0;
-
-  while (index < entries.length) {
-    nextHistory.push(entries[index]);
-    index += 1;
-  }
-
-  return nextHistory;
 }

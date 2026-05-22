@@ -236,6 +236,7 @@ export function useRoomSession(
         mapType: settings.mapType,
         targetScore: settings.targetScore,
         roundLimit: settings.roundLimit,
+        turnDurationMode: settings.turnDurationMode,
       });
     },
     [connection, room],

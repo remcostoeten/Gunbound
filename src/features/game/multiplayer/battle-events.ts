@@ -6,6 +6,7 @@ export const BATTLE_EVENT_KIND = {
   MOVE: "battle_move",
   SWITCH_WEAPON: "battle_switch_weapon",
   FIRE: "battle_fire",
+  SURRENDER: "battle_surrender",
 } as const;
 
 export type BattleEventKind =
@@ -31,10 +32,16 @@ export type BattleFirePayload = {
   weapon: WeaponType;
 };
 
+export type BattleSurrenderPayload = {
+  v: 1;
+  turn: 1 | 2;
+};
+
 export type BattleEventPayload =
   | BattleMovePayload
   | BattleSwitchWeaponPayload
-  | BattleFirePayload;
+  | BattleFirePayload
+  | BattleSurrenderPayload;
 
 export function parseBattleEventPayload(
   kind: string,
@@ -73,6 +80,11 @@ export function parseBattleEventPayload(
         power: value.power,
         weapon: value.weapon,
       };
+    }
+
+    if (kind === BATTLE_EVENT_KIND.SURRENDER) {
+      if (!isTurn(value.turn)) return undefined;
+      return { v: 1, turn: value.turn };
     }
   } catch {
     return undefined;
