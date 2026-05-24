@@ -23,6 +23,7 @@ type UseCredentialAuthResult = {
   state: AuthState;
   register(username: string, password: string): Promise<RegisterResult>;
   login(username: string, password: string): Promise<LoginResult>;
+  loginWithGoogle(idToken: string): Promise<LoginResult>;
   isConnected: boolean;
   credentialsReady: boolean;
   connectionError: Error | undefined;
@@ -88,10 +89,29 @@ export function useCredentialAuth(): UseCredentialAuthResult {
     [credentialRows, credentialsReady]
   );
 
+  const loginWithGoogle = useCallback(
+    async (idToken: string): Promise<LoginResult> => {
+      setState("working");
+      try {
+        const decoded = decodeJwt(idToken);
+        const rawName = decoded.name || decoded.email?.split("@")[0] || "GoogleUser";
+        const sanitizedUsername = sanitizeUsername(rawName);
+
+        writeStoredToken(idToken);
+        writeStoredUsername(sanitizedUsername);
+        return { username: sanitizedUsername };
+      } finally {
+        setState("idle");
+      }
+    },
+    []
+  );
+
   return {
     state,
     register,
     login,
+    loginWithGoogle,
     isConnected,
     credentialsReady,
     connectionError: connection.connectionError
@@ -107,6 +127,37 @@ function validateCredentials(username: string, password: string): { username: st
     throw new Error(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`);
   }
   return { username: trimmedUsername, password };
+}
+
+function decodeJwt(token: string): any {
+  try {
+    const base64Url = token.split(".")[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    return JSON.parse(jsonPayload);
+  } catch (error) {
+    console.error("Failed to decode JWT:", error);
+    return {};
+  }
+}
+
+function sanitizeUsername(name: string): string {
+  let sanitized = name.replace(/[^A-Za-z0-9_]/g, "_");
+  sanitized = sanitized.replace(/_+/g, "_");
+  sanitized = sanitized.replace(/^_+|_+$/g, "");
+  if (sanitized.length < 3) {
+    sanitized = (sanitized + "_user").slice(0, 20);
+  }
+  if (sanitized.length > 20) {
+    sanitized = sanitized.slice(0, 20);
+    sanitized = sanitized.replace(/_+$/g, "");
+  }
+  return sanitized;
 }
 
 export { InvalidPasswordError };

@@ -297,6 +297,49 @@ export function redrawTerrainCanvas(terrain: TerrainState): void {
   context.putImageData(imageData, 0, 0);
 }
 
+export function redrawTerrainCanvasRegion(terrain: TerrainState, minX: number, maxX: number, minY: number, maxY: number): void {
+  if (terrain.canvas === null) {
+    return;
+  }
+
+  const context = terrain.canvas.getContext("2d");
+  if (context === null) {
+    return;
+  }
+
+  const left = clamp(Math.floor(minX), 0, terrain.width - 1);
+  const right = clamp(Math.ceil(maxX), 0, terrain.width - 1);
+  const top = clamp(Math.floor(minY), 0, terrain.height - 1);
+  const bottom = clamp(Math.ceil(maxY), 0, terrain.height - 1);
+  const width = right - left + 1;
+  const height = bottom - top + 1;
+  const imageData = context.createImageData(width, height);
+  let y = top;
+
+  while (y <= bottom) {
+    let x = left;
+
+    while (x <= right) {
+      const sourceIndex = y * terrain.width + x;
+      const pixel = ((y - top) * width + (x - left)) * 4;
+      if (terrain.mask[sourceIndex] === 1) {
+        paintTerrainPixel(imageData.data, terrain, x, y, pixel);
+      } else {
+        imageData.data[pixel] = 0;
+        imageData.data[pixel + 1] = 0;
+        imageData.data[pixel + 2] = 0;
+        imageData.data[pixel + 3] = 0;
+      }
+      x += 1;
+    }
+
+    y += 1;
+  }
+
+  context.clearRect(left, top, width, height);
+  context.putImageData(imageData, left, top);
+}
+
 function smoothHeights(heights: number[], passes: number): void {
   let pass = 0;
 
@@ -435,7 +478,7 @@ export function carveCrater(terrain: TerrainState, center: Vec2, radius: number)
     column += 1;
   }
 
-  redrawTerrainCanvas(terrain);
+  redrawTerrainCanvasRegion(terrain, minX - 3, maxX + 3, minY - 3, maxY + 8);
 
   return {
     width: terrain.width,
@@ -459,7 +502,7 @@ export function findSurfaceForColumn(terrain: TerrainState, x: number): number {
     y += 1;
   }
 
-  return terrain.height - 1;
+  return terrain.height + 80;
 }
 
 export function getTerrainNormal(terrain: TerrainState, point: Vec2): Vec2 {

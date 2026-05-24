@@ -30,6 +30,26 @@ export function selectTurnCount(state: GameStoreState) {
   return state.turnCount;
 }
 
+export function selectTurnMoveRemaining(state: GameStoreState) {
+  return state.turnMoveRemaining;
+}
+
+export function selectBattleItemInventories(state: GameStoreState) {
+  return state.battleItemInventories;
+}
+
+export function selectSelectedBattleItems(state: GameStoreState) {
+  return state.selectedBattleItems;
+}
+
+export function selectTurnDelays(state: GameStoreState) {
+  return state.turnDelays;
+}
+
+export function selectTurnElapsed(state: GameStoreState) {
+  return state.turnElapsed;
+}
+
 export function selectBonusBoxes(state: GameStoreState) {
   return state.bonusBoxes;
 }

@@ -4,6 +4,7 @@ export type BattleInputCommand =
   | { kind: "aim"; key: "up" | "down"; active: boolean }
   | { kind: "move"; direction: -1 | 1 }
   | { kind: "switch-weapon" }
+  | { kind: "switch-item" }
   | { kind: "begin-charge" }
   | { kind: "release-charge" };
 

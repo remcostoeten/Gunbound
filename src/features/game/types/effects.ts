@@ -141,6 +141,7 @@ export type VisualEffectsState = {
   hitFlash: HitFlash | null;
   grass: GrassTuft[];
   previousExplosion: ExplosionVisual | null;
+  previousExplosionKeys: string[];
   previousPhase: GamePhase | "";
   leafSpawnTimer: number;
   windParticlesEnabled: boolean;
@@ -158,6 +159,7 @@ export type VisualEffectsInput = {
   players: [Player, Player];
   turn: PlayerId;
   explosionVisual: ExplosionVisual | null;
+  explosionVisuals: ExplosionVisual[];
   wind: Vec2;
   scene: GameScene;
   charging: boolean;
@@ -166,4 +168,5 @@ export type VisualEffectsInput = {
   terrain: TerrainState | null;
   dt: number;
   visualTime: number;
+  reducedMotion: boolean;
 };

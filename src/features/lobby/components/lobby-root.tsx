@@ -22,7 +22,7 @@ import { useLobbyState } from "../hooks/use-lobby-state";
 import { useLobbyChat } from "../spacetime/use-lobby-chat";
 import { useLobbyFriends, type IncomingRoomInviteView } from "../spacetime/use-lobby-friends";
 import { useLobbyRooms, type LobbyRoomView } from "../spacetime/use-lobby-rooms";
-import { ROOM_STATUS, useCurrentPlayer, useCurrentRoom, useEmptyDataMode, usePlayerCountrySync } from "@/features/game/spacetime";
+import { ROOM_STATUS, useCurrentPlayer, useCurrentRoom, usePlayerCountrySync } from "@/features/game/spacetime";
 import type { LobbyChatMsg } from "../types";
 import type { LobbyRoom } from "../types";
 
@@ -33,6 +33,7 @@ type Props = {
   onReplay: () => void;
   onLogout?: () => void;
   onEnterBattle?: (roomId: bigint) => void;
+  onEnterSoloPractice?: () => void;
 };
 
 // Lobby background music is randomized from music-bus
@@ -59,6 +60,7 @@ export function LobbyRoot({
   onReplay,
   onLogout,
   onEnterBattle,
+  onEnterSoloPractice,
 }: Props) {
   useMenuClickSound();
   const connection = useSpacetimeDB();
@@ -73,9 +75,8 @@ export function LobbyRoot({
   const [emptyStateAnimated, setEmptyStateAnimated] = useState(() => getLobbyEmptyStateAnimated());
   const { player } = useCurrentPlayer();
   usePlayerCountrySync();
-  const emptyDataMode = useEmptyDataMode();
   const selfName = player?.name?.trim() || username || null;
-  const s = useLobbyState(selfName, emptyDataMode.enabled);
+  const s = useLobbyState(selfName);
   const { rooms: roomViews, joinRoomByCode, quickJoin } = useLobbyRooms();
   const matchmaking = useMatchmakingQueue();
   const { room: currentDbRoom, isReady: currentRoomReady } = useCurrentRoom();
@@ -329,15 +330,6 @@ export function LobbyRoot({
     }
   }, [roomViews, openRoomModal, s]);
 
-  const handleToggleEmptyData = useCallback(async () => {
-    try {
-      await emptyDataMode.setEnabled(!emptyDataMode.enabled);
-      s.pushToast(emptyDataMode.enabled ? "Fixture data enabled" : "Empty data enabled");
-    } catch (e) {
-      s.pushToast(messageFromError(e));
-    }
-  }, [emptyDataMode, s]);
-
   const handleStarted = useCallback((roomId: bigint) => {
     s.setActiveRoom(null);
     setRoomModalOpen(false);
@@ -394,6 +386,7 @@ export function LobbyRoot({
           onWaiting={handleWaiting}
           inQueue={matchmaking.inQueue}
           onQuickjoin={handleQuickjoin}
+          onSoloPractice={onEnterSoloPractice ?? (() => {})}
           onCreate={() => {
             if (createMinimized) {
               setCreateMinimized(false);
@@ -419,9 +412,6 @@ export function LobbyRoot({
               return;
             }
           }}
-          canToggleEmptyData={player?.isAdmin === true}
-          emptyDataEnabled={emptyDataMode.enabled}
-          onToggleEmptyData={handleToggleEmptyData}
         />
         <LobbyBody
           rooms={rooms}

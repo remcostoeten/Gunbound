@@ -1,8 +1,10 @@
 import type { ProjectileState } from "@/features/game/types/combat";
+import type { TurnDelayQueue } from "@/features/game/engine/delay";
 import type { BonusBox, Player, TerrainState } from "@/features/game/types/entities";
 import type { DamagePopup, ExplosionVisual, TurnAnnouncement } from "@/features/game/types/effects";
 import type { MatchEvent } from "@/features/game/types/events";
-import type { GamePhase, GameScene, MapType, MobileType, PlayerAccent, PlayerId, PlayerTitle, TurnDurationMode, Vec2 } from "@/features/game/types/shared";
+import type { BattleItemType, GamePhase, GameScene, MapType, MobileType, PlayerAccent, PlayerId, PlayerTitle, TurnDurationMode, Vec2 } from "@/features/game/types/shared";
+import type { BattleItemInventory } from "@/features/game/engine/battle-items";
 
 export type MatchConfig = {
   playerOneName: string;
@@ -18,11 +20,14 @@ export type MatchConfig = {
   roundLimit: number;
   turnDurationMode: TurnDurationMode;
   seedText: string;
+  soloBot?: boolean;
 };
 
 export type InputState = {
   aimUp: boolean;
   aimDown: boolean;
+  moveLeft: boolean;
+  moveRight: boolean;
 };
 
 export type GameState = {
@@ -43,10 +48,16 @@ export type GameState = {
   power: number;
   charging: boolean;
   turnCount: number;
+  turnElapsed: number;
+  turnDelays: TurnDelayQueue;
+  turnMoveRemaining: number;
+  battleItemInventories: [BattleItemInventory, BattleItemInventory];
+  selectedBattleItems: [BattleItemType | null, BattleItemType | null];
   phaseTimer: number;
   phaseDuration: number;
   bonusBoxes: BonusBox[];
   explosionVisual: ExplosionVisual | null;
+  explosionVisuals: ExplosionVisual[];
   damagePopups: DamagePopup[];
   turnAnnouncement: TurnAnnouncement | null;
   history: MatchEvent[];

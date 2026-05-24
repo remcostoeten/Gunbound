@@ -7,7 +7,6 @@ import { useIntroSequence } from "../hooks/use-intro-sequence";
 import { playIntroMusic } from "../audio/play-music";
 import { IntroMascot } from "./intro-mascot";
 import { IntroLogoGroup } from "./intro-logo-group";
-import { IntroExitToggle } from "./intro-exit-toggle";
 import type { IntroExitMode } from "../types";
 
 type Props = {
@@ -26,7 +25,7 @@ export function IntroRoot({
   replayKey = 0,
 }: Props) {
   const [exitMode, setExitMode] = useState<IntroExitMode>("pull");
-  const [introArmed, setIntroArmed] = useState(false);
+  const [introArmed] = useState(true);
   const musicRef = useRef<ReturnType<typeof playIntroMusic> | null>(null);
   const fit = useFitToTarget(autoFit, targetWidth, targetHeight);
   const dustVariants = useDustVariants(replayKey);
@@ -40,17 +39,13 @@ export function IntroRoot({
   const pulling = exiting && exitMode === "pull";
 
   useEffect(() => {
+    musicRef.current?.stop();
+    musicRef.current = playIntroMusic();
     return () => {
       musicRef.current?.stop();
       musicRef.current = null;
     };
-  }, []);
-
-  function handleStartIntro(): void {
-    musicRef.current?.stop();
-    musicRef.current = playIntroMusic();
-    setIntroArmed(true);
-  }
+  }, [replayKey]);
 
   return (
     <div
@@ -63,7 +58,7 @@ export function IntroRoot({
       <div className="intro-glow" />
 
       <div className={`intro-stage ${pulling ? "stage-exit" : ""}`}>
-        <IntroMascot mascotIn={mascotIn} pulling={pulling} />
+        <IntroMascot mascotIn={mascotIn} pulling={pulling} scale={fit.scale} />
         <IntroLogoGroup
           pulled={pulling}
           fit={fit}
@@ -72,14 +67,6 @@ export function IntroRoot({
           dustVariants={dustVariants}
         />
       </div>
-
-      {!introArmed ? (
-        <button className="intro-start-button" type="button" onClick={handleStartIntro}>
-          Start
-        </button>
-      ) : null}
-
-      <IntroExitToggle mode={exitMode} onChange={setExitMode} />
     </div>
   );
 }

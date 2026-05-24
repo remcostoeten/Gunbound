@@ -1,4 +1,5 @@
 import { worldWidth } from "@/features/game/constants/world";
+import { selectNextTurn, type TurnDelayQueue } from "@/features/game/engine/delay";
 import { randomInt } from "@/features/game/engine/random";
 import { getWindLabel, rollWind } from "@/features/game/engine/wind";
 import { createBonusBox } from "@/features/game/factories/create-bonus-box";
@@ -13,6 +14,7 @@ import type { BonusType, PlayerId } from "@/features/game/types/shared";
 export type TurnAdvanceResult = {
   players: [Player, Player];
   turn: PlayerId;
+  turnDelays: TurnDelayQueue;
   wind: { x: number; y: number };
   turnCount: number;
   bonusBoxes: BonusBox[];
@@ -118,9 +120,11 @@ export function advanceRoundTurn(
   randomState: number,
   turnCount: number,
   suddenDeathTurn: number,
-  bonusBoxes: BonusBox[]
+  bonusBoxes: BonusBox[],
+  turnDelays: TurnDelayQueue
 ): TurnAdvanceResult {
-  const nextTurn = getNextTurn(turn);
+  const turnSelection = selectNextTurn(turnDelays, turn, players);
+  const nextTurn = turnSelection.turn;
   const nextTurnCount = turnCount + 1;
   const windRoll = rollWind(randomState);
   const nextPlayers = clonePlayers(players);
@@ -164,6 +168,7 @@ export function advanceRoundTurn(
   return {
     players: nextPlayers,
     turn: nextTurn,
+    turnDelays: turnSelection.queue,
     wind: windRoll.wind,
     turnCount: nextTurnCount,
     bonusBoxes: bonusRoll.bonusBoxes,
@@ -281,14 +286,6 @@ function getRoundWinnerByScore(players: [Player, Player], targetScore: number): 
 
 function createWinnerMessage(players: [Player, Player], winner: PlayerId): string {
   return players[winner - 1].name + " wins.";
-}
-
-function getNextTurn(turn: PlayerId): PlayerId {
-  if (turn === 1) {
-    return 2;
-  }
-
-  return 1;
 }
 
 function clonePlayers(players: [Player, Player]): [Player, Player] {

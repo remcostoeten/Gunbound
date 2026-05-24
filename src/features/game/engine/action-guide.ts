@@ -1,7 +1,8 @@
+import { getBattleItemDisplayName, getNextAvailableBattleItem, type BattleItemInventory } from "@/features/game/engine/battle-items";
 import { canSelectWeapon, getWeaponDisplayName } from "@/features/game/engine/weapons";
 import type { Player } from "@/features/game/types/entities";
 import type { TurnGuide, TurnGuideCommand, TurnGuidePhaseStep, TurnGuideWeaponSlot } from "@/features/game/types/presentation";
-import type { GamePhase } from "@/features/game/types/shared";
+import type { BattleItemType, GamePhase } from "@/features/game/types/shared";
 
 export function createTurnGuide(
   player: Player,
@@ -9,9 +10,12 @@ export function createTurnGuide(
   charging: boolean,
   phaseTimer: number,
   power: number,
-  turnCount: number
+  turnCount: number,
+  turnMoveRemaining: number,
+  battleItemInventory: BattleItemInventory,
+  selectedBattleItem: BattleItemType | null
 ): TurnGuide {
-  const secondaryAvailable = canSelectWeapon("secondary", player.mobile.specialCharges, turnCount);
+  const ssAvailable = canSelectWeapon("ss", player.mobile.specialCharges, turnCount);
 
   return {
     headline: getTurnGuideHeadline(phase, charging),
@@ -20,8 +24,8 @@ export function createTurnGuide(
     tone: getTurnGuideTone(phase),
     timerLabel: formatTimer(phaseTimer),
     powerPercent: charging ? Math.round(power * 100) : 0,
-    commands: createTurnGuideCommands(player, phase, charging, secondaryAvailable),
-    weaponSlots: createTurnGuideWeaponSlots(player, turnCount, secondaryAvailable),
+    commands: createTurnGuideCommands(player, phase, charging, ssAvailable, turnMoveRemaining, battleItemInventory, selectedBattleItem),
+    weaponSlots: createTurnGuideWeaponSlots(player, turnCount, ssAvailable),
     phaseSteps: createTurnGuidePhaseSteps(phase)
   };
 }
@@ -50,12 +54,16 @@ function createTurnGuideCommands(
   player: Player,
   phase: GamePhase,
   charging: boolean,
-  secondaryAvailable: boolean
+  ssAvailable: boolean,
+  turnMoveRemaining: number,
+  battleItemInventory: BattleItemInventory,
+  selectedBattleItem: BattleItemType | null
 ): TurnGuideCommand[] {
   return [
-    createTurnGuideCommand("A / D", "Move", getMoveDetailLabel(phase, charging), getMoveCommandState(phase, charging)),
+    createTurnGuideCommand("A / D", "Move", getMoveDetailLabel(phase, charging, turnMoveRemaining), getMoveCommandState(phase, charging, turnMoveRemaining)),
     createTurnGuideCommand("Up / Down", "Aim", getAimDetailLabel(phase, charging), getAimCommandState(phase, charging)),
-    createTurnGuideCommand("Q", "Shot", getWeaponDetailLabel(player, phase, charging, secondaryAvailable), getWeaponCommandState(player, phase, charging)),
+    createTurnGuideCommand("Q", "Shot", getWeaponDetailLabel(player, phase, charging, ssAvailable), getWeaponCommandState(player, phase, charging)),
+    createTurnGuideCommand("E", "Item", getItemDetailLabel(phase, charging, battleItemInventory, selectedBattleItem), getItemCommandState(phase, charging, battleItemInventory)),
     createTurnGuideCommand("Space", charging ? "Release" : "Charge", getFireDetailLabel(phase, charging), getFireCommandState(phase, charging))
   ];
 }
@@ -77,10 +85,11 @@ function createTurnGuideCommand(
 function createTurnGuideWeaponSlots(
   player: Player,
   turnCount: number,
-  secondaryAvailable: boolean
+  ssAvailable: boolean
 ): TurnGuideWeaponSlot[] {
   const primarySelected = player.mobile.weapon === "primary";
   const secondarySelected = player.mobile.weapon === "secondary";
+  const ssSelected = player.mobile.weapon === "ss";
 
   return [
     {
@@ -97,9 +106,18 @@ function createTurnGuideWeaponSlots(
       mobileType: player.mobile.type,
       weaponType: "secondary",
       weaponLabel: getWeaponDisplayName(player.mobile.type, "secondary"),
-      detailLabel: getSecondaryDetailLabel(player.mobile.specialCharges, turnCount, secondaryAvailable, secondarySelected),
+      detailLabel: secondarySelected ? "Selected" : "Ready",
       selected: secondarySelected,
-      available: secondaryAvailable
+      available: true
+    },
+    {
+      slotLabel: "SS",
+      mobileType: player.mobile.type,
+      weaponType: "ss",
+      weaponLabel: getWeaponDisplayName(player.mobile.type, "ss"),
+      detailLabel: getSsDetailLabel(player.mobile.specialCharges, turnCount, ssAvailable, ssSelected),
+      selected: ssSelected,
+      available: ssAvailable
     }
   ];
 }
@@ -150,7 +168,7 @@ function getTurnGuideDetail(player: Player, phase: GamePhase, charging: boolean)
   }
 
   if (phase === "move") {
-    return "Moving ends the turn. A clean shot can still start from here.";
+    return "Move within your range, adjust the shot, then fire in the same turn.";
   }
 
   if (phase === "aim") {
@@ -196,13 +214,17 @@ function getTurnGuideTone(phase: GamePhase): TurnGuide["tone"] {
   return "end";
 }
 
-function getMoveDetailLabel(phase: GamePhase, charging: boolean): string {
+function getMoveDetailLabel(phase: GamePhase, charging: boolean, turnMoveRemaining: number): string {
   if (charging) {
     return "Locked";
   }
 
-  if (phase === "move") {
-    return "Ends turn";
+  if (phase === "move" || phase === "aim") {
+    if (turnMoveRemaining <= 0) {
+      return "Spent";
+    }
+
+    return String(Math.round(turnMoveRemaining)) + " left";
   }
 
   return "Closed";
@@ -224,7 +246,7 @@ function getAimDetailLabel(phase: GamePhase, charging: boolean): string {
   return "Angle";
 }
 
-function getWeaponDetailLabel(player: Player, phase: GamePhase, charging: boolean, secondaryAvailable: boolean): string {
+function getWeaponDetailLabel(player: Player, phase: GamePhase, charging: boolean, ssAvailable: boolean): string {
   if (charging) {
     return "Committed";
   }
@@ -234,14 +256,14 @@ function getWeaponDetailLabel(player: Player, phase: GamePhase, charging: boolea
   }
 
   if (player.mobile.weapon === "secondary") {
+    return ssAvailable ? "Next SS" : "Return to Shot 1";
+  }
+
+  if (player.mobile.weapon === "ss") {
     return "Return to Shot 1";
   }
 
-  if (secondaryAvailable) {
-    return "Swap";
-  }
-
-  return "Shot 2 locked";
+  return "Next Shot 2";
 }
 
 function getFireDetailLabel(phase: GamePhase, charging: boolean): string {
@@ -260,8 +282,30 @@ function getFireDetailLabel(phase: GamePhase, charging: boolean): string {
   return "Hold";
 }
 
-function getMoveCommandState(phase: GamePhase, charging: boolean): TurnGuideCommand["state"] {
-  if (charging || phase === "aim" || phase === "fire" || phase === "resolve" || phase === "end") {
+function getItemDetailLabel(
+  phase: GamePhase,
+  charging: boolean,
+  inventory: BattleItemInventory,
+  selectedItem: BattleItemType | null
+): string {
+  if (charging) {
+    return selectedItem === null ? "None" : getBattleItemDisplayName(selectedItem);
+  }
+
+  if (phase === "resolve" || phase === "end" || phase === "fire") {
+    return "Locked";
+  }
+
+  if (selectedItem !== null) {
+    return getBattleItemDisplayName(selectedItem);
+  }
+
+  const nextItem = getNextAvailableBattleItem(inventory, null);
+  return nextItem === null ? "Empty" : "Ready";
+}
+
+function getMoveCommandState(phase: GamePhase, charging: boolean, turnMoveRemaining: number): TurnGuideCommand["state"] {
+  if (charging || phase === "fire" || phase === "resolve" || phase === "end" || turnMoveRemaining <= 0) {
     return "locked";
   }
 
@@ -293,11 +337,23 @@ function getWeaponCommandState(
     return "locked";
   }
 
-  if (player.mobile.weapon === "secondary") {
+  if (player.mobile.weapon === "secondary" || player.mobile.weapon === "ss") {
     return "ready";
   }
 
   return "ready";
+}
+
+function getItemCommandState(
+  phase: GamePhase,
+  charging: boolean,
+  inventory: BattleItemInventory
+): TurnGuideCommand["state"] {
+  if (charging || phase === "fire" || phase === "resolve" || phase === "end") {
+    return "locked";
+  }
+
+  return getNextAvailableBattleItem(inventory, null) === null ? "locked" : "ready";
 }
 
 function getFireCommandState(phase: GamePhase, charging: boolean): TurnGuideCommand["state"] {
@@ -316,17 +372,17 @@ function getFireCommandState(phase: GamePhase, charging: boolean): TurnGuideComm
   return "active";
 }
 
-function getSecondaryDetailLabel(
+function getSsDetailLabel(
   specialCharges: number,
   turnCount: number,
-  secondaryAvailable: boolean,
-  secondarySelected: boolean
+  ssAvailable: boolean,
+  ssSelected: boolean
 ): string {
-  if (secondarySelected) {
+  if (ssSelected) {
     return "Selected";
   }
 
-  if (secondaryAvailable) {
+  if (ssAvailable) {
     if (turnCount >= 4) {
       return "Unlocked";
     }
@@ -334,7 +390,7 @@ function getSecondaryDetailLabel(
     return "Charge x" + String(specialCharges);
   }
 
-  return "Turn " + String(Math.max(1, 4 - turnCount)) + " to unlock";
+  return "Turn " + String(Math.max(1, 4 - turnCount));
 }
 
 function getPhaseStepState(targetPhase: GamePhase, currentPhase: GamePhase): TurnGuidePhaseStep["state"] {

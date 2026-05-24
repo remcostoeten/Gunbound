@@ -27,6 +27,7 @@ export function createVisualEffectsState(): VisualEffectsState {
     hitFlash: null,
     grass: [],
     previousExplosion: null,
+    previousExplosionKeys: [],
     previousPhase: "",
     leafSpawnTimer: 0,
     windParticlesEnabled: false,
@@ -41,8 +42,12 @@ export function createVisualEffectsState(): VisualEffectsState {
 }
 
 export function stepVisualEffectsState(state: VisualEffectsState, input: VisualEffectsInput): VisualEffectsState {
+  if (input.reducedMotion) {
+    return stepReducedMotionEffects(state, input);
+  }
+
   const projectileState = syncProjectileEffects(state, input.projectile, input.players, input.turn);
-  const explosionState = syncExplosionEffects(projectileState, input.explosionVisual, input.damagePopups);
+  const explosionState = syncExplosionEffects(projectileState, getActiveExplosionVisuals(input), input.damagePopups);
   const windState = syncWindLeaves(explosionState, input.wind, input.scene);
   const chargeState = syncChargeSparks(windState, input.charging, input.players, input.turn);
   const dustState = syncDustOnMove(chargeState, input.phase, input.players, input.turn);
@@ -53,6 +58,42 @@ export function stepVisualEffectsState(state: VisualEffectsState, input: VisualE
   const muzzleState = tickMuzzleFlash(particlesState, input.dt);
   const hitFlashState = tickHitFlash(muzzleState, input.dt);
   return tickFireShake(hitFlashState, input.dt);
+}
+
+function stepReducedMotionEffects(state: VisualEffectsState, input: VisualEffectsInput): VisualEffectsState {
+  const projectileState = syncProjectileEffects(
+    {
+      ...state,
+      leaves: [],
+      sparks: [],
+      dust: [],
+      debris: [],
+      shellCasings: [],
+      smokePuffs: [],
+      bounceSparks: [],
+      fireShake: 0,
+      windParticlesEnabled: false
+    },
+    input.projectile,
+    input.players,
+    input.turn
+  );
+  const explosionState = syncExplosionEffects(projectileState, getActiveExplosionVisuals(input).slice(-1), input.damagePopups);
+  const grassState = syncGrass(explosionState, input.terrain);
+  return {
+    ...grassState,
+    leaves: [],
+    sparks: [],
+    dust: [],
+    debris: [],
+    shellCasings: [],
+    smokePuffs: [],
+    bounceSparks: [],
+    fireShake: 0,
+    hitFlash: null,
+    explosionSprites: grassState.explosionSprites.slice(-1),
+    trail: grassState.trail.slice(-10)
+  };
 }
 
 function syncProjectileEffects(
@@ -122,7 +163,7 @@ function syncProjectileEffects(
 
     nextState = {
       ...nextState,
-      trail: pushTrailPoint(nextState.trail, projectile.position)
+      trail: pushTrailPoint(nextState.trail, projectile)
     };
   } else {
     nextState = {
@@ -137,16 +178,39 @@ function syncProjectileEffects(
   };
 }
 
-function syncExplosionEffects(state: VisualEffectsState, explosion: ExplosionVisual | null, damagePopups: DamagePopup[]): VisualEffectsState {
+function getActiveExplosionVisuals(input: VisualEffectsInput): ExplosionVisual[] {
+  if (input.explosionVisuals.length > 0) {
+    return input.explosionVisuals;
+  }
+
+  return input.explosionVisual === null ? [] : [input.explosionVisual];
+}
+
+function syncExplosionEffects(state: VisualEffectsState, explosions: ExplosionVisual[], damagePopups: DamagePopup[]): VisualEffectsState {
   let debris = state.debris;
   let explosionSprites = state.explosionSprites;
-  const isNewExplosion = explosion !== null && (state.previousExplosion === null || explosion.timer > state.previousExplosion.timer);
+  const previousKeys = new Set(state.previousExplosionKeys);
+  const currentKeys: string[] = [];
+  const newExplosions: ExplosionVisual[] = [];
+  let index = 0;
 
-  if (explosion !== null && isNewExplosion) {
-    const count = 12 + Math.floor(Math.random() * 8);
+  while (index < explosions.length) {
+    const explosion = explosions[index];
+    const key = getExplosionVisualKey(explosion);
+    currentKeys.push(key);
+    if (!previousKeys.has(key)) {
+      newExplosions.push(explosion);
+    }
+    index += 1;
+  }
+
+  index = 0;
+  while (index < newExplosions.length) {
+    const explosion = newExplosions[index];
+    const count = Math.max(8, 12 + Math.floor(Math.random() * 8) - index * 2);
     const particles = [];
-    let index = 0;
-    while (index < count) {
+    let particleIndex = 0;
+    while (particleIndex < count) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 60 + Math.random() * 140;
       particles.push({
@@ -159,7 +223,7 @@ function syncExplosionEffects(state: VisualEffectsState, explosion: ExplosionVis
         size: 2 + Math.random() * 4,
         color: Math.random() > 0.5 ? "#8a5433" : "#613923"
       });
-      index += 1;
+      particleIndex += 1;
     }
     debris = debris.concat(particles);
     if (debris.length > 120) {
@@ -170,14 +234,25 @@ function syncExplosionEffects(state: VisualEffectsState, explosion: ExplosionVis
     if (explosionSprites.length > 8) {
       explosionSprites = explosionSprites.slice(-8);
     }
+    index += 1;
   }
 
   return {
     ...state,
     debris,
     explosionSprites,
-    previousExplosion: explosion
+    previousExplosion: explosions[0] ?? null,
+    previousExplosionKeys: currentKeys
   };
+}
+
+function getExplosionVisualKey(explosion: ExplosionVisual): string {
+  return [
+    Math.round(explosion.point.x),
+    Math.round(explosion.point.y),
+    Math.round(explosion.radius),
+    explosion.mobileType
+  ].join(":");
 }
 
 function createExplosionSpriteEffect(explosion: ExplosionVisual, hasDamage: boolean): ExplosionSpriteEffect {
@@ -573,12 +648,23 @@ function tickFireShake(state: VisualEffectsState, delta: number): VisualEffectsS
   };
 }
 
-function pushTrailPoint(trail: Vec2[], point: Vec2): Vec2[] {
+function pushTrailPoint(trail: Vec2[], projectile: ProjectileState): Vec2[] {
+  const point = projectile.position;
+  const lastPoint = trail[trail.length - 1];
+  if (lastPoint !== undefined) {
+    const distance = Math.hypot(point.x - lastPoint.x, point.y - lastPoint.y);
+    const speed = Math.hypot(projectile.velocity.x, projectile.velocity.y);
+    const minDistance = Math.max(10, Math.min(26, speed / 34));
+    if (distance < minDistance) {
+      return trail;
+    }
+  }
+
   const nextTrail = trail.concat({
     x: point.x,
     y: point.y
   });
-  if (nextTrail.length > 28) {
+  if (nextTrail.length > 22) {
     return nextTrail.slice(1);
   }
   return nextTrail;

@@ -3,6 +3,16 @@
 import { create } from "zustand";
 import type { StateCreator } from "zustand";
 import { defaultRoundLimit, defaultSuddenDeathTurn, defaultTargetScore, defaultTurnDurationMode, getPhaseDuration } from "@/features/game/constants/gameplay";
+import {
+  type BattleItemInventory,
+  consumeBattleItem,
+  createBattleItemInventories,
+  getBattleItemDelay,
+  getBattleItemDisplayName,
+  getNextAvailableBattleItem,
+  hasBattleItem
+} from "@/features/game/engine/battle-items";
+import { applyTurnDelay, calculateShotDelay, createInitialTurnDelays } from "@/features/game/engine/delay";
 import { applyMobileGravity, markPlayersForFalling } from "@/features/game/engine/gravity";
 import { moveMobileAlongTerrain } from "@/features/game/engine/movement";
 import { applyExplosionDamage, stepProjectile } from "@/features/game/engine/physics";
@@ -28,26 +38,30 @@ import type {
 import type { DamagePopup, ExplosionVisual, TurnAnnouncement } from "@/features/game/types/effects";
 import type { MatchEvent } from "@/features/game/types/events";
 import type { GameState, InputState, MatchConfig } from "@/features/game/types/state";
-import type { BonusType, WeaponType } from "@/features/game/types/shared";
+import type { BattleItemType, BonusType, WeaponType } from "@/features/game/types/shared";
 
 type GameStoreState = GameState & {
   input: InputState;
   randomState: number;
   setup: MatchConfig;
   resolveTimer: number;
+  moveRepeatTimer: number;
   startMatch(config: MatchConfig): void;
   restartMatch(): void;
   returnToSetup(): void;
   surrenderMatch(loser: 1 | 2): void;
   stepSimulation(dt: number): void;
   setAimKey(key: "up" | "down", active: boolean): void;
+  setMoveKey(direction: -1 | 1, active: boolean): void;
   beginCharge(): void;
   releaseCharge(): void;
   attemptMove(direction: -1 | 1): void;
   switchWeapon(): void;
+  switchBattleItem(): void;
   applyBattleMove(direction: -1 | 1): void;
   applyBattleWeaponSwitch(weapon?: WeaponType): void;
-  applyBattleFire(input: { angle: number; power: number; weapon: WeaponType }): void;
+  applyBattleItemSwitch(item?: BattleItemType | null): void;
+  applyBattleFire(input: { angle: number; power: number; weapon: WeaponType; turnDelay?: number; item?: BattleItemType | null }): void;
 };
 
 export const defaultSetup: MatchConfig = {
@@ -63,7 +77,8 @@ export const defaultSetup: MatchConfig = {
   targetScore: defaultTargetScore,
   roundLimit: defaultRoundLimit,
   turnDurationMode: defaultTurnDurationMode,
-  seedText: "gunbound-local"
+  seedText: "gunbound-local",
+  soloBot: false
 };
 
 export const useGameStore = create<GameStoreState>(createGameStoreState);
@@ -90,21 +105,30 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
     power: 0,
     charging: false,
     turnCount: 1,
+    turnElapsed: 0,
+    turnDelays: createInitialTurnDelays(),
+    turnMoveRemaining: createPlaceholderPlayers(defaultSetup)[0].mobile.moveRange,
+    battleItemInventories: createBattleItemInventories(),
+    selectedBattleItems: [null, null],
     phaseTimer: getPhaseDuration("move"),
     phaseDuration: getPhaseDuration("move"),
     bonusBoxes: [],
     explosionVisual: null,
+    explosionVisuals: [],
     damagePopups: [],
     turnAnnouncement: null,
     history: [],
     message: "Set up a local match.",
     input: {
       aimUp: false,
-      aimDown: false
+      aimDown: false,
+      moveLeft: false,
+      moveRight: false
     },
     randomState: normalizeSeed(defaultSetup.seedText),
     setup: defaultSetup,
     resolveTimer: 0,
+    moveRepeatTimer: 0,
     startMatch: function startMatch(config: MatchConfig): void {
       resetHistoryEventCounter();
       const startedMatchState = createStartedMatchState(config);
@@ -113,7 +137,9 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         ...startedMatchState,
         input: {
           aimUp: false,
-          aimDown: false
+          aimDown: false,
+          moveLeft: false,
+          moveRight: false
         },
         setup: config
       });
@@ -129,6 +155,11 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         projectile: null,
         charging: false,
         power: 0,
+        turnElapsed: 0,
+        turnDelays: createInitialTurnDelays(),
+        turnMoveRemaining: get().players[0].mobile.moveRange,
+        battleItemInventories: createBattleItemInventories(),
+        selectedBattleItems: [null, null],
         winner: null,
         round: 1,
         targetScore: defaultTargetScore,
@@ -137,10 +168,12 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         phaseTimer: getPhaseDuration("move"),
         phaseDuration: getPhaseDuration("move"),
         explosionVisual: null,
+        explosionVisuals: [],
         damagePopups: [],
         turnAnnouncement: null,
         history: [],
-        message: "Set up a local match."
+        message: "Set up a local match.",
+        moveRepeatTimer: 0
       });
     },
     surrenderMatch: function surrenderMatch(loser: 1 | 2): void {
@@ -162,6 +195,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         phaseTimer: 0,
         phaseDuration: 0,
         explosionVisual: null,
+        explosionVisuals: [],
         damagePopups: [],
         turnAnnouncement: null,
         history: appendMatchEventEntries(state.history, [
@@ -191,6 +225,14 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       let nextScene: GameState["scene"] = state.scene;
       let nextRound = state.round;
       let nextSuddenDeathActive = state.suddenDeathActive;
+      let nextTurnElapsed = state.turnElapsed;
+      let nextTurnDelays = state.turnDelays;
+      let nextTurnMoveRemaining = state.turnMoveRemaining;
+      let nextBattleItemInventories = cloneBattleItemInventories(state.battleItemInventories);
+      let nextSelectedBattleItems: [BattleItemType | null, BattleItemType | null] = [
+        state.selectedBattleItems[0],
+        state.selectedBattleItems[1]
+      ];
       let nextMessage = state.message;
       let nextResolveTimer = state.resolveTimer;
       let nextTerrain = state.terrain;
@@ -198,13 +240,50 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       let nextPhaseDuration = state.phaseDuration;
       let nextBonusBoxes = tickBonusBoxes(state.bonusBoxes, state.terrain, dt);
       let nextExplosionVisual = tickExplosionVisual(state.explosionVisual, dt);
+      let nextExplosionVisuals = tickExplosionVisuals(state.explosionVisuals, dt);
       let nextDamagePopups = tickDamagePopups(state.damagePopups, dt);
       let nextTurnAnnouncement = tickTurnAnnouncement(state.turnAnnouncement, dt);
       let nextHistory = state.history;
+      let nextMoveRepeatTimer = state.moveRepeatTimer;
       let shouldAdvanceTurn = false;
       let waitingForSettling = false;
 
       if (state.phase !== "resolve" && state.phase !== "end") {
+        if (state.projectile === null) {
+          nextTurnElapsed += dt;
+        }
+
+        const moveDirection = state.input.moveLeft ? -1 : state.input.moveRight ? 1 : 0;
+        if (moveDirection !== 0 && state.phase !== "fire") {
+          nextMoveRepeatTimer += dt;
+          if (nextMoveRepeatTimer >= 0.12 && nextTerrain !== null) {
+            nextMoveRepeatTimer = 0;
+            const moved = applyMoveInput(nextPlayers, state.turn, nextTerrain, moveDirection, nextTurnMoveRemaining);
+            nextPlayers = moved.players;
+            nextTurnMoveRemaining = moved.turnMoveRemaining;
+
+            if (moved.moved) {
+              const pickupResult = pickupBonusBoxes(nextPlayers, state.turn, nextBonusBoxes);
+              nextPlayers = pickupResult.players;
+              nextBonusBoxes = pickupResult.bonusBoxes;
+              nextHistory = appendMatchEventEntries(nextHistory, [
+                {
+                  round: state.round,
+                  turn: state.turn,
+                  kind: "move",
+                  text: nextPlayers[state.turn - 1].name + " moved to x " + String(Math.round(nextPlayers[state.turn - 1].mobile.position.x)) + "."
+                }
+              ]);
+              nextMessage =
+                nextTurnMoveRemaining > 0
+                  ? nextPlayers[state.turn - 1].name + " moved. " + String(Math.round(nextTurnMoveRemaining)) + " movement left."
+                  : nextPlayers[state.turn - 1].name + " used all movement and can still fire.";
+            }
+          }
+        } else {
+          nextMoveRepeatTimer = 0;
+        }
+
         nextPlayers = applyAimInput(nextPlayers, state.turn, state.input, dt);
         if (nextPlayers[state.turn - 1].mobile.angle !== state.players[state.turn - 1].mobile.angle && state.phase === "move") {
           nextPhase = "aim";
@@ -231,11 +310,14 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
           nextPlayers = bonusResult.players;
           nextDamagePopups = nextDamagePopups.concat(bonusResult.damagePopups);
           nextHistory = appendHistory(nextHistory, bonusResult.history);
+          const visual = createExplosionVisual(step.bonusExplosion);
+          nextExplosionVisual = visual;
+          nextExplosionVisuals = nextExplosionVisuals.concat(visual);
         }
 
         if (step.explosion !== null) {
           const explosions = buildExplosionList(step.explosion);
-          let primaryVisualSet = false;
+          const explosionVisuals: ExplosionVisual[] = [];
 
           for (const explosion of explosions) {
             nextTerrain = carveCrater(nextTerrain, explosion.point, explosion.radius);
@@ -243,10 +325,12 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
             nextPlayers = markPlayersForFalling(explosionResult.players);
             nextDamagePopups = nextDamagePopups.concat(explosionResult.damagePopups);
             nextHistory = appendHistory(nextHistory, explosionResult.history);
-            if (!primaryVisualSet) {
-              nextExplosionVisual = createExplosionVisual(explosion);
-              primaryVisualSet = true;
-            }
+            explosionVisuals.push(createExplosionVisual(explosion));
+          }
+
+          if (explosionVisuals.length > 0) {
+            nextExplosionVisual = explosionVisuals[0];
+            nextExplosionVisuals = nextExplosionVisuals.concat(explosionVisuals);
           }
 
           nextPower = 0;
@@ -272,14 +356,33 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         const settleResult = applyMobileGravity(nextPlayers, nextTerrain, dt);
         nextPlayers = settleResult.players;
         waitingForSettling = settleResult.unstable;
+
+        if (nextWinner === null) {
+          const gravityWinner = getRoundWinner(nextPlayers);
+          if (gravityWinner !== null) {
+            const resolution = resolveRoundWinner(nextPlayers, gravityWinner, state.round, state.turn, nextHistory);
+            nextPlayers = resolution.players;
+            nextHistory = resolution.history;
+            nextWinner = gravityWinner;
+            nextPhase = "end";
+            nextPhaseTimer = 2.2;
+            nextPhaseDuration = 2.2;
+            nextMessage = resolution.message;
+            waitingForSettling = false;
+          }
+        }
       }
 
       if (state.phase !== "end" && nextPhaseTimer <= 0) {
         if (nextCharging && state.terrain !== null) {
-          const fired = forceReleaseCharge(nextPlayers, state.turn, state.turnCount, nextPower);
+          const activeItem = getUsableBattleItem(nextBattleItemInventories[state.turn - 1], nextSelectedBattleItems[state.turn - 1]);
+          const fired = forceReleaseCharge(nextPlayers, state.turn, state.turnCount, nextPower, nextTurnElapsed, activeItem);
           nextPlayers = fired.players;
           nextProjectile = fired.projectile;
           nextPower = fired.power;
+          nextTurnDelays = applyTurnDelay(nextTurnDelays, state.turn, fired.turnDelay);
+          nextBattleItemInventories[state.turn - 1] = consumeBattleItem(nextBattleItemInventories[state.turn - 1], activeItem);
+          nextSelectedBattleItems[state.turn - 1] = null;
           nextCharging = false;
           nextPhase = "fire";
           nextMessage = fired.message;
@@ -294,6 +397,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
                 fired.players[state.turn - 1].name +
                 " auto-fired " +
                 getWeaponDisplayName(fired.players[state.turn - 1].mobile.type, fired.players[state.turn - 1].mobile.weapon) +
+                getBattleItemShotSuffix(fired.item) +
                 "."
             }
           ]);
@@ -322,7 +426,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       }
 
       if (shouldAdvanceTurn && nextWinner === null && nextProjectile === null && nextPhase === "resolve") {
-        const advanced = advanceRoundTurn(nextPlayers, nextTerrain, state.round, state.turn, state.randomState, state.turnCount, state.suddenDeathTurn, nextBonusBoxes);
+        const advanced = advanceRoundTurn(nextPlayers, nextTerrain, state.round, state.turn, state.randomState, state.turnCount, state.suddenDeathTurn, nextBonusBoxes, nextTurnDelays);
         nextHistory = appendHistory(nextHistory, advanced.history);
         nextDamagePopups = nextDamagePopups.concat(advanced.damagePopups);
 
@@ -343,17 +447,24 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
             suddenDeathTurn: state.suddenDeathTurn,
             suddenDeathActive: advanced.suddenDeathActive,
             turnCount: advanced.turnCount,
+            turnElapsed: 0,
+            turnDelays: advanced.turnDelays,
+            turnMoveRemaining: advanced.players[advanced.turn - 1].mobile.moveRange,
+            battleItemInventories: nextBattleItemInventories,
+            selectedBattleItems: nextSelectedBattleItems,
             phaseTimer: 2.2,
             phaseDuration: 2.2,
             tick: state.tick + 1,
             bonusBoxes: advanced.bonusBoxes,
             explosionVisual: nextExplosionVisual,
+            explosionVisuals: nextExplosionVisuals,
             damagePopups: nextDamagePopups,
             turnAnnouncement: null,
             history: resolution.history,
             message: resolution.message,
             randomState: advanced.randomState,
             resolveTimer: 0,
+            moveRepeatTimer: 0,
             terrain: nextTerrain
           });
           return;
@@ -373,17 +484,24 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
           suddenDeathTurn: state.suddenDeathTurn,
           suddenDeathActive: advanced.suddenDeathActive,
           turnCount: advanced.turnCount,
+          turnElapsed: 0,
+          turnDelays: advanced.turnDelays,
+          turnMoveRemaining: advanced.players[advanced.turn - 1].mobile.moveRange,
+          battleItemInventories: nextBattleItemInventories,
+          selectedBattleItems: nextSelectedBattleItems,
           phaseTimer: getPhaseDuration("move", state.setup.turnDurationMode),
           phaseDuration: getPhaseDuration("move", state.setup.turnDurationMode),
           tick: state.tick + 1,
           bonusBoxes: advanced.bonusBoxes,
           explosionVisual: nextExplosionVisual,
+          explosionVisuals: nextExplosionVisuals,
           damagePopups: nextDamagePopups,
           turnAnnouncement: createTurnAnnouncement(advanced.turn, advanced.players[advanced.turn - 1].name),
           history: nextHistory,
           message: advanced.message,
           randomState: advanced.randomState,
           resolveTimer: 0,
+          moveRepeatTimer: 0,
           terrain: nextTerrain
         });
         return;
@@ -414,14 +532,21 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         targetScore: state.targetScore,
         suddenDeathTurn: state.suddenDeathTurn,
         suddenDeathActive: nextSuddenDeathActive,
+        turnElapsed: nextTurnElapsed,
+        turnDelays: nextTurnDelays,
+        turnMoveRemaining: nextTurnMoveRemaining,
+        battleItemInventories: nextBattleItemInventories,
+        selectedBattleItems: nextSelectedBattleItems,
         phaseTimer: nextPhaseTimer,
         phaseDuration: nextPhaseDuration,
         explosionVisual: nextExplosionVisual,
+        explosionVisuals: nextExplosionVisuals,
         damagePopups: nextDamagePopups,
         turnAnnouncement: nextTurnAnnouncement,
         history: nextHistory,
         message: nextMessage,
         resolveTimer: nextResolveTimer,
+        moveRepeatTimer: nextMoveRepeatTimer,
         terrain: nextTerrain,
         bonusBoxes: nextBonusBoxes,
         tick: state.tick + 1
@@ -433,7 +558,9 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         set({
           input: {
             aimUp: active,
-            aimDown: current.aimDown
+            aimDown: current.aimDown,
+            moveLeft: current.moveLeft,
+            moveRight: current.moveRight
           }
         });
         return;
@@ -442,7 +569,32 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       set({
         input: {
           aimUp: current.aimUp,
-          aimDown: active
+          aimDown: active,
+          moveLeft: current.moveLeft,
+          moveRight: current.moveRight
+        }
+      });
+    },
+    setMoveKey: function setMoveKey(direction: -1 | 1, active: boolean): void {
+      const current = get().input;
+      if (direction === -1) {
+        set({
+          input: {
+            aimUp: current.aimUp,
+            aimDown: current.aimDown,
+            moveLeft: active,
+            moveRight: current.moveRight
+          }
+        });
+        return;
+      }
+
+      set({
+        input: {
+          aimUp: current.aimUp,
+          aimDown: current.aimDown,
+          moveLeft: current.moveLeft,
+          moveRight: active
         }
       });
     },
@@ -488,18 +640,17 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         return;
       }
 
-      const players = clonePlayers(state.players);
-      const currentPlayer = players[state.turn - 1];
-      const otherPlayer = players[state.turn === 1 ? 1 : 0];
-      const moveResult = moveMobileAlongTerrain(currentPlayer.mobile, state.terrain, direction, otherPlayer.mobile);
-
-      if (!moveResult.moved) {
+      if (state.turnMoveRemaining <= 0) {
         return;
       }
 
-      currentPlayer.mobile = moveResult.mobile;
-      players[0].mobile.facing = players[0].mobile.position.x <= players[1].mobile.position.x ? 1 : -1;
-      players[1].mobile.facing = players[1].mobile.position.x <= players[0].mobile.position.x ? 1 : -1;
+      const moved = applyMoveInput(state.players, state.turn, state.terrain, direction, state.turnMoveRemaining);
+      if (!moved.moved) {
+        return;
+      }
+
+      const players = moved.players;
+      const currentPlayer = players[state.turn - 1];
 
       const pickupResult = pickupBonusBoxes(players, state.turn, state.bonusBoxes);
       const pickupHistory = createPickupHistory(state.round, state.turn, players[state.turn - 1], state.bonusBoxes, pickupResult.bonusBoxes);
@@ -507,10 +658,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       set({
         players: pickupResult.players,
         bonusBoxes: pickupResult.bonusBoxes,
-        phase: "resolve",
-        phaseTimer: getPhaseDuration("resolve"),
-        phaseDuration: getPhaseDuration("resolve"),
-        resolveTimer: 0.45,
+        turnMoveRemaining: moved.turnMoveRemaining,
         history: appendHistory(
           appendMatchEventEntries(state.history, [
             {
@@ -522,7 +670,10 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
           ]),
           pickupHistory
         ),
-        message: currentPlayer.name + " moved and ended the turn."
+        message:
+          moved.turnMoveRemaining > 0
+            ? currentPlayer.name + " moved. " + String(Math.round(moved.turnMoveRemaining)) + " movement left."
+            : currentPlayer.name + " used all movement and can still fire."
       });
     },
     switchWeapon: function switchWeapon(): void {
@@ -537,10 +688,13 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
 
       const players = clonePlayers(state.players);
       const currentPlayer = players[state.turn - 1];
-      const nextWeapon = getNextWeapon(currentPlayer.mobile.weapon);
+      let nextWeapon = getNextWeapon(currentPlayer.mobile.weapon);
 
-      if (nextWeapon === "secondary" && !canSelectWeapon(nextWeapon, currentPlayer.mobile.specialCharges, state.turnCount)) {
-        return;
+      if (!canSelectWeapon(nextWeapon, currentPlayer.mobile.specialCharges, state.turnCount)) {
+        nextWeapon = getNextWeapon(nextWeapon);
+        if (!canSelectWeapon(nextWeapon, currentPlayer.mobile.specialCharges, state.turnCount)) {
+          return;
+        }
       }
 
       currentPlayer.mobile.weapon = nextWeapon;
@@ -556,6 +710,40 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
           }
         ]),
         message: currentPlayer.name + " selected " + nextWeapon + "."
+      });
+    },
+    switchBattleItem: function switchBattleItem(): void {
+      const state = get();
+      if (state.scene !== "playing" || state.projectile !== null || state.charging) {
+        return;
+      }
+
+      if (state.phase === "resolve" || state.phase === "end" || state.phase === "fire") {
+        return;
+      }
+
+      const currentInventory = state.battleItemInventories[state.turn - 1];
+      const nextItem = getNextAvailableBattleItem(currentInventory, state.selectedBattleItems[state.turn - 1]);
+      const selectedBattleItems: [BattleItemType | null, BattleItemType | null] = [
+        state.selectedBattleItems[0],
+        state.selectedBattleItems[1]
+      ];
+      selectedBattleItems[state.turn - 1] = nextItem;
+
+      const currentPlayer = state.players[state.turn - 1];
+      const itemLabel = nextItem === null ? "no item" : getBattleItemDisplayName(nextItem);
+
+      set({
+        selectedBattleItems,
+        history: appendMatchEventEntries(state.history, [
+          {
+            round: state.round,
+            turn: state.turn,
+            kind: "bonus",
+            text: currentPlayer.name + " selected " + itemLabel + "."
+          }
+        ]),
+        message: currentPlayer.name + " selected " + itemLabel + "."
       });
     },
     applyBattleMove: function applyBattleMove(direction: -1 | 1): void {
@@ -578,7 +766,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       const players = clonePlayers(state.players);
       const currentPlayer = players[state.turn - 1];
       if (currentPlayer.mobile.weapon === weapon) return;
-      if (weapon === "secondary" && !canSelectWeapon(weapon, currentPlayer.mobile.specialCharges, state.turnCount)) {
+      if (!canSelectWeapon(weapon, currentPlayer.mobile.specialCharges, state.turnCount)) {
         return;
       }
       currentPlayer.mobile.weapon = weapon;
@@ -596,7 +784,47 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         message: currentPlayer.name + " selected " + weapon + "."
       });
     },
-    applyBattleFire: function applyBattleFire(input: { angle: number; power: number; weapon: WeaponType }): void {
+    applyBattleItemSwitch: function applyBattleItemSwitch(item?: BattleItemType | null): void {
+      if (item === undefined) {
+        get().switchBattleItem();
+        return;
+      }
+
+      const state = get();
+      if (state.scene !== "playing" || state.projectile !== null || state.charging) {
+        return;
+      }
+
+      if (state.phase === "resolve" || state.phase === "end" || state.phase === "fire") {
+        return;
+      }
+
+      if (item !== null && !hasBattleItem(state.battleItemInventories[state.turn - 1], item)) {
+        return;
+      }
+
+      const selectedBattleItems: [BattleItemType | null, BattleItemType | null] = [
+        state.selectedBattleItems[0],
+        state.selectedBattleItems[1]
+      ];
+      selectedBattleItems[state.turn - 1] = item;
+      const currentPlayer = state.players[state.turn - 1];
+      const itemLabel = item === null ? "no item" : getBattleItemDisplayName(item);
+
+      set({
+        selectedBattleItems,
+        history: appendMatchEventEntries(state.history, [
+          {
+            round: state.round,
+            turn: state.turn,
+            kind: "bonus",
+            text: currentPlayer.name + " selected " + itemLabel + "."
+          }
+        ]),
+        message: currentPlayer.name + " selected " + itemLabel + "."
+      });
+    },
+    applyBattleFire: function applyBattleFire(input: { angle: number; power: number; weapon: WeaponType; turnDelay?: number; item?: BattleItemType | null }): void {
       fireCurrentShot(get(), set, input);
     }
   };
@@ -605,7 +833,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
 function fireCurrentShot(
   state: GameStoreState,
   set: Parameters<StateCreator<GameStoreState>>[0],
-  input: { angle: number; power: number; weapon: WeaponType }
+  input: { angle: number; power: number; weapon: WeaponType; turnDelay?: number; item?: BattleItemType | null }
 ): void {
   if (state.scene !== "playing" || state.terrain === null) {
     return;
@@ -620,35 +848,86 @@ function fireCurrentShot(
   currentPlayer.mobile.weapon = input.weapon;
 
   const power = clamp(input.power, 0.08, 1);
-  const projectile = createProjectile(currentPlayer.mobile, state.turn, power);
+  const requestedItem = input.item === undefined ? state.selectedBattleItems[state.turn - 1] : input.item;
+  const activeItem = getUsableBattleItem(state.battleItemInventories[state.turn - 1], requestedItem);
+  const projectile = createProjectile(currentPlayer.mobile, state.turn, power, activeItem);
+  const turnDelay = input.turnDelay ?? calculateShotDelay(currentPlayer.mobile, currentPlayer.mobile.weapon, state.turnElapsed) + getBattleItemDelay(activeItem);
   const shouldConsumeCharge = shouldConsumeSpecialCharge(currentPlayer.mobile.weapon, currentPlayer.mobile.specialCharges, state.turnCount);
+  const battleItemInventories = cloneBattleItemInventories(state.battleItemInventories);
+  const selectedBattleItems: [BattleItemType | null, BattleItemType | null] = [
+    state.selectedBattleItems[0],
+    state.selectedBattleItems[1]
+  ];
 
   if (shouldConsumeCharge) {
     currentPlayer.mobile.specialCharges -= 1;
   }
+  battleItemInventories[state.turn - 1] = consumeBattleItem(battleItemInventories[state.turn - 1], activeItem);
+  selectedBattleItems[state.turn - 1] = null;
 
   set({
     players,
     charging: false,
     projectile,
     power,
+    turnDelays: applyTurnDelay(state.turnDelays, state.turn, turnDelay),
+    battleItemInventories,
+    selectedBattleItems,
     input: {
       aimUp: false,
-      aimDown: false
+      aimDown: false,
+      moveLeft: false,
+      moveRight: false
     },
     phase: "fire",
-        phaseTimer: getPhaseDuration("fire", state.setup.turnDurationMode),
-        phaseDuration: getPhaseDuration("fire", state.setup.turnDurationMode),
+    phaseTimer: getPhaseDuration("fire", state.setup.turnDurationMode),
+    phaseDuration: getPhaseDuration("fire", state.setup.turnDurationMode),
     history: appendMatchEventEntries(state.history, [
       {
         round: state.round,
         turn: state.turn,
         kind: "shot",
-        text: currentPlayer.name + " fired " + getWeaponDisplayName(currentPlayer.mobile.type, currentPlayer.mobile.weapon) + "."
+        text: currentPlayer.name + " fired " + getWeaponDisplayName(currentPlayer.mobile.type, currentPlayer.mobile.weapon) + getBattleItemShotSuffix(activeItem) + "."
       }
     ]),
     message: currentPlayer.name + " fired."
   });
+}
+
+function applyMoveInput(
+  players: [Player, Player],
+  turn: 1 | 2,
+  terrain: TerrainState,
+  direction: -1 | 1,
+  turnMoveRemaining: number
+): {
+  players: [Player, Player];
+  turnMoveRemaining: number;
+  moved: boolean;
+} {
+  if (turnMoveRemaining <= 0) {
+    return { players, turnMoveRemaining, moved: false };
+  }
+
+  const nextPlayers = clonePlayers(players);
+  const currentPlayer = nextPlayers[turn - 1];
+  const otherPlayer = nextPlayers[turn === 1 ? 1 : 0];
+  const moveDistance = Math.min(12, turnMoveRemaining);
+  const moveResult = moveMobileAlongTerrain(currentPlayer.mobile, terrain, direction, otherPlayer.mobile, moveDistance);
+
+  if (!moveResult.moved) {
+    return { players, turnMoveRemaining, moved: false };
+  }
+
+  currentPlayer.mobile = moveResult.mobile;
+  nextPlayers[0].mobile.facing = nextPlayers[0].mobile.position.x <= nextPlayers[1].mobile.position.x ? 1 : -1;
+  nextPlayers[1].mobile.facing = nextPlayers[1].mobile.position.x <= nextPlayers[0].mobile.position.x ? 1 : -1;
+
+  return {
+    players: nextPlayers,
+    turnMoveRemaining: Math.max(0, turnMoveRemaining - moveResult.distanceMoved),
+    moved: true
+  };
 }
 
 function clonePlayers(players: [Player, Player]): [Player, Player] {
@@ -670,6 +949,25 @@ function clonePlayers(players: [Player, Player]): [Player, Player] {
       mobile: cloneMobile(players[1].mobile)
     }
   ];
+}
+
+function cloneBattleItemInventories(inventories: [BattleItemInventory, BattleItemInventory]): [BattleItemInventory, BattleItemInventory] {
+  return [
+    { ...inventories[0] },
+    { ...inventories[1] }
+  ];
+}
+
+function getUsableBattleItem(inventory: BattleItemInventory, item: BattleItemType | null): BattleItemType | null {
+  return hasBattleItem(inventory, item) ? item : null;
+}
+
+function getBattleItemShotSuffix(item: BattleItemType | null): string {
+  if (item === null) {
+    return "";
+  }
+
+  return " with " + getBattleItemDisplayName(item);
 }
 
 function cloneMobile(mobile: Mobile): Mobile {
@@ -836,17 +1134,22 @@ function forceReleaseCharge(
   players: [Player, Player],
   turn: 1 | 2,
   turnCount: number,
-  power: number
+  power: number,
+  turnElapsed: number,
+  item: BattleItemType | null
 ): {
   players: [Player, Player];
   projectile: ReturnType<typeof createProjectile>;
   power: number;
+  turnDelay: number;
+  item: BattleItemType | null;
   message: string;
 } {
   const nextPlayers = clonePlayers(players);
   const currentPlayer = nextPlayers[turn - 1];
   const nextPower = clamp(power, 0.08, 1);
-  const projectile = createProjectile(currentPlayer.mobile, turn, nextPower);
+  const projectile = createProjectile(currentPlayer.mobile, turn, nextPower, item);
+  const turnDelay = calculateShotDelay(currentPlayer.mobile, currentPlayer.mobile.weapon, turnElapsed) + getBattleItemDelay(item);
   const shouldConsumeCharge = shouldConsumeSpecialCharge(currentPlayer.mobile.weapon, currentPlayer.mobile.specialCharges, turnCount);
 
   if (shouldConsumeCharge) {
@@ -857,6 +1160,8 @@ function forceReleaseCharge(
     players: nextPlayers,
     projectile,
     power: nextPower,
+    turnDelay,
+    item,
     message: currentPlayer.name + " auto-fired."
   };
 }
@@ -927,7 +1232,7 @@ function createMatchEvent(round: number, turn: 1 | 2, kind: MatchEvent["kind"], 
 }
 
 function buildExplosionList(explosion: ExplosionState): ExplosionState[] {
-  if (explosion.mobileType === "mage" && explosion.weapon === "secondary") {
+  if (explosion.mobileType === "mage" && explosion.weapon !== "primary") {
     return [
       { ...explosion, point: { x: explosion.point.x - 22, y: explosion.point.y }, damage: explosion.damage * 0.65, radius: explosion.radius * 0.8 },
       { ...explosion, point: { x: explosion.point.x + 22, y: explosion.point.y }, damage: explosion.damage * 0.65, radius: explosion.radius * 0.8 }
@@ -1006,6 +1311,21 @@ function tickExplosionVisual(explosionVisual: ExplosionVisual | null, dt: number
     timer: nextTimer,
     duration: explosionVisual.duration
   };
+}
+
+function tickExplosionVisuals(explosionVisuals: ExplosionVisual[], dt: number): ExplosionVisual[] {
+  const nextVisuals: ExplosionVisual[] = [];
+  let index = 0;
+
+  while (index < explosionVisuals.length) {
+    const visual = tickExplosionVisual(explosionVisuals[index], dt);
+    if (visual !== null) {
+      nextVisuals.push(visual);
+    }
+    index += 1;
+  }
+
+  return nextVisuals;
 }
 
 function tickDamagePopups(damagePopups: DamagePopup[], dt: number): DamagePopup[] {

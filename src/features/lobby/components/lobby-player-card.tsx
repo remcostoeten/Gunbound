@@ -47,8 +47,7 @@ export function LobbyPlayerCard() {
       )}
       <div className="gb-stats">
         <div className="gb-stat gb-stat-gp"><span>GP</span><b>{fmt(gp)}</b></div>
-        <div className="gb-stat gb-stat-cash"><span></span><b>{fmt(base.cash)}<small>Cash</small></b></div>
-        <div className="gb-stat gb-stat-gold"><span></span><b>{fmt(base.gold)}<small>Gold</small></b></div>
+
         <div className="gb-stat gb-stat-f10"><span>F10</span></div>
       </div>
       {player && (

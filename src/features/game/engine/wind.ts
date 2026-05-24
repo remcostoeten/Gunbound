@@ -20,7 +20,18 @@ export function rollWind(state: number): WindRoll {
 }
 
 export function getWindLabel(wind: Vec2): string {
-  const horizontal = wind.x >= 0 ? "E" : "W";
-  const magnitude = Math.round(Math.abs(wind.x) * 100);
-  return horizontal + " " + String(magnitude);
+  const direction = getWindDirectionLabel(wind);
+  const magnitude = Math.round(Math.hypot(wind.x, wind.y) * 100);
+  return direction + " " + String(magnitude);
+}
+
+export function getWindDirectionLabel(wind: Vec2): string {
+  const horizontal = wind.x > 0.08 ? "E" : wind.x < -0.08 ? "W" : "";
+  const vertical = wind.y > 0.02 ? "D" : wind.y < -0.02 ? "U" : "";
+
+  if (vertical === "" && horizontal === "") {
+    return "Still";
+  }
+
+  return vertical + horizontal;
 }

@@ -199,7 +199,11 @@
 }
 
 /* Logo gets yanked then released as mascot rockets off */
-.logo-group.logo-pulled {
+.logo-pull-container {
+  position: absolute;
+  inset: 0;
+}
+.logo-pull-container.logo-pulled {
   animation: logoPull 850ms cubic-bezier(.5,0,.2,1) forwards;
 }
 @keyframes logoPull {
@@ -350,4 +354,70 @@
 @keyframes introFadeOut {
   0%   { opacity: 1; }
   100% { opacity: 0; }
+}
+
+/* ===== Responsive: centre mascot on narrow viewports ===== */
+@media (max-width: 768px) {
+  .mascot-wrap {
+    /* Relies on scale wrapper from js, keep default 280x200 */
+    top: 72%;
+    transform: translate(-50%, -200%) rotate(-25deg);
+  }
+  .mascot-wrap.mascot-in {
+    transform: translate(-50%, -50%) rotate(-4deg);
+  }
+
+  /* Hide CSS wheel overlays — they don't align with the sprite at small sizes */
+  .wheel {
+    display: none;
+  }
+
+  @keyframes mascotBob {
+    0%,100% { transform: translate(-50%, -50%) rotate(-4deg); }
+    50%     { transform: translate(-50%, -56%) rotate(-2deg); }
+  }
+
+  @keyframes mascotTakeoff {
+    0%   { transform: translate(-50%, -50%) rotate(-4deg); }
+    12%  { transform: translate(-80%, -46%) rotate(-12deg); }
+    22%  { transform: translate(-45%, -50%) rotate(-2deg); }
+    100% { transform: translate(320%, -60%) rotate(10deg); }
+  }
+
+  @keyframes logoPull {
+    0%   { transform: translateX(0); }
+    18%  { transform: translateX(-18px) skewX(-3deg); }
+    35%  { transform: translateX(6px) skewX(1deg); }
+    100% { transform: translateX(60px); opacity: 0; }
+  }
+
+  .intro-start-button {
+    top: 88%;
+  }
+
+  .intro-glow {
+    width: 100vw;
+    height: 60vw;
+  }
+}
+
+@media (max-width: 480px) {
+  .mascot-wrap {
+    top: 72%;
+  }
+  .mascot-wrap.mascot-in {
+    transform: translate(-50%, -50%) rotate(-3deg);
+  }
+
+  @keyframes mascotBob {
+    0%,100% { transform: translate(-50%, -50%) rotate(-3deg); }
+    50%     { transform: translate(-50%, -56%) rotate(-1deg); }
+  }
+
+  @keyframes mascotTakeoff {
+    0%   { transform: translate(-50%, -50%) rotate(-3deg); }
+    12%  { transform: translate(-80%, -46%) rotate(-10deg); }
+    22%  { transform: translate(-45%, -50%) rotate(-1deg); }
+    100% { transform: translate(350%, -60%) rotate(12deg); }
+  }
 }

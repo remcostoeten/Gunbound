@@ -10,10 +10,10 @@ import { BattleChrome } from "@/features/game/components/battle-chrome";
 import { GameCanvas } from "@/features/game/components/game-canvas";
 import { HistoryPanel } from "@/features/game/components/history-panel";
 import { Hud } from "@/features/game/components/hud";
-import { RoomPanel } from "@/features/game/components/room-panel";
 import { TurnBanner } from "@/features/game/components/turn-banner";
 import { useGameState } from "@/features/game/hooks/use-game-state";
 import { lobbyMatchStartAudioEvent, useGunboundSfx } from "@/features/game/hooks/use-gunbound-sfx";
+import { useSoloBot } from "@/features/game/hooks/use-solo-bot";
 import { defaultSetup, useGameStore } from "@/features/game/store/game-store";
 import { useBattleEventSync } from "@/features/game/multiplayer/use-battle-event-sync";
 import {
@@ -27,12 +27,12 @@ import {
     selectSurrenderMatch,
     selectWinner,
 } from "@/features/game/store/selectors/match-selectors";
-import { selectTurn } from "@/features/game/store/selectors/hud-selectors";
+import { selectPhase, selectTurn, selectWind } from "@/features/game/store/selectors/hud-selectors";
 import type { MatchConfig } from "@/features/game/types/state";
 import type { MapType, MobileType, PlayerAccent, PlayerTitle, TurnDurationMode } from "@/features/game/types/shared";
 import { useRoomSession } from "@/features/lobby/spacetime/use-room-session";
 import { ROOM_STATUS } from "@/features/game/spacetime/room-status";
-import { getBattleImmersive, subscribeDisplaySettings } from "@/lib/display-settings";
+import { getBattleImmersive, setBrowserFullscreen, subscribeDisplaySettings } from "@/lib/display-settings";
 import {
     LOBBY_BGM_SRC,
     lobbyAudioBlockedEvent,
@@ -70,121 +70,21 @@ const TURN_DURATION_OPTIONS: Array<{ value: TurnDurationMode; label: string; des
         description: "Async flow: a player can close and resume later on their turn.",
     },
 ];
-const MATCH_START_DELAY_MS = 850;
+const MATCH_START_DELAY_MS = 180;
 const LOBBY_ENTRY_DELAY_MS = 2200;
 
-type StartView = "channel" | "room-setup";
-
-type LiveRoom = {
-    title: string;
-    host: string;
-    mapType: MapType;
-    seedText: string;
-    players: string;
-    status: string;
-};
-
-type FriendPresence = {
-    name: string;
-    mobile: MobileType;
-    status: string;
-    activity: string;
-};
-
-type ChannelChatMessage = {
-    author: string;
-    accent: PlayerAccent;
-    text: string;
-    time: string;
-};
-
-const LIVE_ROOMS: LiveRoom[] = [
-    {
-        title: "Avatar High Arc",
-        host: "Remco",
-        mapType: "ridge",
-        seedText: "miramo-skyline",
-        players: "2/2",
-        status: "In Match",
-    },
-    {
-        title: "Dragon Storm",
-        host: "Mika",
-        mapType: "canyon",
-        seedText: "dragon-trade",
-        players: "1/2",
-        status: "Waiting",
-    },
-    {
-        title: "Boomer Night",
-        host: "Tariq",
-        mapType: "crater",
-        seedText: "wind-lab",
-        players: "2/2",
-        status: "Round 3",
-    },
-];
-
-const FRIENDS_LIST: FriendPresence[] = [
-    {
-        name: "Nina",
-        mobile: "knight",
-        status: "Online",
-        activity: "Browsing Channel 1",
-    },
-    {
-        name: "Jasper",
-        mobile: "armor",
-        status: "In Room",
-        activity: "Waiting in Dragon Storm",
-    },
-    {
-        name: "Lotte",
-        mobile: "dragon",
-        status: "In Match",
-        activity: "Round 2 on Nirvana",
-    },
-    {
-        name: "Milan",
-        mobile: "snow",
-        status: "Away",
-        activity: "Last seen 12m ago",
-    },
-];
-
-const CHANNEL_CHAT: ChannelChatMessage[] = [
-    {
-        author: "System",
-        accent: "gold",
-        text: "Channel 1 is open. Wind conditions are dynamic tonight.",
-        time: "19:42",
-    },
-    {
-        author: "Nina",
-        accent: "sky",
-        text: "Who is up for a fast 1v1 after this round?",
-        time: "19:43",
-    },
-    {
-        author: "Tariq",
-        accent: "coral",
-        text: "Boomer Night is full, but spectators can clone the map seed.",
-        time: "19:44",
-    },
-    {
-        author: "Lotte",
-        accent: "mint",
-        text: "Dragon on Nirvana still feels unfair with that tailwind.",
-        time: "19:45",
-    },
-];
+function isDocumentFullscreen(): boolean {
+    return typeof document !== "undefined" && document.fullscreenElement !== null;
+}
 
 type GameShellProps = {
     spacetimeRoomId?: bigint;
+    soloPractice?: boolean;
+    soloPlayerName?: string | null;
     onExitToLobby?: () => void;
 };
 
-export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
+export function GameShell({ spacetimeRoomId, soloPractice = false, soloPlayerName, onExitToLobby }: GameShellProps) {
     useMenuClickSound();
     const scene = useGameState(selectScene);
     const players = useGameState(selectPlayers);
@@ -202,7 +102,6 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
     const [formState, setFormState] = useState<MatchConfig>(
         setup || defaultSetup,
     );
-    const [startView, setStartView] = useState<StartView>("channel");
     const [showLobbyEntry, setShowLobbyEntry] = useState(true);
     const [matchStarting, setMatchStarting] = useState(false);
     const [surrenderBusy, setSurrenderBusy] = useState(false);
@@ -210,11 +109,16 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
     const [battleImmersive, setBattleImmersiveState] = useState(function initialBattleImmersive(): boolean {
         return getBattleImmersive();
     });
+    const [fullscreen, setFullscreenState] = useState(function initialFullscreen(): boolean {
+        return isDocumentFullscreen();
+    });
     const matchStartTimeoutRef = useRef<number | null>(null);
     const lobbyEntryTimeoutRef = useRef<number | null>(null);
     const hasShownLobbyEntryRef = useRef(false);
+    const initializedLocalSessionRef = useRef(false);
     const startedSpacetimeRoomRef = useRef<string | null>(null);
     useGunboundSfx();
+    useSoloBot(!isSpacetimeMatch && setup?.soloBot === true);
 
     useEffect(function manageBattleBgm(): void {
         BATTLE_TRACKS.forEach((t) => registerTrack(t.id, t.src, 0.45));
@@ -263,6 +167,11 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
             return function noopCleanup(): void {};
         }
 
+        if (soloPractice) {
+            setShowLobbyEntry(false);
+            return function noopCleanup(): void {};
+        }
+
         if (hasShownLobbyEntryRef.current) {
             setShowLobbyEntry(false);
             return function noopCleanup(): void {};
@@ -284,7 +193,7 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
                 lobbyEntryTimeoutRef.current = null;
             }
         };
-    }, [scene, isSpacetimeMatch]);
+    }, [scene, isSpacetimeMatch, soloPractice]);
 
     useEffect(function bindLobbyAudioNotice(): () => void {
         function handleLobbyAudioBlocked(): void {
@@ -322,12 +231,6 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
         }
     }, [scene]);
 
-    useEffect(function resetStartViewForScene(): void {
-        if (scene === "start" && !isSpacetimeMatch) {
-            setStartView("channel");
-        }
-    }, [scene, isSpacetimeMatch]);
-
     useEffect(function bindBattleImmersiveSetting(): () => void {
         function syncBattleImmersive(): void {
             setBattleImmersiveState(getBattleImmersive());
@@ -335,6 +238,22 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
 
         return subscribeDisplaySettings(syncBattleImmersive);
     }, []);
+
+    useEffect(function bindFullscreenChangeListener(): () => void {
+        function onFullscreenChange(): void {
+            setFullscreenState(isDocumentFullscreen());
+        }
+        document.addEventListener("fullscreenchange", onFullscreenChange);
+        return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+    }, []);
+
+    useEffect(function resetLocalSessionOnEntry(): void {
+        if (isSpacetimeMatch || initializedLocalSessionRef.current) return;
+        initializedLocalSessionRef.current = true;
+        if (scene !== "start") {
+            returnToSetup();
+        }
+    }, [isSpacetimeMatch, returnToSetup, scene]);
 
     useEffect(function startSpacetimeRoomMatch(): void {
         if (!isSpacetimeMatch) return;
@@ -359,44 +278,72 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
         roomSession.members,
     ]);
 
+    useEffect(function prepareLocalSoloPractice(): void {
+        if (!soloPractice || isSpacetimeMatch) return;
+
+        setFormState((current) => ({
+            ...current,
+            playerOneName: soloPlayerName?.trim() || current.playerOneName.trim() || "Player 1",
+            playerTwoName: "Practice Bot",
+            playerTwoTitle: "Oracle",
+            playerTwoAccent: "coral",
+            seedText: current.seedText.trim() || "solo-practice",
+            soloBot: true,
+        }));
+    }, [soloPractice, isSpacetimeMatch, soloPlayerName]);
+
     return (
         <main className={battleImmersive ? "game-shell game-shell--immersive" : "game-shell"}>
             <GameCanvas />
-            {spacetimeRoomId !== undefined && onExitToLobby && scene !== "end" ? (
-                <button
-                    type="button"
-                    className="game-shell-exit"
-                    onClick={onExitToLobby}
-                    title="Back to lobby — the match keeps running"
-                >
-                    ← Lobby
-                </button>
+             {spacetimeRoomId !== undefined && onExitToLobby && scene !== "end" ? (
+                 <button
+                     type="button"
+                     className="game-shell-exit"
+                     onClick={onExitToLobby}
+                     title="Back to lobby — the match keeps running"
+                 >
+                     ← Lobby
+                 </button>
+             ) : null}
+             <button
+                 type="button"
+                 className="game-shell-fullscreen"
+                 aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                 onClick={function handleFullscreenToggle(): void {
+                     setBrowserFullscreen(!fullscreen);
+                 }}
+                 title={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+             >
+                 {fullscreen ? "⤢" : "⛶"}
+             </button>
+             {scene === "playing" ? (
+                 <button
+                     type="button"
+                     className="game-shell-surrender"
+                     onClick={handleSurrender}
+                     disabled={surrenderBusy || (isSpacetimeMatch && !roomSession.self)}
+                     title="Forfeit this match"
+                 >
+                     {surrenderBusy ? "Surrendering" : "Surrender"}
+                 </button>
             ) : null}
-            {scene === "playing" ? (
-                <button
-                    type="button"
-                    className="game-shell-surrender"
-                    onClick={handleSurrender}
-                    disabled={surrenderBusy || (isSpacetimeMatch && !roomSession.self)}
-                    title="Forfeit this match"
-                >
-                    {surrenderBusy ? "Surrendering" : "Surrender"}
-                </button>
-            ) : null}
-            {scene === "playing" ? (
-                <BattleChrome
-                    hud={<Hud />}
-                    turnBanner={<TurnBanner />}
-                    aimControls={<AimIndicator />}
-                    statusLine={
-                        <div className="status-line">
-                            {spacetimeRoomId !== undefined && !battleSync.canControl
-                                ? message + " Waiting for " + battleSync.activePlayerName + "."
-                                : message}
-                        </div>
-                    }
-                    historyPanel={<HistoryPanel />}
-                />
+           {scene === "playing" ? (
+                <>
+                    <BattleChrome
+                        hud={<Hud />}
+                        turnBanner={<TurnBanner />}
+                        aimControls={<AimIndicator />}
+                        statusLine={
+                            <div className="status-line" role="status" aria-live="polite">
+                                {spacetimeRoomId !== undefined && !battleSync.canControl
+                                    ? message + " Waiting for " + battleSync.activePlayerName + "."
+                                    : message}
+                            </div>
+                        }
+                        historyPanel={<HistoryPanel />}
+                    />
+                    <BattleA11yStatus />
+                </>
             ) : null}
             {scene === "start"
                 ? isSpacetimeMatch
@@ -407,21 +354,15 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
                       )
                     : showLobbyEntry
                       ? renderLobbyEntryScreen(handleLobbyEntryComplete)
-                      : startView === "channel"
-                        ? renderChannelScreen(
-                              formState,
-                              openCreateRoom,
-                              cloneRoomSetup,
-                              showLobbyAudioNotice,
-                          )
-                        : renderStartScreen(
-                              formState,
-                              setFormState,
-                              queueMatchStart,
-                              openChannelLobby,
-                              matchStarting,
-                              showLobbyAudioNotice,
-                          )
+                      : renderStartScreen(
+                            formState,
+                            setFormState,
+                            queueMatchStart,
+                            onExitToLobby,
+                            matchStarting,
+                            showLobbyAudioNotice,
+                            soloPractice,
+                        )
                 : null}
             {scene === "end"
                 ? renderEndScreen(
@@ -473,7 +414,11 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
         matchStartTimeoutRef.current = window.setTimeout(
             function startQueuedMatch(): void {
                 matchStartTimeoutRef.current = null;
-                startMatch(config);
+                try {
+                    startMatch(config);
+                } finally {
+                    setMatchStarting(false);
+                }
             },
             MATCH_START_DELAY_MS,
         );
@@ -492,22 +437,22 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
         setShowLobbyEntry(false);
     }
 
-    function openCreateRoom(): void {
-        setStartView("room-setup");
-    }
+}
 
-    function openChannelLobby(): void {
-        setStartView("channel");
-    }
+function BattleA11yStatus(): React.JSX.Element {
+    const players = useGameState(selectPlayers);
+    const turn = useGameState(selectTurn);
+    const phase = useGameState(selectPhase);
+    const wind = useGameState(selectWind);
+    const message = useGameState(selectMessage);
+    const activePlayer = players[turn - 1];
+    const otherPlayer = players[turn === 1 ? 1 : 0];
 
-    function cloneRoomSetup(room: LiveRoom): void {
-        setFormState({
-            ...formState,
-            seedText: room.seedText,
-            mapType: room.mapType,
-        });
-        setStartView("room-setup");
-    }
+    return (
+        <div className="game-a11y-status" role="status" aria-live="polite" aria-atomic="true">
+            {message} {activePlayer.name} turn, {phase} phase. {activePlayer.name} has {activePlayer.mobile.hp} HP. {otherPlayer.name} has {otherPlayer.mobile.hp} HP. Wind {Math.round(wind.x * 10) / 10} horizontal, {Math.round(wind.y * 10) / 10} vertical.
+        </div>
+    );
 }
 
 function renderSpacetimeMatchLoadingScreen(
@@ -578,17 +523,17 @@ function renderLobbyEntryScreen(
             <div className="lobby-entry">
                 <div className="lobby-entry-glow" />
                 <div className="lobby-entry-card">
-                    <div className="lobby-entry-badge">Channel Gate</div>
+                    <div className="lobby-entry-badge">Setup Gate</div>
                     <div className="lobby-entry-copy">
                         <span className="lobby-entry-kicker">
-                            Gunbound Network
+                            Local Match
                         </span>
                         <h1 className="lobby-entry-title">
-                            Entering Channel 1
+                            Preparing Setup
                         </h1>
                         <p className="lobby-entry-text">
-                            Syncing room board, loading mobiles, and warming up
-                            the wind map for a local artillery duel.
+                            Loading mobiles and warming up the wind map for a
+                            local artillery duel.
                         </p>
                     </div>
                     <div className="lobby-entry-status">
@@ -596,7 +541,7 @@ function renderLobbyEntryScreen(
                             <span className="lobby-entry-progress-bar" />
                         </div>
                         <div className="lobby-entry-steps" aria-hidden="true">
-                            <span>Room registry online</span>
+                            <span>Setup ready</span>
                             <span>Mobiles checked in</span>
                             <span>Lobby ready</span>
                         </div>
@@ -621,30 +566,31 @@ function renderStartScreen(
     queueMatchStart: {
         (config: MatchConfig): void;
     },
-    openChannelLobby: {
-        (): void;
-    },
+    onExitToLobby: (() => void) | undefined,
     matchStarting: boolean,
     showLobbyAudioNotice: boolean,
+    vsBotMode: boolean,
 ): React.JSX.Element {
+    const selectedMap = getMapPresentation(formState.mapType);
+
     return (
         <div className="screen">
             <div className="lobby-bg-particles" />
             <div className="lobby-bg-clouds" />
             <div className="lobby">
                 <div className="lobby-header">
-                    <span className="lobby-channel-badge">Channel 1</span>
+                    <span className="lobby-channel-badge">{vsBotMode ? "Vs Bot" : "Local Duel"}</span>
                     <div className="lobby-title-group">
-                        <span className="lobby-kicker">Room Creation</span>
-                        <h1 className="lobby-title">Create Lobby</h1>
-                        <span className="lobby-subtitle">Stage The Duel</span>
+                        <span className="lobby-kicker">Match Setup</span>
+                        <h1 className="lobby-title">{vsBotMode ? "Practice Room" : "Create Match"}</h1>
+                        <span className="lobby-subtitle">
+                            {vsBotMode ? "Tune the arena, pick your mobile, and start against the bot." : "Configure a local two-player match."}
+                        </span>
                     </div>
                     <div className="lobby-room-info">
-                        <span className="lobby-room-tag">Flow</span>
-                        <span className="lobby-room-name">
-                            Channel 1 / New Room
-                        </span>
-                        <span className="lobby-room-status">Draft</span>
+                        <span className="lobby-room-tag">{selectedMap.label}</span>
+                        <span className="lobby-room-name">{formState.targetScore} target / {formState.roundLimit} rounds</span>
+                        <span className="lobby-room-status">{formState.turnDurationMode}</span>
                     </div>
                 </div>
                 {showLobbyAudioNotice ? (
@@ -676,14 +622,23 @@ function renderStartScreen(
                         handlePlayerTwoMobileChange,
                         handlePlayerTwoTitleChange,
                         handlePlayerTwoAccentChange,
+                        vsBotMode ? { nameLocked: true, personaLocked: true, slotLabel: "Bot" } : undefined,
                     )}
                 </div>
 
                 <div className="lobby-controls">
                     <div className="lobby-options">
-                        <div className="lobby-option">
-                            <span className="lobby-option-label">Map</span>
+                        <div className="lobby-option lobby-option-map">
+                            <label className="lobby-option-label" htmlFor="match-map">Map</label>
+                            <img
+                                className="lobby-map-preview"
+                                src={selectedMap.previewImage}
+                                alt=""
+                                aria-hidden="true"
+                            />
                             <select
+                                id="match-map"
+                                name="match-map"
                                 className="lobby-option-input"
                                 value={formState.mapType}
                                 onChange={handleMapTypeChange}
@@ -695,22 +650,27 @@ function renderStartScreen(
                                 ))}
                             </select>
                             <span className="lobby-option-copy">
-                                {getMapPresentation(formState.mapType).description}
+                                {selectedMap.description}
                             </span>
                         </div>
                         <div className="lobby-option">
-                            <span className="lobby-option-label">Seed Variant</span>
+                            <label className="lobby-option-label" htmlFor="match-seed">Seed Variant</label>
                             <input
+                                id="match-seed"
+                                name="match-seed"
                                 className="lobby-option-input"
                                 value={formState.seedText}
                                 onChange={handleSeedChange}
                                 maxLength={32}
+                                autoComplete="off"
                                 placeholder="gunbound-local"
                             />
                         </div>
                         <div className="lobby-option">
-                            <span className="lobby-option-label">Target Score</span>
+                            <label className="lobby-option-label" htmlFor="match-target-score">Target Score</label>
                             <select
+                                id="match-target-score"
+                                name="match-target-score"
                                 className="lobby-option-input"
                                 value={formState.targetScore}
                                 onChange={handleTargetScoreChange}
@@ -723,8 +683,10 @@ function renderStartScreen(
                             </select>
                         </div>
                         <div className="lobby-option">
-                            <span className="lobby-option-label">Round Limit</span>
+                            <label className="lobby-option-label" htmlFor="match-round-limit">Round Limit</label>
                             <select
+                                id="match-round-limit"
+                                name="match-round-limit"
                                 className="lobby-option-input"
                                 value={formState.roundLimit}
                                 onChange={handleRoundLimitChange}
@@ -737,8 +699,10 @@ function renderStartScreen(
                             </select>
                         </div>
                         <div className="lobby-option">
-                            <span className="lobby-option-label">Turn Duration</span>
+                            <label className="lobby-option-label" htmlFor="match-turn-duration">Turn Duration</label>
                             <select
+                                id="match-turn-duration"
+                                name="match-turn-duration"
                                 className="lobby-option-input"
                                 value={formState.turnDurationMode}
                                 onChange={handleTurnDurationModeChange}
@@ -753,16 +717,17 @@ function renderStartScreen(
                                 {getTurnDurationModeDescription(formState.turnDurationMode)}
                             </span>
                         </div>
-                        <RoomPanel formState={formState} />
                     </div>
                     <div className="lobby-actions">
-                        <button
-                            type="button"
-                            className="lobby-btn lobby-btn-secondary"
-                            onClick={openChannelLobby}
-                        >
-                            <span className="lobby-btn-label">Back To Channel</span>
-                        </button>
+                        {onExitToLobby ? (
+                            <button
+                                type="button"
+                                className="lobby-btn lobby-btn-secondary"
+                                onClick={onExitToLobby}
+                            >
+                                <span className="lobby-btn-label">Back To Lobby</span>
+                            </button>
+                        ) : null}
                         <button
                             type="button"
                             className="lobby-btn lobby-btn-primary"
@@ -771,7 +736,7 @@ function renderStartScreen(
                         >
                             <span className="lobby-btn-icon">&#9654;</span>
                             <span className="lobby-btn-label">
-                                {matchStarting ? "Starting" : "Start Match"}
+                                {matchStarting ? "Starting" : vsBotMode ? "Start Bot Match" : "Start Match"}
                             </span>
                         </button>
                     </div>
@@ -901,226 +866,13 @@ function renderStartScreen(
         queueMatchStart({
             ...formState,
             playerOneName: formState.playerOneName.trim() || "Player 1",
-            playerTwoName: formState.playerTwoName.trim() || "Player 2",
-            seedText: formState.seedText.trim() || "gunbound-local",
+            playerTwoName: vsBotMode ? "Practice Bot" : formState.playerTwoName.trim() || "Player 2",
+            playerTwoTitle: vsBotMode ? "Oracle" : formState.playerTwoTitle,
+            playerTwoAccent: vsBotMode ? "coral" : formState.playerTwoAccent,
+            seedText: formState.seedText.trim() || (vsBotMode ? "solo-practice" : "gunbound-local"),
+            soloBot: vsBotMode,
         });
     }
-}
-
-function renderChannelScreen(
-    formState: MatchConfig,
-    openCreateRoom: {
-        (): void;
-    },
-    cloneRoomSetup: {
-        (room: LiveRoom): void;
-    },
-    showLobbyAudioNotice: boolean,
-): React.JSX.Element {
-    return (
-        <div className="screen">
-            <div className="lobby-bg-particles" />
-            <div className="lobby-bg-clouds" />
-            <div className="channel-shell">
-                <div className="channel-topbar">
-                    <div className="channel-title-group">
-                        <span className="channel-kicker">Post Login Lobby</span>
-                        <h1 className="channel-title">Channel 1</h1>
-                        <span className="channel-subtitle">
-                            Rooms, friends, and chat before the match starts
-                        </span>
-                    </div>
-                    <div className="channel-actions">
-                        <button
-                            type="button"
-                            className="lobby-btn lobby-btn-secondary"
-                        >
-                            <span className="lobby-btn-label">Quick Match</span>
-                        </button>
-                        <button
-                            type="button"
-                            className="lobby-btn lobby-btn-primary"
-                            onClick={openCreateRoom}
-                        >
-                            <span className="lobby-btn-icon">&#9654;</span>
-                            <span className="lobby-btn-label">Create Room</span>
-                        </button>
-                    </div>
-                </div>
-                {showLobbyAudioNotice ? (
-                    <div className="lobby-audio-notice" role="status">
-                        Browser autoplay blocked the lobby music. Click or press
-                        any key to enable it.
-                    </div>
-                ) : null}
-                <div className="channel-grid">
-                    <section className="channel-panel channel-room-panel">
-                        <div className="channel-panel-head">
-                            <div>
-                                <span className="channel-panel-kicker">
-                                    Room Browser
-                                </span>
-                                <h2>Active Matches</h2>
-                            </div>
-                            <span className="channel-panel-badge">
-                                {String(LIVE_ROOMS.length)} Rooms
-                            </span>
-                        </div>
-                        <div className="channel-room-list">
-                            {LIVE_ROOMS.map((room) => (
-                                <button
-                                    key={room.title}
-                                    type="button"
-                                    className="channel-room-card"
-                                    onClick={function handleCloneRoom(): void {
-                                        cloneRoomSetup(room);
-                                    }}
-                                >
-                                    <div className="channel-room-row">
-                                        <span className="channel-room-title">
-                                            {room.title}
-                                        </span>
-                                        <span className="channel-room-state">
-                                            {room.status}
-                                        </span>
-                                    </div>
-                                    <div className="channel-room-row">
-                                        <span className="channel-room-copy">
-                                            Host {room.host} /{" "}
-                                            {
-                                                getMapPresentation(room.mapType)
-                                                    .label
-                                            }
-                                        </span>
-                                        <span className="channel-room-copy">
-                                            {room.players}
-                                        </span>
-                                    </div>
-                                    <div className="channel-room-seed">
-                                        Seed {room.seedText}
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                    </section>
-                    <section className="channel-panel channel-chat-panel">
-                        <div className="channel-panel-head">
-                            <div>
-                                <span className="channel-panel-kicker">
-                                    Public Feed
-                                </span>
-                                <h2>Channel Chat</h2>
-                            </div>
-                            <span className="channel-panel-badge">
-                                Generic
-                            </span>
-                        </div>
-                        <div className="channel-chat-log">
-                            {CHANNEL_CHAT.map((message) => (
-                                <div
-                                    key={message.author + message.time}
-                                    className="channel-chat-row"
-                                >
-                                    <div className="channel-chat-meta">
-                                        <img
-                                            className="channel-chat-accent"
-                                            src={"/badges/accent-" + message.accent + ".svg"}
-                                            alt=""
-                                            width={8}
-                                            height={8}
-                                        />
-                                        <span className="channel-chat-author">
-                                            {message.author}
-                                        </span>
-                                        <span className="channel-chat-time">
-                                            {message.time}
-                                        </span>
-                                    </div>
-                                    <p className="channel-chat-text">
-                                        {message.text}
-                                    </p>
-                                </div>
-                            ))}
-                        </div>
-                        <div className="channel-chat-compose">
-                            <input
-                                value={
-                                    (formState.playerOneName || "Player 1") +
-                                    " says hello..."
-                                }
-                                readOnly
-                            />
-                            <button
-                                type="button"
-                                className="lobby-btn lobby-btn-secondary"
-                            >
-                                <span className="lobby-btn-label">Send</span>
-                            </button>
-                        </div>
-                    </section>
-                    <section className="channel-panel channel-side-panel">
-                        <div className="channel-panel-head">
-                            <div>
-                                <span className="channel-panel-kicker">
-                                    Friend List
-                                </span>
-                                <h2>Online Friends</h2>
-                            </div>
-                            <span className="channel-panel-badge">
-                                {String(FRIENDS_LIST.length)} Online
-                            </span>
-                        </div>
-                        <div className="channel-friend-list">
-                            {FRIENDS_LIST.map((friend) => (
-                                <div
-                                    key={friend.name}
-                                    className="channel-friend-row"
-                                >
-                                    <div
-                                        className="channel-friend-sprite"
-                                        style={getFriendSpriteStyle(friend.mobile)}
-                                    />
-                                    <div className="channel-friend-copy">
-                                        <span className="channel-friend-name">
-                                            {friend.name}
-                                        </span>
-                                        <span className="channel-friend-state">
-                                            {friend.status}
-                                        </span>
-                                        <span className="channel-friend-activity">
-                                            {friend.activity}
-                                        </span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        <div className="channel-create-card">
-                            <span className="channel-create-kicker">
-                                Ready To Host
-                            </span>
-                            <strong className="channel-create-title">
-                                Open your own room
-                            </strong>
-                            <span className="channel-create-copy">
-                                Current setup uses{" "}
-                                {getMapPresentation(formState.mapType).label} on
-                                seed {formState.seedText || "gunbound-local"}.
-                            </span>
-                            <button
-                                type="button"
-                                className="lobby-btn lobby-btn-primary"
-                                onClick={openCreateRoom}
-                            >
-                                <span className="lobby-btn-label">
-                                    Configure Duel
-                                </span>
-                            </button>
-                        </div>
-                    </section>
-                </div>
-            </div>
-        </div>
-    );
 }
 
 function renderLobbyPlayer(
@@ -1131,6 +883,7 @@ function renderLobbyPlayer(
     onMobileChange: (e: React.ChangeEvent<HTMLSelectElement>) => void,
     onTitleChange: (e: React.ChangeEvent<HTMLSelectElement>) => void,
     onAccentChange: (e: React.ChangeEvent<HTMLSelectElement>) => void,
+    options?: { nameLocked?: boolean; personaLocked?: boolean; slotLabel?: string },
 ): React.JSX.Element {
     const name = slot === 1 ? formState.playerOneName : formState.playerTwoName;
     const mobile =
@@ -1147,7 +900,7 @@ function renderLobbyPlayer(
         <div className={"lobby-player-card" + (isBlue ? " blue" : " red")}>
             <div className="lobby-player-head">
                 <span className="lobby-player-team">{team} Team</span>
-                <span className="lobby-player-slot">Player {slot}</span>
+                <span className="lobby-player-slot">{options?.slotLabel ?? "Player " + String(slot)}</span>
             </div>
             <div className="lobby-player-sprite-wrap">
                 <div className="lobby-player-sprite-bg">
@@ -1166,13 +919,17 @@ function renderLobbyPlayer(
                         value={name}
                         onChange={onNameChange}
                         maxLength={18}
+                        name={"player-" + String(slot) + "-name"}
+                        autoComplete="off"
                         placeholder={"Player " + String(slot)}
+                        disabled={options?.nameLocked === true}
                     />
                 </div>
                 <div className="lobby-field">
                     <label htmlFor={"mobile-" + String(slot)}>Mobile</label>
                     <select
                         id={"mobile-" + String(slot)}
+                        name={"player-" + String(slot) + "-mobile"}
                         value={mobile}
                         onChange={onMobileChange}
                     >
@@ -1187,8 +944,10 @@ function renderLobbyPlayer(
                     <label htmlFor={"title-" + String(slot)}>Title</label>
                     <select
                         id={"title-" + String(slot)}
+                        name={"player-" + String(slot) + "-title"}
                         value={title}
                         onChange={onTitleChange}
+                        disabled={options?.personaLocked === true}
                     >
                         {TITLE_OPTIONS.map((option) => (
                             <option key={option} value={option}>
@@ -1201,8 +960,10 @@ function renderLobbyPlayer(
                     <label htmlFor={"accent-" + String(slot)}>Accent</label>
                     <select
                         id={"accent-" + String(slot)}
+                        name={"player-" + String(slot) + "-accent"}
                         value={accent}
                         onChange={onAccentChange}
+                        disabled={options?.personaLocked === true}
                     >
                         {ACCENT_OPTIONS.map((option) => (
                             <option key={option} value={option}>
@@ -1266,28 +1027,6 @@ function getLobbySpriteStyle(
             String(spriteSource.previewTranslateX) +
             "px, " +
             String(spriteSource.previewTranslateY) +
-            "px)"
-    };
-}
-
-function getFriendSpriteStyle(mobileType: MobileType): React.CSSProperties {
-    const spriteSource = getMobileSpriteSource(mobileType);
-    const scaleX = shouldFlipMobileSprite(mobileType, 1)
-        ? -0.72
-        : 0.72;
-
-    return {
-        backgroundImage: 'url("' + spriteSource.path + '")',
-        backgroundPosition: "0 0",
-        backgroundRepeat: "no-repeat",
-        backgroundSize: String(spriteSource.frameCount * 100) + "% 100%",
-        transform:
-            "scale(" +
-            String(scaleX) +
-            ", 0.72) translate(" +
-            String(spriteSource.previewTranslateX * 0.42) +
-            "px, " +
-            String(spriteSource.previewTranslateY * 0.42) +
             "px)"
     };
 }

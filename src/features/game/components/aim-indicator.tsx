@@ -7,12 +7,15 @@ import { dispatchBattleInputCommand } from "@/features/game/multiplayer/battle-c
 import { useGameStore } from "@/features/game/store/game-store";
 import {
   selectCharging,
+  selectBattleItemInventories,
   selectPhase,
   selectPhaseTimer,
   selectPlayers,
   selectPower,
+  selectSelectedBattleItems,
   selectTurn,
-  selectTurnCount
+  selectTurnCount,
+  selectTurnMoveRemaining
 } from "@/features/game/store/selectors/hud-selectors";
 
 export function AimIndicator(): React.JSX.Element {
@@ -23,8 +26,11 @@ export function AimIndicator(): React.JSX.Element {
   const phase = useGameState(selectPhase);
   const phaseTimer = useGameState(selectPhaseTimer);
   const turnCount = useGameState(selectTurnCount);
+  const turnMoveRemaining = useGameState(selectTurnMoveRemaining);
+  const battleItemInventories = useGameState(selectBattleItemInventories);
+  const selectedBattleItems = useGameState(selectSelectedBattleItems);
   const player = players[turn - 1];
-  const turnGuide = createTurnGuide(player, phase, charging, phaseTimer, power, turnCount);
+  const turnGuide = createTurnGuide(player, phase, charging, phaseTimer, power, turnCount, turnMoveRemaining, battleItemInventories[turn - 1], selectedBattleItems[turn - 1]);
 
   return (
     <div className={"aim-card tone-" + turnGuide.tone}>
@@ -78,17 +84,30 @@ export function AimIndicator(): React.JSX.Element {
             {turnGuide.commands.map(renderCommand)}
           </div>
           <div className="aim-touch-grid" aria-label="Touch controls">
-            <button type="button" className="aim-touch-button" onPointerDown={handleMoveLeft}>
+            <button
+              type="button"
+              className="aim-touch-button"
+              aria-label="Move left"
+              onPointerDown={handleMoveLeftStart}
+              onPointerUp={handleMoveLeftEnd}
+              onPointerCancel={handleMoveLeftEnd}
+              onPointerLeave={handleMoveLeftEnd}
+              onKeyDown={handleMoveLeftKeyDown}
+              onKeyUp={handleMoveLeftKeyUp}
+            >
               <span className="aim-touch-key">A</span>
               <span>Left</span>
             </button>
             <button
               type="button"
               className="aim-touch-button"
+              aria-label="Aim up"
               onPointerDown={handleAimUp}
               onPointerUp={handleAimUpEnd}
               onPointerCancel={handleAimUpEnd}
               onPointerLeave={handleAimUpEnd}
+              onKeyDown={handleAimUpKeyDown}
+              onKeyUp={handleAimUpKeyUp}
             >
               <span className="aim-touch-key">Up</span>
               <span>Aim</span>
@@ -96,32 +115,52 @@ export function AimIndicator(): React.JSX.Element {
             <button
               type="button"
               className="aim-touch-button aim-touch-fire"
+              aria-label="Hold to fire"
               onPointerDown={handleChargeStart}
               onPointerUp={handleChargeEnd}
               onPointerCancel={handleChargeEnd}
               onPointerLeave={handleChargeEnd}
+              onKeyDown={handleChargeKeyDown}
+              onKeyUp={handleChargeKeyUp}
             >
               <span className="aim-touch-key">Hold</span>
               <span>Fire</span>
             </button>
-            <button type="button" className="aim-touch-button" onPointerDown={handleMoveRight}>
+            <button
+              type="button"
+              className="aim-touch-button"
+              aria-label="Move right"
+              onPointerDown={handleMoveRightStart}
+              onPointerUp={handleMoveRightEnd}
+              onPointerCancel={handleMoveRightEnd}
+              onPointerLeave={handleMoveRightEnd}
+              onKeyDown={handleMoveRightKeyDown}
+              onKeyUp={handleMoveRightKeyUp}
+            >
               <span className="aim-touch-key">D</span>
               <span>Right</span>
             </button>
             <button
               type="button"
               className="aim-touch-button"
+              aria-label="Aim down"
               onPointerDown={handleAimDown}
               onPointerUp={handleAimDownEnd}
               onPointerCancel={handleAimDownEnd}
               onPointerLeave={handleAimDownEnd}
+              onKeyDown={handleAimDownKeyDown}
+              onKeyUp={handleAimDownKeyUp}
             >
               <span className="aim-touch-key">Down</span>
               <span>Aim</span>
             </button>
-            <button type="button" className="aim-touch-button" onPointerDown={handleWeaponSwitch}>
+            <button type="button" className="aim-touch-button" onClick={handleWeaponSwitch} aria-label="Switch weapon">
               <span className="aim-touch-key">Q</span>
               <span>Shot</span>
+            </button>
+            <button type="button" className="aim-touch-button" onClick={handleItemSwitch} aria-label="Switch item">
+              <span className="aim-touch-key">E</span>
+              <span>Item</span>
             </button>
           </div>
         </div>
@@ -130,46 +169,116 @@ export function AimIndicator(): React.JSX.Element {
   );
 }
 
-function handleMoveLeft(event: React.PointerEvent<HTMLButtonElement>): void {
+function handleMoveLeftStart(event: React.PointerEvent<HTMLButtonElement>): void {
   event.preventDefault();
   if (dispatchBattleInputCommand({ kind: "move", direction: -1 })) return;
+  useGameStore.getState().setMoveKey(-1, true);
   useGameStore.getState().attemptMove(-1);
 }
 
-function handleMoveRight(event: React.PointerEvent<HTMLButtonElement>): void {
+function handleMoveLeftEnd(event: React.PointerEvent<HTMLButtonElement>): void {
+  event.preventDefault();
+  if (dispatchBattleInputCommand({ kind: "move", direction: -1 })) return;
+  useGameStore.getState().setMoveKey(-1, false);
+}
+
+function handleMoveLeftKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): void {
+  if (!isActivationKey(event) || event.repeat) return;
+  event.preventDefault();
+  if (dispatchBattleInputCommand({ kind: "move", direction: -1 })) return;
+  useGameStore.getState().setMoveKey(-1, true);
+  useGameStore.getState().attemptMove(-1);
+}
+
+function handleMoveLeftKeyUp(event: React.KeyboardEvent<HTMLButtonElement>): void {
+  if (!isActivationKey(event)) return;
+  event.preventDefault();
+  if (dispatchBattleInputCommand({ kind: "move", direction: -1 })) return;
+  useGameStore.getState().setMoveKey(-1, false);
+}
+
+function handleMoveRightStart(event: React.PointerEvent<HTMLButtonElement>): void {
   event.preventDefault();
   if (dispatchBattleInputCommand({ kind: "move", direction: 1 })) return;
+  useGameStore.getState().setMoveKey(1, true);
   useGameStore.getState().attemptMove(1);
 }
 
-function handleAimUp(event: React.PointerEvent<HTMLButtonElement>): void {
+function handleMoveRightEnd(event: React.PointerEvent<HTMLButtonElement>): void {
+  event.preventDefault();
+  if (dispatchBattleInputCommand({ kind: "move", direction: 1 })) return;
+  useGameStore.getState().setMoveKey(1, false);
+}
+
+function handleMoveRightKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): void {
+  if (!isActivationKey(event) || event.repeat) return;
+  event.preventDefault();
+  if (dispatchBattleInputCommand({ kind: "move", direction: 1 })) return;
+  useGameStore.getState().setMoveKey(1, true);
+  useGameStore.getState().attemptMove(1);
+}
+
+function handleMoveRightKeyUp(event: React.KeyboardEvent<HTMLButtonElement>): void {
+  if (!isActivationKey(event)) return;
+  event.preventDefault();
+  if (dispatchBattleInputCommand({ kind: "move", direction: 1 })) return;
+  useGameStore.getState().setMoveKey(1, false);
+}
+
+function handleAimUp(event: React.SyntheticEvent<HTMLButtonElement>): void {
   event.preventDefault();
   if (dispatchBattleInputCommand({ kind: "aim", key: "up", active: true })) return;
   useGameStore.getState().setAimKey("up", true);
 }
 
-function handleAimUpEnd(event: React.PointerEvent<HTMLButtonElement>): void {
+function handleAimUpEnd(event: React.SyntheticEvent<HTMLButtonElement>): void {
   event.preventDefault();
   if (dispatchBattleInputCommand({ kind: "aim", key: "up", active: false })) return;
   useGameStore.getState().setAimKey("up", false);
 }
 
-function handleAimDown(event: React.PointerEvent<HTMLButtonElement>): void {
+function handleAimUpKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): void {
+  if (!isActivationKey(event) || event.repeat) return;
+  handleAimUp(event);
+}
+
+function handleAimUpKeyUp(event: React.KeyboardEvent<HTMLButtonElement>): void {
+  if (!isActivationKey(event)) return;
+  handleAimUpEnd(event);
+}
+
+function handleAimDown(event: React.SyntheticEvent<HTMLButtonElement>): void {
   event.preventDefault();
   if (dispatchBattleInputCommand({ kind: "aim", key: "down", active: true })) return;
   useGameStore.getState().setAimKey("down", true);
 }
 
-function handleAimDownEnd(event: React.PointerEvent<HTMLButtonElement>): void {
+function handleAimDownEnd(event: React.SyntheticEvent<HTMLButtonElement>): void {
   event.preventDefault();
   if (dispatchBattleInputCommand({ kind: "aim", key: "down", active: false })) return;
   useGameStore.getState().setAimKey("down", false);
 }
 
-function handleWeaponSwitch(event: React.PointerEvent<HTMLButtonElement>): void {
+function handleAimDownKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): void {
+  if (!isActivationKey(event) || event.repeat) return;
+  handleAimDown(event);
+}
+
+function handleAimDownKeyUp(event: React.KeyboardEvent<HTMLButtonElement>): void {
+  if (!isActivationKey(event)) return;
+  handleAimDownEnd(event);
+}
+
+function handleWeaponSwitch(event: React.SyntheticEvent<HTMLButtonElement>): void {
   event.preventDefault();
   if (dispatchBattleInputCommand({ kind: "switch-weapon" })) return;
   useGameStore.getState().switchWeapon();
+}
+
+function handleItemSwitch(event: React.SyntheticEvent<HTMLButtonElement>): void {
+  event.preventDefault();
+  if (dispatchBattleInputCommand({ kind: "switch-item" })) return;
+  useGameStore.getState().switchBattleItem();
 }
 
 function handleChargeStart(event: React.PointerEvent<HTMLButtonElement>): void {
@@ -186,6 +295,24 @@ function handleChargeEnd(event: React.PointerEvent<HTMLButtonElement>): void {
   }
   if (dispatchBattleInputCommand({ kind: "release-charge" })) return;
   useGameStore.getState().releaseCharge();
+}
+
+function handleChargeKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): void {
+  if (!isActivationKey(event) || event.repeat) return;
+  event.preventDefault();
+  if (dispatchBattleInputCommand({ kind: "begin-charge" })) return;
+  useGameStore.getState().beginCharge();
+}
+
+function handleChargeKeyUp(event: React.KeyboardEvent<HTMLButtonElement>): void {
+  if (!isActivationKey(event)) return;
+  event.preventDefault();
+  if (dispatchBattleInputCommand({ kind: "release-charge" })) return;
+  useGameStore.getState().releaseCharge();
+}
+
+function isActivationKey(event: React.KeyboardEvent<HTMLButtonElement>): boolean {
+  return event.key === " " || event.key === "Enter";
 }
 
 function renderWeaponSlot(slot: ReturnType<typeof createTurnGuide>["weaponSlots"][number]): React.JSX.Element {

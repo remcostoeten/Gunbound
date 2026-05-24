@@ -1,25 +1,103 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { playTrack } from "@/lib/music-bus";
 import { AuthField } from "./auth-field";
 import { AuthButton } from "./auth-button";
-import { useCredentialAuth, InvalidPasswordError } from "../hooks/use-credential-auth";
+import {
+  useCredentialAuth,
+  InvalidPasswordError,
+} from "../hooks/use-credential-auth";
 
 type Mode = "login" | "register";
 
-interface Props {
+type Props = {
   mode: Mode;
   onSwitchMode: (m: Mode) => void;
   onAuthed: (username: string) => void;
-}
+};
 
 export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
-  const { register, login, state, isConnected, credentialsReady, connectionError } = useCredentialAuth();
+  const {
+    register,
+    login,
+    loginWithGoogle,
+    state,
+    isConnected,
+    credentialsReady,
+    connectionError,
+  } = useCredentialAuth();
   const [username, setUsername] = useState("");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [googleAvailable, setGoogleAvailable] = useState(false);
+
+  const handleGoogleCredential = async (credential: string) => {
+    setError(null);
+    if (connectionError) return setError(connectionError.message.toUpperCase());
+    if (!isConnected) return setError("CONNECTING — TRY AGAIN IN A MOMENT");
+    try {
+      const result = await loginWithGoogle(credential);
+      playTrack("lobby");
+      onAuthed(result.username);
+    } catch (err) {
+      setError(messageFromError(err));
+    }
+  };
+
+  useEffect(() => {
+    const checkGoogle = () => {
+      if (typeof window !== "undefined" && (window as any).google) {
+        setGoogleAvailable(true);
+        return true;
+      }
+      return false;
+    };
+
+    if (checkGoogle()) return;
+
+    const interval = setInterval(() => {
+      if (checkGoogle()) {
+        clearInterval(interval);
+      }
+    }, 200);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!googleAvailable) return;
+
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "100000000000-dummyclientid.apps.googleusercontent.com";
+    if (!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) {
+      console.warn("NEXT_PUBLIC_GOOGLE_CLIENT_ID is not configured. Google Sign-In button is rendered with a fallback Client ID.");
+    }
+
+    try {
+      (window as any).google.accounts.id.initialize({
+        client_id: clientId,
+        callback: (response: any) => {
+          if (response.credential) {
+            handleGoogleCredential(response.credential);
+          }
+        },
+      });
+
+      const btnContainer = document.getElementById("google-signin-btn");
+      if (btnContainer) {
+        (window as any).google.accounts.id.renderButton(btnContainer, {
+          theme: "filled_blue",
+          size: "large",
+          width: btnContainer.clientWidth || 340,
+          text: "signin_with",
+          shape: "rectangular",
+        });
+      }
+    } catch (e) {
+      console.warn("Failed to initialize Google Sign-In:", e);
+    }
+  }, [googleAvailable, isConnected, mode]);
 
   const isRegister = mode === "register";
   const busy = state === "working";
@@ -33,7 +111,8 @@ export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
     if (isRegister && pw !== pw2) return setError("PASSWORDS DO NOT MATCH");
     if (connectionError) return setError(connectionError.message.toUpperCase());
     if (!isConnected) return setError("CONNECTING — TRY AGAIN IN A MOMENT");
-    if (!isRegister && !credentialsReady) return setError("ACCOUNT LIST IS STILL LOADING");
+    if (!isRegister && !credentialsReady)
+      return setError("ACCOUNT LIST IS STILL LOADING");
 
     try {
       if (isRegister) {
@@ -53,7 +132,9 @@ export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
   return (
     <div className="gba-window">
       <div className="gba-titlebar">
-        <span className="gba-title">{isRegister ? "CREATE ACCOUNT" : "LOGIN"}</span>
+        <span className="gba-title">
+          {isRegister ? "CREATE ACCOUNT" : "LOGIN"}
+        </span>
         <span className="gba-title-x">×</span>
       </div>
       <div className="gba-body">
@@ -75,11 +156,31 @@ export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
         </div>
 
         <form className="gba-form" onSubmit={submit}>
-          <AuthField label="USERNAME" value={username} onChange={setUsername} maxLength={20} />
-          <AuthField label="PASSWORD" type="password" value={pw} onChange={setPw} maxLength={64} />
-          <div className={`gba-collapse ${isRegister ? "is-open" : ""}`} aria-hidden={!isRegister}>
+          <AuthField
+            label="USERNAME"
+            value={username}
+            onChange={setUsername}
+            maxLength={20}
+          />
+          <AuthField
+            label="PASSWORD"
+            type="password"
+            value={pw}
+            onChange={setPw}
+            maxLength={64}
+          />
+          <div
+            className={`gba-collapse ${isRegister ? "is-open" : ""}`}
+            aria-hidden={!isRegister}
+          >
             <div className="gba-collapse-inner">
-              <AuthField label="CONFIRM" type="password" value={pw2} onChange={setPw2} maxLength={64} />
+              <AuthField
+                label="CONFIRM"
+                type="password"
+                value={pw2}
+                onChange={setPw2}
+                maxLength={64}
+              />
             </div>
           </div>
 
@@ -98,11 +199,15 @@ export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
             </AuthButton>
           </div>
 
-          <p className="gba-foot-hint">
-            {isRegister
-              ? "Pick a memorable password — there is no email reset yet, so save it carefully."
-              : "Sign in to recover your profile on any device."}
-          </p>
+          <div className="gba-divider-row">
+            <span className="gba-divider-line" />
+            <span className="gba-divider-text">OR CONNECT WITH</span>
+            <span className="gba-divider-line" />
+          </div>
+
+          <div className="gba-google-btn-container">
+            <div id="google-signin-btn" style={{ minHeight: "40px" }} />
+          </div>
         </form>
       </div>
     </div>

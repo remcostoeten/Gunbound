@@ -6,7 +6,9 @@ export type GamePhase = "move" | "aim" | "fire" | "resolve" | "end";
 
 export type GameScene = "start" | "playing" | "end";
 
-export type WeaponType = "primary" | "secondary";
+export type WeaponType = "primary" | "secondary" | "ss";
+
+export type BattleItemType = "power" | "bunge";
 
 export type MobileType =
   | "armor"

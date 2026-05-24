@@ -23,6 +23,8 @@ const impactViewport: CameraViewport = {
   height: 506.25
 };
 
+const bottomChromeFocusLift = 74;
+
 export function createCameraRig(): CameraRig {
   return {
     center: {
@@ -124,21 +126,21 @@ function getViewportForMode(mode: CameraMode, input: CameraStepInput): CameraVie
 
 function resolveTarget(mode: CameraMode, input: CameraStepInput, viewport: CameraViewport): Vec2 {
   if (mode === "projectile" && input.projectile !== null) {
-    return predictProjectilePosition(input.projectile);
+    return applyBottomChromeBias(predictProjectilePosition(input.projectile), bottomChromeFocusLift * 0.55);
   }
 
   if (mode === "impact" && input.explosionVisual !== null) {
-    return {
+    return applyBottomChromeBias({
       x: input.explosionVisual.point.x,
-      y: input.explosionVisual.point.y - 42
-    };
+      y: input.explosionVisual.point.y - 18
+    }, bottomChromeFocusLift * 0.75);
   }
 
   if (mode === "player") {
-    return getAdaptivePlayerFocus(input.players, input.turn, viewport);
+    return applyBottomChromeBias(getAdaptivePlayerFocus(input.players, input.turn, viewport), bottomChromeFocusLift);
   }
 
-  return getOverviewFocus(input.players);
+  return applyBottomChromeBias(getOverviewFocus(input.players), bottomChromeFocusLift * 0.35);
 }
 
 function getAdaptivePlayerViewport(players: [Player, Player]): CameraViewport {
@@ -187,6 +189,13 @@ function getOverviewFocus(players: [Player, Player]): Vec2 {
   return {
     x: (left + right) * 0.5,
     y: averageY + 50
+  };
+}
+
+function applyBottomChromeBias(target: Vec2, amount: number): Vec2 {
+  return {
+    x: target.x,
+    y: target.y + amount
   };
 }
 

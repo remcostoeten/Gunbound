@@ -4,23 +4,36 @@ import type { Mobile, TerrainState } from "@/features/game/types/entities";
 export type MobileTraversalResult = {
   mobile: Mobile;
   moved: boolean;
+  distanceMoved: number;
 };
 
 export function moveMobileAlongTerrain(
   mobile: Mobile,
   terrain: TerrainState,
   direction: -1 | 1,
-  otherMobile: Mobile
+  otherMobile: Mobile,
+  distanceLimit = mobile.moveRange
 ): MobileTraversalResult {
   const nextMobile = cloneMobile(mobile);
   const stepSize = 6;
-  const totalSteps = Math.max(1, Math.floor(mobile.moveRange / stepSize));
+  const totalSteps = Math.max(1, Math.ceil(distanceLimit / stepSize));
   const climbLimit = 12;
+  const startX = mobile.position.x;
   let step = 0;
   let moved = false;
 
   while (step < totalSteps) {
-    const candidateX = clamp(nextMobile.position.x + stepSize * direction, 48, terrain.width - 48);
+    const remainingDistance = Math.max(0, distanceLimit - Math.abs(nextMobile.position.x - startX));
+    const travelDistance = Math.min(stepSize, remainingDistance);
+    if (travelDistance <= 0) {
+      break;
+    }
+
+    const candidateX = clamp(nextMobile.position.x + travelDistance * direction, 48, terrain.width - 48);
+    if (candidateX === nextMobile.position.x) {
+      break;
+    }
+
     const candidateY = getSurfaceY(terrain, candidateX);
     const currentY = getSurfaceY(terrain, nextMobile.position.x);
     const otherDistance = Math.abs(candidateX - otherMobile.position.x);
@@ -42,7 +55,8 @@ export function moveMobileAlongTerrain(
 
   return {
     mobile: nextMobile,
-    moved
+    moved,
+    distanceMoved: Math.abs(nextMobile.position.x - startX)
   };
 }
 

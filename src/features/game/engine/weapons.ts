@@ -306,6 +306,10 @@ export function createWeaponProfile(mobileType: MobileType, weaponType: WeaponTy
 }
 
 export function getWeaponProfileDefinition(mobileType: MobileType, weaponType: WeaponType): WeaponProfileDefinition {
+  if (weaponType === "ss") {
+    return createSsWeaponProfileDefinition(mobileType);
+  }
+
   return weaponProfileDefinitions[mobileType][weaponType];
 }
 
@@ -314,7 +318,7 @@ export function getWeaponDisplayName(mobileType: MobileType, weaponType: WeaponT
 }
 
 export function canSelectWeapon(weapon: WeaponType, specialCharges: number, turnCount: number): boolean {
-  if (weapon === "primary") {
+  if (weapon === "primary" || weapon === "secondary") {
     return true;
   }
 
@@ -322,7 +326,7 @@ export function canSelectWeapon(weapon: WeaponType, specialCharges: number, turn
 }
 
 export function shouldConsumeSpecialCharge(weapon: WeaponType, specialCharges: number, turnCount: number): boolean {
-  return weapon === "secondary" && turnCount < 4 && specialCharges > 0;
+  return weapon === "ss" && turnCount < 4 && specialCharges > 0;
 }
 
 export function getNextWeapon(currentWeapon: WeaponType): WeaponType {
@@ -330,5 +334,26 @@ export function getNextWeapon(currentWeapon: WeaponType): WeaponType {
     return "secondary";
   }
 
+  if (currentWeapon === "secondary") {
+    return "ss";
+  }
+
   return "primary";
+}
+
+function createSsWeaponProfileDefinition(mobileType: MobileType): WeaponProfileDefinition {
+  const secondary = weaponProfileDefinitions[mobileType].secondary;
+
+  return {
+    name: secondary.name + " SS",
+    baseSpeed: Math.round(secondary.baseSpeed * 0.94),
+    speedScale: Math.round(secondary.speedScale * 0.94),
+    baseDamage: Math.round(secondary.baseDamage * 1.26),
+    damageScale: Math.round(secondary.damageScale * 1.2),
+    blastRadius: Math.round(secondary.blastRadius * 1.18),
+    bouncesLeft: Math.max(secondary.bouncesLeft, secondary.bouncesLeft + 1),
+    windScale: secondary.windScale,
+    gravityScale: secondary.gravityScale,
+    radius: secondary.radius + 1
+  };
 }

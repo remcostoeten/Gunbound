@@ -14,22 +14,24 @@ type Props = {
 
 export function IntroLogoGroup({ pulled, fit, started, landed, dustVariants }: Props) {
   return (
-    <div
-      className={`logo-group ${pulled ? "logo-pulled" : ""}`}
-      style={{
-        transform: `translate(${fit.offsetX}px, ${fit.offsetY}px) scale(${fit.scale})`,
-        transformOrigin: "50% 50%",
-      }}
-    >
-      {INTRO_LETTERS.map((l, i) => (
-        <IntroLetter
-          key={l.alt}
-          letter={l}
-          landed={!!landed[l.alt]}
-          started={started}
-          dust={dustVariants[i]}
-        />
-      ))}
+    <div className={`logo-pull-container ${pulled ? "logo-pulled" : ""}`}>
+      <div
+        className="logo-group"
+        style={{
+          transform: `translate(${fit.offsetX}px, ${fit.offsetY}px) scale(${fit.scale})`,
+          transformOrigin: "50% 50%",
+        }}
+      >
+        {INTRO_LETTERS.map((l, i) => (
+          <IntroLetter
+            key={l.alt}
+            letter={l}
+            landed={!!landed[l.alt]}
+            started={started}
+            dust={dustVariants[i]}
+          />
+        ))}
+      </div>
     </div>
   );
 }

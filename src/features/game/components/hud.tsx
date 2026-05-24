@@ -1,23 +1,27 @@
 "use client";
 
-import { getWindLabel } from "@/features/game/engine/wind";
+import { getWindDirectionLabel, getWindLabel } from "@/features/game/engine/wind";
 import { useGameState } from "@/features/game/hooks/use-game-state";
 import {
   selectPlayers,
   selectTurn,
+  selectTurnDelays,
+  selectTurnElapsed,
   selectWind
 } from "@/features/game/store/selectors/hud-selectors";
 
 export function Hud(): React.JSX.Element {
   const players = useGameState(selectPlayers);
   const turn = useGameState(selectTurn);
+  const turnDelays = useGameState(selectTurnDelays);
+  const turnElapsed = useGameState(selectTurnElapsed);
   const wind = useGameState(selectWind);
   const currentPlayer = players[turn - 1];
 
   return (
     <div className="hud">
       <div className="hud-top">
-        <div className="hud-card">
+        <div className={getHudCardClassName(1, turn)}>
           <span className="player-name">{players[0].name}</span>
           <div className="hud-player-identity">
             <img className="hud-accent-chip" src={"/badges/accent-" + players[0].accent + ".svg"} alt="" width={12} height={12} />
@@ -43,15 +47,20 @@ export function Hud(): React.JSX.Element {
         <div className="hud-card wind-card">
           <span className="wind-label">Wind</span>
           <span className="wind-value">
-            <span className="wind-glyph">{getWindGlyph(wind.x)}</span>
+            <span className="wind-glyph">{getWindDirectionLabel(wind)}</span>
             <span>{getWindLabel(wind)}</span>
           </span>
           <div className="wind-meter">
             <div className="wind-meter-center" />
             <div className="wind-meter-pointer" style={{ left: getWindMeterLeft(wind.x) }} />
           </div>
+          <div className="delay-readout" aria-label="Turn delay queue">
+            <span>P1 {formatDelay(turnDelays[0])}</span>
+            <span>{String(Math.floor(turnElapsed)).padStart(2, "0")}s</span>
+            <span>P2 {formatDelay(turnDelays[1])}</span>
+          </div>
         </div>
-        <div className="hud-card right">
+        <div className={getHudCardClassName(2, turn) + " right"}>
           <span className="player-name">{players[1].name}</span>
           <div className="hud-player-identity">
             <img className="hud-accent-chip" src={"/badges/accent-" + players[1].accent + ".svg"} alt="" width={12} height={12} />
@@ -79,6 +88,10 @@ export function Hud(): React.JSX.Element {
   );
 }
 
+function getHudCardClassName(player: 1 | 2, turn: 1 | 2): string {
+  return player === turn ? "hud-card is-active" : "hud-card";
+}
+
 function getHpWidth(hp: number, maxHp: number): string {
   return String(Math.max(0, Math.min(100, Math.round((hp / maxHp) * 100)))) + "%";
 }
@@ -91,22 +104,14 @@ function getHpClassName(hp: number, maxHp: number): string {
   return "hp-fill";
 }
 
-function getWindGlyph(horizontalWind: number): string {
-  if (horizontalWind < -0.12) {
-    return "< <";
-  }
-
-  if (horizontalWind > 0.12) {
-    return "> >";
-  }
-
-  return "- -";
-}
-
 function getWindMeterLeft(horizontalWind: number): string {
   const normalized = Math.max(-0.75, Math.min(0.75, horizontalWind));
   const percentage = ((normalized + 0.75) / 1.5) * 100;
   return String(percentage) + "%";
+}
+
+function formatDelay(value: number): string {
+  return String(Math.max(0, Math.round(value)));
 }
 
 function capitalize(value: string): string {

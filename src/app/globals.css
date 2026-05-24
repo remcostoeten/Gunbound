@@ -6,7 +6,6 @@
 @import "./styles/lobby.css";
 @import "./styles/auth.css";
 @import "./styles/game.css";
-
 @custom-variant dark (&:is(.dark *));
 
 /*
@@ -146,6 +145,26 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
     overflow-x: hidden;
+  }
+
+  /*
+   * iOS Safari zoom fix: any input with font-size < 16px triggers an
+   * automatic viewport zoom on focus. This rule ensures all text-entry
+   * elements are at minimum 16px on mobile screens.
+   */
+  @media (max-width: 767px) {
+    input[type="text"],
+    input[type="password"],
+    input[type="email"],
+    input[type="search"],
+    input[type="url"],
+    input[type="tel"],
+    input[type="number"],
+    input:not([type]),
+    textarea,
+    select {
+      font-size: max(16px, 1em) !important;
+    }
   }
 }
 

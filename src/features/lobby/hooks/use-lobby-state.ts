@@ -13,18 +13,18 @@ export type LobbyToast = {
 let toastSeq = 0;
 let chatSeq = 1000;
 
-export function useLobbyState(selfName?: string | null, emptyDataEnabled = false) {
+export function useLobbyState(selfName?: string | null) {
   const [activeRoom, setActiveRoom] = useState<LobbyRoom | null>(null);
   const [creating, setCreating] = useState(false);
   const [whisperTo, setWhisperTo] = useState<string | null>(null);
   const [toasts, setToasts] = useState<LobbyToast[]>([]);
   const [messages, setMessages] = useState<LobbyChatMsg[]>(() =>
-    getLobbyDataSource(emptyDataEnabled).getInitialMessages()
+    getLobbyDataSource().getInitialMessages()
   );
 
   useEffect(() => {
-    setMessages(getLobbyDataSource(emptyDataEnabled).getInitialMessages());
-  }, [emptyDataEnabled]);
+    setMessages(getLobbyDataSource().getInitialMessages());
+  }, []);
 
   const pushToast = useCallback((text: string) => {
     const id = ++toastSeq;

@@ -7,6 +7,18 @@
       "skillPath": "skills/agent-browser/SKILL.md",
       "computedHash": "228f87d57035100d9dc6efcfc05aafd4b6e3962adacaa04b8217ab2fadb15dc8"
     },
+    "css-animations": {
+      "source": "heygen-com/hyperframes",
+      "sourceType": "github",
+      "skillPath": "skills/css-animations/SKILL.md",
+      "computedHash": "df468749b06a8ec7369cfea69bf71bf65e46cfc376e837e439e26f4230852c6b"
+    },
+    "css-architecture": {
+      "source": "aj-geddes/useful-ai-prompts",
+      "sourceType": "github",
+      "skillPath": "skills/css-architecture/SKILL.md",
+      "computedHash": "fff8e6fa098bc339ee3681fd786805610eb206d8173774ea8b22c00a26dc8114"
+    },
     "emil-design-eng": {
       "source": "emilkowalski/skill",
       "sourceType": "github",
@@ -43,11 +55,41 @@
       "skillPath": "skills/engineering/improve-codebase-architecture/SKILL.md",
       "computedHash": "c77b86b4332919499608f9af1880074e1fec65a59b95c70c27a9f39cd137865e"
     },
+    "mobile-design": {
+      "source": "sickn33/antigravity-awesome-skills",
+      "sourceType": "github",
+      "skillPath": "skills/mobile-design/SKILL.md",
+      "computedHash": "ba174c1095bcdda7a135622361778568589922fae7d932d822c5daba94e12318"
+    },
+    "mobile-offline-support": {
+      "source": "aj-geddes/useful-ai-prompts",
+      "sourceType": "github",
+      "skillPath": "skills/mobile-offline-support/SKILL.md",
+      "computedHash": "630c8fa68927799deaa1b0d77d41addaff4d9dee2dc0ab2e18b8635522fdebaa"
+    },
+    "mobile-touch": {
+      "source": "dylantarre/animation-principles",
+      "sourceType": "github",
+      "skillPath": "skills/01-by-domain/mobile-touch/SKILL.md",
+      "computedHash": "0675004b7f955c8cbcd8a8bb16aafa3fb56a05fd4a01f9895c1246f1e915970a"
+    },
     "next-best-practices": {
       "source": "vercel-labs/next-skills",
       "sourceType": "github",
       "skillPath": "skills/next-best-practices/SKILL.md",
       "computedHash": "f4678aef4ffc10a5ea64a91e57abe5a5081af813b06d58d565caf3e8ef56e26c"
+    },
+    "playwright-testing": {
+      "source": "alinaqi/claude-bootstrap",
+      "sourceType": "github",
+      "skillPath": "skills/playwright-testing/SKILL.md",
+      "computedHash": "f4f58145ec9b1f152123d26e47843ad81b9439f42dbb7c82b029ac613bed7814"
+    },
+    "pwa-development": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "skillPath": "pwa-development/SKILL.md",
+      "computedHash": "b8559cb80853236eb8605c1b28f1af8a2abddfddbdaf477259be6ed9ebe3832c"
     },
     "soultrace": {
       "source": "soultrace-ai/soultrace-skill",

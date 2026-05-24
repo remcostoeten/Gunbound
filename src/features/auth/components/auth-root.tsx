@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Script from "next/script";
 import { AuthWindow } from "./auth-window";
 import { AuthLogo } from "./auth-logo";
 import { AuthSettingsMenu } from "./auth-settings-menu";
@@ -60,6 +61,7 @@ export function AuthRoot({ onAuthed, theme: initialTheme = DEFAULT_AUTH_THEME }:
       data-gba-theme={theme}
       style={resolveAuthThemeStyle(theme)}
     >
+      <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
       <div className="gb-sky" />
       <div className="gb-clouds" />
       <div className="gb-aurora" aria-hidden />

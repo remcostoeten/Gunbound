@@ -704,10 +704,52 @@
   }
   .gba-field { grid-template-columns: 78px 1fr; gap: 8px; }
   .gba-field-label { font-size: 10px; }
+  /* iOS Safari zoom fix: keep input font-size at ≥16px */
+  .gba-field-input { font-size: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .gba-settings-pop {
     animation: none;
   }
+}
+
+/* ============================================================
+   Google OAuth Styles
+   ============================================================ */
+.gba-divider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 8px;
+  opacity: 0.85;
+}
+
+.gba-divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--gba-divider);
+}
+
+.gba-divider-text {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  color: var(--gba-text-muted);
+  text-shadow: 0 1px 0 rgba(0,0,0,0.4);
+  white-space: nowrap;
+}
+
+.gba-google-btn-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 4px;
+  margin-bottom: 8px;
+  width: 100%;
+}
+
+.gba-google-btn-container iframe {
+  border-radius: 6px;
+  border: 1px solid var(--gba-edge);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }

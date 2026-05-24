@@ -135,7 +135,7 @@ function appendProjectileCues(cues: AudioCue[], state: GameState, tracker: Audio
     const owner = state.projectile.owner;
     cues.push({
       kind: "shot-fire",
-      isSecondary: state.projectile.weapon === "secondary",
+      isSecondary: state.projectile.weapon !== "primary",
       mobileType: state.players[owner - 1]?.mobile.type || "armor",
       power: state.power
     });

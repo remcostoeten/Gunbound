@@ -1,10 +1,11 @@
 "use client";
 
-import type { WeaponType } from "@/features/game/types/shared";
+import type { BattleItemType, WeaponType } from "@/features/game/types/shared";
 
 export const BATTLE_EVENT_KIND = {
   MOVE: "battle_move",
   SWITCH_WEAPON: "battle_switch_weapon",
+  SWITCH_ITEM: "battle_switch_item",
   FIRE: "battle_fire",
   SURRENDER: "battle_surrender",
 } as const;
@@ -24,12 +25,20 @@ export type BattleSwitchWeaponPayload = {
   weapon: WeaponType;
 };
 
+export type BattleSwitchItemPayload = {
+  v: 1;
+  turn: 1 | 2;
+  item: BattleItemType | null;
+};
+
 export type BattleFirePayload = {
   v: 1;
   turn: 1 | 2;
   angle: number;
   power: number;
   weapon: WeaponType;
+  item: BattleItemType | null;
+  turnDelay: number;
 };
 
 export type BattleSurrenderPayload = {
@@ -40,6 +49,7 @@ export type BattleSurrenderPayload = {
 export type BattleEventPayload =
   | BattleMovePayload
   | BattleSwitchWeaponPayload
+  | BattleSwitchItemPayload
   | BattleFirePayload
   | BattleSurrenderPayload;
 
@@ -64,13 +74,25 @@ export function parseBattleEventPayload(
       return { v: 1, turn: value.turn, weapon: value.weapon };
     }
 
+    if (kind === BATTLE_EVENT_KIND.SWITCH_ITEM) {
+      if (!isTurn(value.turn)) return undefined;
+      if (value.item !== null && !isBattleItem(value.item)) return undefined;
+      return { v: 1, turn: value.turn, item: value.item };
+    }
+
     if (kind === BATTLE_EVENT_KIND.FIRE) {
       if (!isTurn(value.turn)) return undefined;
       if (!isWeapon(value.weapon)) return undefined;
+      if (value.item !== undefined && value.item !== null && !isBattleItem(value.item)) {
+        return undefined;
+      }
       if (typeof value.angle !== "number" || !Number.isFinite(value.angle)) {
         return undefined;
       }
       if (typeof value.power !== "number" || !Number.isFinite(value.power)) {
+        return undefined;
+      }
+      if (typeof value.turnDelay !== "number" || !Number.isFinite(value.turnDelay)) {
         return undefined;
       }
       return {
@@ -79,6 +101,8 @@ export function parseBattleEventPayload(
         angle: value.angle,
         power: value.power,
         weapon: value.weapon,
+        item: value.item === undefined ? null : value.item,
+        turnDelay: value.turnDelay,
       };
     }
 
@@ -102,5 +126,9 @@ function isTurn(value: unknown): value is 1 | 2 {
 }
 
 function isWeapon(value: unknown): value is WeaponType {
-  return value === "primary" || value === "secondary";
+  return value === "primary" || value === "secondary" || value === "ss";
+}
+
+function isBattleItem(value: unknown): value is BattleItemType {
+  return value === "power" || value === "bunge";
 }

@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { getAudioVolume, setAudioVolume, subscribeAudioSettings, getUiClickEnabled, setUiClickEnabled } from "@/lib/audio-settings";
 import {
   getBattleImmersive,
+  getBrowserFullscreen,
   getLobbyEmptyStateAnimated,
   setBattleImmersive,
+  setBrowserFullscreen,
   setLobbyEmptyStateAnimated,
   subscribeDisplaySettings,
 } from "@/lib/display-settings";
@@ -14,11 +16,16 @@ type Props = {
   onClose: () => void;
 };
 
+function isDocumentFullscreen(): boolean {
+  return typeof document !== "undefined" && document.fullscreenElement !== null;
+}
+
 export function LobbyOptionsModal({ onClose }: Props) {
   const [musicVolume, setMusicVolumeState] = useState(() => getAudioVolume("music"));
   const [sfxVolume, setSfxVolumeState] = useState(() => getAudioVolume("sfx"));
   const [uiClick, setUiClickState] = useState(() => getUiClickEnabled());
   const [immersive, setImmersiveState] = useState(() => getBattleImmersive());
+  const [fullscreen, setFullscreenState] = useState(() => isDocumentFullscreen());
   const [emptyStateAnimated, setEmptyStateAnimatedState] = useState(() => getLobbyEmptyStateAnimated());
 
   useEffect(() => {
@@ -34,6 +41,14 @@ export function LobbyOptionsModal({ onClose }: Props) {
       setImmersiveState(getBattleImmersive());
       setEmptyStateAnimatedState(getLobbyEmptyStateAnimated());
     });
+  }, []);
+
+  useEffect(() => {
+    function onFullscreenChange(): void {
+      setFullscreenState(isDocumentFullscreen());
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
 
   useEffect(() => {
@@ -80,6 +95,12 @@ export function LobbyOptionsModal({ onClose }: Props) {
               description="Fullscreen, focused battle view"
               checked={immersive}
               onChange={setBattleImmersive}
+            />
+            <ToggleRow
+              label="Browser fullscreen"
+              description="Fill the entire screen with the game"
+              checked={fullscreen}
+              onChange={(v) => setBrowserFullscreen(v)}
             />
             <ToggleRow
               label="Empty lobby motion"

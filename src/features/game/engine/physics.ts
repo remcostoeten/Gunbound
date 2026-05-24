@@ -105,7 +105,7 @@ export function stepProjectile(
 
     const canBounce =
       projectile.bouncesLeft > 0 &&
-      (projectile.weapon === "secondary" || projectile.mobileType === "frog");
+      (projectile.weapon !== "primary" || projectile.mobileType === "frog");
 
     if (canBounce) {
       const normal = getTerrainNormal(terrain, terrainHit);
@@ -142,7 +142,8 @@ export function stepProjectile(
             power: projectile.power,
             life: projectile.life + dt,
             windScale: projectile.windScale,
-            gravityScale: projectile.gravityScale
+            gravityScale: projectile.gravityScale,
+            item: projectile.item
           },
           bonusExplosion: bounceExplosion,
           explosion: null
@@ -199,7 +200,8 @@ function advanceProjectile(
     power: projectile.power,
     life: projectile.life + dt,
     windScale: projectile.windScale,
-    gravityScale: projectile.gravityScale
+    gravityScale: projectile.gravityScale,
+    item: projectile.item
   };
 }
 
@@ -215,7 +217,8 @@ function buildExplosion(
     radius,
     owner: projectile.owner,
     mobileType: projectile.mobileType,
-    weapon: projectile.weapon
+    weapon: projectile.weapon,
+    item: projectile.item
   };
 }
 

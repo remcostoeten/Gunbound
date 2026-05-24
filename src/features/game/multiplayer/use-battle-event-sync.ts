@@ -7,12 +7,20 @@ import {
   setBattleInputHandler,
   type BattleInputCommand,
 } from "@/features/game/multiplayer/battle-command-bus";
+import { calculateShotDelay } from "@/features/game/engine/delay";
+import { canSelectWeapon, getNextWeapon } from "@/features/game/engine/weapons";
+import {
+  getBattleItemDelay,
+  getNextAvailableBattleItem,
+  hasBattleItem
+} from "@/features/game/engine/battle-items";
 import {
   BATTLE_EVENT_KIND,
   parseBattleEventPayload,
   type BattleFirePayload,
   type BattleMovePayload,
   type BattleSurrenderPayload,
+  type BattleSwitchItemPayload,
   type BattleSwitchWeaponPayload,
 } from "@/features/game/multiplayer/battle-events";
 import { useGameStore } from "@/features/game/store/game-store";
@@ -133,7 +141,7 @@ export function useBattleEventSync(roomSession: RoomSession): UseBattleEventSync
       if (!applyBattlePayload(event.kind, payload)) break;
       processedEventIds.current.add(eventId);
 
-      if (inCatchUp && (event.kind === BATTLE_EVENT_KIND.MOVE || event.kind === BATTLE_EVENT_KIND.FIRE)) {
+      if (inCatchUp && event.kind === BATTLE_EVENT_KIND.FIRE) {
         fastForwardUntilTurnAdvances(turnBefore);
       }
     }
@@ -181,8 +189,7 @@ export function useBattleEventSync(roomSession: RoomSession): UseBattleEventSync
 
   useEffect(() => {
     if (!roomSession.room) {
-      setBattleInputHandler(null);
-      return () => setBattleInputHandler(null);
+      return;
     }
 
     setBattleInputHandler((command) => {
@@ -248,7 +255,10 @@ async function recordCommand(
   }
 
   if (command.kind === "switch-weapon") {
-    const nextWeapon = currentPlayer.mobile.weapon === "primary" ? "secondary" : "primary";
+    let nextWeapon = getNextWeapon(currentPlayer.mobile.weapon);
+    if (!canSelectWeapon(nextWeapon, currentPlayer.mobile.specialCharges, store.turnCount)) {
+      nextWeapon = getNextWeapon(nextWeapon);
+    }
     const payload: BattleSwitchWeaponPayload = {
       v: 1,
       turn: store.turn,
@@ -265,13 +275,39 @@ async function recordCommand(
     return;
   }
 
+  if (command.kind === "switch-item") {
+    const nextItem = getNextAvailableBattleItem(
+      store.battleItemInventories[store.turn - 1],
+      store.selectedBattleItems[store.turn - 1],
+    );
+    const payload: BattleSwitchItemPayload = {
+      v: 1,
+      turn: store.turn,
+      item: nextItem,
+    };
+    store.applyBattleItemSwitch(nextItem);
+    optimisticTicks.current.add(tickKey);
+    try {
+      await recordRoundEvent(connection, activeRound.id, tick, BATTLE_EVENT_KIND.SWITCH_ITEM, payload);
+    } catch (err) {
+      optimisticTicks.current.delete(tickKey);
+      throw err;
+    }
+    return;
+  }
+
   if (command.kind === "release-charge") {
+    const activeItem = hasBattleItem(store.battleItemInventories[store.turn - 1], store.selectedBattleItems[store.turn - 1])
+      ? store.selectedBattleItems[store.turn - 1]
+      : null;
     const payload: BattleFirePayload = {
       v: 1,
       turn: store.turn,
       angle: currentPlayer.mobile.angle,
       power: store.power,
       weapon: currentPlayer.mobile.weapon,
+      item: activeItem,
+      turnDelay: calculateShotDelay(currentPlayer.mobile, currentPlayer.mobile.weapon, store.turnElapsed) + getBattleItemDelay(activeItem),
     };
     store.releaseCharge();
     optimisticTicks.current.add(tickKey);
@@ -289,7 +325,7 @@ async function recordRoundEvent(
   roundId: bigint,
   tick: bigint,
   kind: string,
-  payload: BattleMovePayload | BattleSwitchWeaponPayload | BattleFirePayload | BattleSurrenderPayload,
+  payload: BattleMovePayload | BattleSwitchWeaponPayload | BattleSwitchItemPayload | BattleFirePayload | BattleSurrenderPayload,
 ): Promise<void> {
   await connection.reducers.recordRoundEvent({
     roundId,
@@ -311,6 +347,11 @@ function applyBattlePayload(kind: string, payload: ReturnType<typeof parseBattle
 
   if (kind === BATTLE_EVENT_KIND.SWITCH_WEAPON && "weapon" in payload) {
     store.applyBattleWeaponSwitch(payload.weapon);
+    return true;
+  }
+
+  if (kind === BATTLE_EVENT_KIND.SWITCH_ITEM && "item" in payload) {
+    store.applyBattleItemSwitch(payload.item);
     return true;
   }
 

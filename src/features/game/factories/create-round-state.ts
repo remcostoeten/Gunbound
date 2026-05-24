@@ -1,5 +1,7 @@
 import { defaultSuddenDeathTurn, getPhaseDuration } from "@/features/game/constants/gameplay";
 import { worldHeight, worldWidth } from "@/features/game/constants/world";
+import { createBattleItemInventories } from "@/features/game/engine/battle-items";
+import { createInitialTurnDelays } from "@/features/game/engine/delay";
 import { normalizeSeed } from "@/features/game/engine/random";
 import { createTerrain } from "@/features/game/engine/terrain";
 import { rollWind } from "@/features/game/engine/wind";
@@ -45,10 +47,16 @@ export function createStartedMatchState(config: MatchConfig): StartedMatchState 
     power: 0,
     charging: false,
     turnCount: 1,
+    turnElapsed: 0,
+    turnDelays: createInitialTurnDelays(),
+    turnMoveRemaining: players[0].mobile.moveRange,
+    battleItemInventories: createBattleItemInventories(),
+    selectedBattleItems: [null, null],
     phaseTimer: getPhaseDuration("move", config.turnDurationMode),
     phaseDuration: getPhaseDuration("move", config.turnDurationMode),
     bonusBoxes: [],
     explosionVisual: null,
+    explosionVisuals: [],
     damagePopups: [],
     turnAnnouncement: createTurnAnnouncement(1, players[0].name),
     history: createRoundHistory([], players, 1, 1, "Round 1 started.", players[0].name + " turn."),
@@ -86,10 +94,16 @@ export function createNextRoundState(
     power: 0,
     charging: false,
     turnCount: 1,
+    turnElapsed: 0,
+    turnDelays: createInitialTurnDelays(),
+    turnMoveRemaining: players[starter - 1].mobile.moveRange,
+    battleItemInventories: createBattleItemInventories(),
+    selectedBattleItems: [null, null],
     phaseTimer: getPhaseDuration("move", setup.turnDurationMode),
     phaseDuration: getPhaseDuration("move", setup.turnDurationMode),
     bonusBoxes: [],
     explosionVisual: null,
+    explosionVisuals: [],
     damagePopups: [],
     turnAnnouncement: createTurnAnnouncement(starter, "Round " + String(round)),
     history: createRoundHistory(

@@ -10,6 +10,7 @@ import { getSkyPalette, getTerrainPalette } from "@/features/game/engine/terrain
 import { getMobileSpriteFrame, getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
 import { getLaunchRadians, getMuzzlePosition } from "@/features/game/engine/physics";
 import { getMobileRiderMount, getMobileRiderSpriteSource } from "@/features/game/engine/rider-sprites";
+import { createWeaponProfile } from "@/features/game/engine/weapons";
 import { useGameLoop } from "@/features/game/hooks/use-game-loop";
 import { useInput } from "@/features/game/hooks/use-input";
 import { useGameStore } from "@/features/game/store/game-store";
@@ -33,7 +34,8 @@ import type {
   WindLeaf
 } from "@/features/game/types/effects";
 import type { CameraFrame, MapDecorPlan, MapDecorPrimitive } from "@/features/game/types/presentation";
-import type { BonusType, MobileType, PlayerAccent, TerrainTheme, Vec2 } from "@/features/game/types/shared";
+import type { BonusType, MobileType, PlayerAccent, TerrainTheme, Vec2, WeaponType } from "@/features/game/types/shared";
+import type { InputState } from "@/features/game/types/state";
 
 type SpriteCache = {
   armor: HTMLImageElement | null;
@@ -115,6 +117,7 @@ export function GameCanvas(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const previousFrameTimeRef = useRef(0);
   const visualTimeRef = useRef(0);
+  const reducedMotionRef = useRef(false);
   const cameraRigRef = useRef(createCameraRig());
   const visualEffectsRef = useRef<VisualEffectsState>(createVisualEffectsState());
   const mapDecorRef = useRef<MapDecorCache>({
@@ -141,8 +144,9 @@ export function GameCanvas(): React.JSX.Element {
   useInput();
   useGameLoop(drawFrame);
   useEffect(setupCanvas, []);
+  useEffect(syncReducedMotionPreference, []);
 
-  return <canvas ref={canvasRef} className="game-canvas" aria-label="Gunbound game canvas" />;
+  return <canvas ref={canvasRef} className="game-canvas" role="img" aria-label="Gunbound game canvas" />;
 
   function setupCanvas(): void {
     const canvas = canvasRef.current;
@@ -169,6 +173,7 @@ export function GameCanvas(): React.JSX.Element {
       players: state.players,
       turn: state.turn,
       explosionVisual: state.explosionVisual,
+      explosionVisuals: state.explosionVisuals,
       wind: state.wind,
       scene: state.scene,
       charging: state.charging,
@@ -176,7 +181,8 @@ export function GameCanvas(): React.JSX.Element {
       damagePopups: state.damagePopups,
       terrain: state.terrain,
       dt: delta,
-      visualTime: visualTimeRef.current
+      visualTime: visualTimeRef.current,
+      reducedMotion: reducedMotionRef.current
     });
     const visualEffects = visualEffectsRef.current;
     const mapDecor = getMapDecorPlan(mapDecorRef.current, state.terrain);
@@ -189,7 +195,7 @@ export function GameCanvas(): React.JSX.Element {
       explosionVisual: state.explosionVisual,
       dt: delta
     });
-    const cameraFrame = getCameraFrame(cameraRigRef.current, visualTimeRef.current, state.explosionVisual, visualEffects.fireShake);
+    const cameraFrame = getCameraFrame(cameraRigRef.current, visualTimeRef.current, reducedMotionRef.current ? null : state.explosionVisual, reducedMotionRef.current ? 0 : visualEffects.fireShake);
 
     context.save();
     applyCameraFrame(context, cameraFrame);
@@ -213,7 +219,7 @@ export function GameCanvas(): React.JSX.Element {
 
     drawProjectileTrail(context, visualEffects.trail, visualEffects.lastMobileType, visualEffects.lastWeapon);
     drawWindLeaves(context, visualEffects.leaves);
-    drawPlayers(context, state.players, state.turn, visualTimeRef.current, spriteCacheRef.current);
+    drawPlayers(context, state.players, state.turn, state.input, visualTimeRef.current, spriteCacheRef.current);
 
     if (state.projectile !== null) {
       drawProjectile(context, state.projectile);
@@ -226,7 +232,7 @@ export function GameCanvas(): React.JSX.Element {
     drawSmokePuffs(context, visualEffects.smokePuffs);
     drawBounceSparks(context, visualEffects.bounceSparks);
     drawMuzzleFlash(context, visualEffects.muzzleFlash);
-    drawExplosionVisual(context, state.explosionVisual);
+    drawExplosionVisuals(context, state.explosionVisuals.length > 0 ? state.explosionVisuals : state.explosionVisual === null ? [] : [state.explosionVisual]);
     drawExplosionSprites(context, visualEffects.explosionSprites, explosionSpriteCacheRef.current);
     drawDamagePopups(context, state.damagePopups);
     drawHitFlash(context, visualEffects.hitFlash);
@@ -243,6 +249,16 @@ export function GameCanvas(): React.JSX.Element {
     previousFrameTimeRef.current = now;
     visualTimeRef.current += delta;
     return delta;
+  }
+
+  function syncReducedMotionPreference(): () => void {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = (): void => {
+      reducedMotionRef.current = media.matches;
+    };
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
   }
 }
 
@@ -469,19 +485,22 @@ function drawBonusBox(context: CanvasRenderingContext2D, box: BonusBox, iconCach
 
 // ---- Players ----
 
-function drawPlayers(context: CanvasRenderingContext2D, players: [Player, Player], turn: 1 | 2, visualTime: number, spriteCache: SpriteCache): void {
+function drawPlayers(context: CanvasRenderingContext2D, players: [Player, Player], turn: 1 | 2, input: InputState, visualTime: number, spriteCache: SpriteCache): void {
   let index = 0;
   while (index < players.length) {
     const player = players[index];
     const isTurn = player.id === turn;
-    drawMobile(context, player, isTurn, visualTime, spriteCache);
+    const moving = isTurn && (input.moveLeft || input.moveRight);
+    drawMobile(context, player, isTurn, moving, visualTime, spriteCache);
     index += 1;
   }
 }
 
-function drawMobile(context: CanvasRenderingContext2D, player: Player, isTurn: boolean, visualTime: number, spriteCache: SpriteCache): void {
+function drawMobile(context: CanvasRenderingContext2D, player: Player, isTurn: boolean, moving: boolean, visualTime: number, spriteCache: SpriteCache): void {
   const accent = getAccentColor(player.accent);
-  const bob = Math.sin((player.mobile.position.x * 0.02 + visualTime * 4.2) * 0.9) * 1.6;
+  const bobSpeed = moving ? 7.4 : 3.2;
+  const bobAmount = moving ? 2.2 : 1.1;
+  const bob = Math.sin((player.mobile.position.x * 0.02 + visualTime * bobSpeed) * 0.9) * bobAmount;
 
   if (isTurn) {
     drawTurnGlow(context, player.mobile.position.x, player.mobile.position.y + bob, accent);
@@ -491,7 +510,7 @@ function drawMobile(context: CanvasRenderingContext2D, player: Player, isTurn: b
   context.translate(0, bob);
   drawAccentAura(context, player, accent);
   drawMobileShadow(context, player);
-  drawMobileSprite(context, player, spriteCache, visualTime);
+  drawMobileSprite(context, player, spriteCache, visualTime, moving);
   drawHpTickMarks(context, player);
   drawPennant(context, player, accent);
   context.restore();
@@ -759,7 +778,7 @@ function drawMobileShadow(context: CanvasRenderingContext2D, player: Player): vo
   context.fill();
 }
 
-function drawMobileSprite(context: CanvasRenderingContext2D, player: Player, spriteCache: SpriteCache, visualTime: number): void {
+function drawMobileSprite(context: CanvasRenderingContext2D, player: Player, spriteCache: SpriteCache, visualTime: number, moving: boolean): void {
   const sprite = getCachedSprite(spriteCache, player.mobile.type);
   if (sprite === null || !sprite.complete || sprite.naturalWidth === 0) {
     drawFallbackMobile(context, player);
@@ -767,7 +786,7 @@ function drawMobileSprite(context: CanvasRenderingContext2D, player: Player, spr
   }
 
   const spriteSource = getMobileSpriteSource(player.mobile.type);
-  const frame = getMobileSpriteFrame(visualTime + player.id * 0.17, 6.5, spriteSource.frameCount);
+  const frame = getMobileAnimationFrame(player.mobile.type, visualTime + player.id * 0.17, moving, spriteSource.frameCount);
   const destinationWidth = spriteSource.width * spriteSource.battleScale;
   const destinationHeight = spriteSource.height * spriteSource.battleScale;
   const destinationX =
@@ -792,6 +811,28 @@ function drawMobileSprite(context: CanvasRenderingContext2D, player: Player, spr
     destinationX, destinationY, destinationWidth, destinationHeight
   );
   context.restore();
+}
+
+function getMobileAnimationFrame(type: MobileType, time: number, moving: boolean, frameCount: number): number {
+  if (usesCurrentMotionSheet(type)) {
+    return moving ? getMobileSpriteFrame(time, 10, frameCount) : 0;
+  }
+
+  return getMobileSpriteFrame(time, moving ? 7.5 : 4.5, frameCount);
+}
+
+function usesCurrentMotionSheet(type: MobileType): boolean {
+  return (
+    type === "dragon" ||
+    type === "snow" ||
+    type === "trico" ||
+    type === "aduko" ||
+    type === "mage" ||
+    type === "nak" ||
+    type === "turtle" ||
+    type === "frog" ||
+    type === "sate"
+  );
 }
 
 function drawMountedRider(context: CanvasRenderingContext2D, player: Player, spriteCache: SpriteCache): void {
@@ -914,7 +955,7 @@ function applyCameraFrame(context: CanvasRenderingContext2D, cameraFrame: Camera
   context.translate(-cameraFrame.offset.x, -cameraFrame.offset.y);
 }
 
-function drawProjectileTrail(context: CanvasRenderingContext2D, trail: Vec2[], mobileType: MobileType, weaponType: "primary" | "secondary"): void {
+function drawProjectileTrail(context: CanvasRenderingContext2D, trail: Vec2[], mobileType: MobileType, weaponType: WeaponType): void {
   if (trail.length < 2) return;
   const style = getProjectileTrailStyle(mobileType, weaponType);
   let index = 0;
@@ -922,8 +963,10 @@ function drawProjectileTrail(context: CanvasRenderingContext2D, trail: Vec2[], m
     const point = trail[index];
     const alpha = (index + 1) / trail.length;
     const radius = 1 + alpha * style.width;
-    context.shadowBlur = 8 * alpha;
-    context.shadowColor = style.glow;
+    context.shadowBlur = index % 3 === 0 ? 7 * alpha : 0;
+    if (context.shadowBlur > 0) {
+      context.shadowColor = style.glow;
+    }
     context.fillStyle = colorWithAlpha(index % 2 === 0 ? style.color : style.accent, alpha * style.alpha);
     context.beginPath();
     context.arc(point.x, point.y, radius, 0, Math.PI * 2);
@@ -988,6 +1031,15 @@ function drawExplosionVisual(context: CanvasRenderingContext2D, explosionVisual:
   context.beginPath();
   context.arc(explosionVisual.point.x, explosionVisual.point.y, outerRingRadius, 0, Math.PI * 2);
   context.stroke();
+}
+
+function drawExplosionVisuals(context: CanvasRenderingContext2D, explosionVisuals: ExplosionVisual[]): void {
+  let index = 0;
+
+  while (index < explosionVisuals.length) {
+    drawExplosionVisual(context, explosionVisuals[index]);
+    index += 1;
+  }
 }
 
 function colorWithAlpha(color: string, alpha: number): string {
@@ -1069,8 +1121,9 @@ function drawAimGuide(context: CanvasRenderingContext2D, player: Player, wind: {
   const launchRadians = getLaunchRadians(player.mobile);
   const muzzle = getMuzzlePosition(player.mobile, launchRadians);
   const guidePower = charging ? Math.max(0.14, power) : 0.56;
-  let velocityX = Math.cos(launchRadians) * (420 + guidePower * 380);
-  let velocityY = -Math.sin(launchRadians) * (420 + guidePower * 380);
+  const profile = createWeaponProfile(player.mobile.type, player.mobile.weapon, guidePower);
+  let velocityX = Math.cos(launchRadians) * profile.speed;
+  let velocityY = -Math.sin(launchRadians) * profile.speed;
   let x = muzzle.x;
   let y = muzzle.y;
   let step = 0;
@@ -1080,8 +1133,8 @@ function drawAimGuide(context: CanvasRenderingContext2D, player: Player, wind: {
   context.beginPath();
 
   while (step < 28) {
-    velocityX += wind.x * 580 * 0.08;
-    velocityY += (530 + wind.y * 120) * 0.08;
+    velocityX += wind.x * 580 * profile.windScale * 0.08;
+    velocityY += (530 * profile.gravityScale + wind.y * 120) * 0.08;
     x += velocityX * 0.08;
     y += velocityY * 0.08;
 
