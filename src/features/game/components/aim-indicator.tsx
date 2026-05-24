@@ -173,7 +173,6 @@ function handleMoveLeftStart(event: React.PointerEvent<HTMLButtonElement>): void
   event.preventDefault();
   if (dispatchBattleInputCommand({ kind: "move", direction: -1 })) return;
   useGameStore.getState().setMoveKey(-1, true);
-  useGameStore.getState().attemptMove(-1);
 }
 
 function handleMoveLeftEnd(event: React.PointerEvent<HTMLButtonElement>): void {
@@ -187,7 +186,6 @@ function handleMoveLeftKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): v
   event.preventDefault();
   if (dispatchBattleInputCommand({ kind: "move", direction: -1 })) return;
   useGameStore.getState().setMoveKey(-1, true);
-  useGameStore.getState().attemptMove(-1);
 }
 
 function handleMoveLeftKeyUp(event: React.KeyboardEvent<HTMLButtonElement>): void {
@@ -201,7 +199,6 @@ function handleMoveRightStart(event: React.PointerEvent<HTMLButtonElement>): voi
   event.preventDefault();
   if (dispatchBattleInputCommand({ kind: "move", direction: 1 })) return;
   useGameStore.getState().setMoveKey(1, true);
-  useGameStore.getState().attemptMove(1);
 }
 
 function handleMoveRightEnd(event: React.PointerEvent<HTMLButtonElement>): void {
@@ -215,7 +212,6 @@ function handleMoveRightKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): 
   event.preventDefault();
   if (dispatchBattleInputCommand({ kind: "move", direction: 1 })) return;
   useGameStore.getState().setMoveKey(1, true);
-  useGameStore.getState().attemptMove(1);
 }
 
 function handleMoveRightKeyUp(event: React.KeyboardEvent<HTMLButtonElement>): void {

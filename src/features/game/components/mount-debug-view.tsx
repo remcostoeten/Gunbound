@@ -155,7 +155,7 @@ export function MountDebugView(): React.JSX.Element {
     const destinationWidth = mobileSource.width * mobileSource.battleScale * scale;
     const destinationHeight = mobileSource.height * mobileSource.battleScale * scale;
     const destinationX = position.x - destinationWidth * 0.5 + mobileSource.battleTranslateX * scale;
-    const destinationY = position.y - destinationHeight + 14 * scale + mobileSource.battleTranslateY * scale;
+    const destinationY = position.y - destinationHeight + 4 * scale + mobileSource.battleTranslateY * scale;
     const selected = type === activeMobile;
 
     context.save();

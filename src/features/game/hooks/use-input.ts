@@ -35,17 +35,17 @@ function bindInput(): CleanupHandler {
 
     if (event.code === "KeyA") {
       event.preventDefault();
+      if (event.repeat) return;
       if (dispatchBattleInputCommand({ kind: "move", direction: -1 })) return;
       store.setMoveKey(-1, true);
-      store.attemptMove(-1);
       return;
     }
 
     if (event.code === "KeyD") {
       event.preventDefault();
+      if (event.repeat) return;
       if (dispatchBattleInputCommand({ kind: "move", direction: 1 })) return;
       store.setMoveKey(1, true);
-      store.attemptMove(1);
       return;
     }
 

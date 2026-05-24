@@ -1,13 +1,21 @@
 "use client";
 
-import { useState, useEffect, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { LogIn, ShieldCheck } from "lucide-react";
+import { useAuth } from "react-oidc-context";
 import { playTrack } from "@/lib/music-bus";
+import {
+  writeStoredToken,
+  writeStoredUsername,
+} from "@/features/game/spacetime/token-storage";
 import { AuthField } from "./auth-field";
 import { AuthButton } from "./auth-button";
 import {
   useCredentialAuth,
   InvalidPasswordError,
+  sanitizeUsername,
 } from "../hooks/use-credential-auth";
+import { useSpacetimeAuthConfig } from "../spacetime-auth";
 
 type Mode = "login" | "register";
 
@@ -21,83 +29,16 @@ export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
   const {
     register,
     login,
-    loginWithGoogle,
     state,
     isConnected,
     credentialsReady,
     connectionError,
   } = useCredentialAuth();
+  const { configured: spacetimeAuthConfigured } = useSpacetimeAuthConfig();
   const [username, setUsername] = useState("");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [googleAvailable, setGoogleAvailable] = useState(false);
-
-  const handleGoogleCredential = async (credential: string) => {
-    setError(null);
-    if (connectionError) return setError(connectionError.message.toUpperCase());
-    if (!isConnected) return setError("CONNECTING — TRY AGAIN IN A MOMENT");
-    try {
-      const result = await loginWithGoogle(credential);
-      playTrack("lobby");
-      onAuthed(result.username);
-    } catch (err) {
-      setError(messageFromError(err));
-    }
-  };
-
-  useEffect(() => {
-    const checkGoogle = () => {
-      if (typeof window !== "undefined" && (window as any).google) {
-        setGoogleAvailable(true);
-        return true;
-      }
-      return false;
-    };
-
-    if (checkGoogle()) return;
-
-    const interval = setInterval(() => {
-      if (checkGoogle()) {
-        clearInterval(interval);
-      }
-    }, 200);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    if (!googleAvailable) return;
-
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "100000000000-dummyclientid.apps.googleusercontent.com";
-    if (!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) {
-      console.warn("NEXT_PUBLIC_GOOGLE_CLIENT_ID is not configured. Google Sign-In button is rendered with a fallback Client ID.");
-    }
-
-    try {
-      (window as any).google.accounts.id.initialize({
-        client_id: clientId,
-        callback: (response: any) => {
-          if (response.credential) {
-            handleGoogleCredential(response.credential);
-          }
-        },
-      });
-
-      const btnContainer = document.getElementById("google-signin-btn");
-      if (btnContainer) {
-        (window as any).google.accounts.id.renderButton(btnContainer, {
-          theme: "filled_blue",
-          size: "large",
-          width: btnContainer.clientWidth || 340,
-          text: "signin_with",
-          shape: "rectangular",
-        });
-      }
-    } catch (e) {
-      console.warn("Failed to initialize Google Sign-In:", e);
-    }
-  }, [googleAvailable, isConnected, mode]);
 
   const isRegister = mode === "register";
   const busy = state === "working";
@@ -201,17 +142,119 @@ export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
 
           <div className="gba-divider-row">
             <span className="gba-divider-line" />
-            <span className="gba-divider-text">OR CONNECT WITH</span>
+            <span className="gba-divider-text">OR USE SPACETIMEAUTH</span>
             <span className="gba-divider-line" />
           </div>
 
-          <div className="gba-google-btn-container">
-            <div id="google-signin-btn" style={{ minHeight: "40px" }} />
-          </div>
+          {spacetimeAuthConfigured ? (
+            <SpacetimeAuthButtons
+              onAuthed={onAuthed}
+              onError={(message) => setError(message)}
+            />
+          ) : (
+            <div className="gba-auth-config-missing">
+              SET NEXT_PUBLIC_SPACETIME_AUTH_CLIENT_ID
+            </div>
+          )}
         </form>
       </div>
     </div>
   );
+}
+
+type SpacetimeAuthButtonsProps = {
+  onAuthed: (username: string) => void;
+  onError: (message: string) => void;
+};
+
+function SpacetimeAuthButtons({
+  onAuthed,
+  onError,
+}: SpacetimeAuthButtonsProps): React.JSX.Element {
+  const auth = useAuth();
+  const handledSubjectRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!auth.isAuthenticated || !auth.user) return;
+    const token = auth.user.id_token ?? auth.user.access_token;
+    if (!token) {
+      onError("SPACETIMEAUTH DID NOT RETURN A TOKEN");
+      return;
+    }
+
+    const subject = auth.user.profile.sub;
+    if (handledSubjectRef.current === subject) return;
+    handledSubjectRef.current = subject;
+
+    const rawName =
+      getStringClaim(auth.user.profile.preferred_username) ??
+      getStringClaim(auth.user.profile.name) ??
+      getEmailLocalPart(auth.user.profile.email) ??
+      "Player";
+    const username = sanitizeUsername(rawName);
+
+    writeStoredToken(token);
+    writeStoredUsername(username);
+    playTrack("lobby");
+    onAuthed(username);
+  }, [auth.isAuthenticated, auth.user, onAuthed, onError]);
+
+  const disabled = auth.isLoading || Boolean(auth.activeNavigator);
+  const label = auth.activeNavigator ? "OPENING..." : "CONTINUE SECURELY";
+
+  async function signIn(): Promise<void> {
+    try {
+      await auth.signinRedirect();
+    } catch (err) {
+      onError(messageFromError(err));
+    }
+  }
+
+  return (
+    <div className="gba-spacetime-auth-actions">
+      <div className="gba-auth-provider-strip" aria-label="SpacetimeAuth providers">
+        <span className="gba-auth-provider-pill">
+          <span className="gba-auth-provider-mark">G</span>
+          <span>Google</span>
+        </span>
+        <span className="gba-auth-provider-pill">
+          <span className="gba-auth-provider-mark">GH</span>
+          <span>GitHub</span>
+        </span>
+        <span className="gba-auth-provider-pill">
+          <span className="gba-auth-provider-mark">@</span>
+          <span>Magic link</span>
+        </span>
+      </div>
+      <button
+        className="gba-provider-btn"
+        type="button"
+        disabled={disabled}
+        onClick={() => void signIn()}
+      >
+        <LogIn size={16} aria-hidden />
+        <span>{label}</span>
+      </button>
+      <div className="gba-auth-provider-note">
+        <ShieldCheck size={13} aria-hidden />
+        <span>Handled by SpacetimeAuth</span>
+      </div>
+      {auth.error ? (
+        <div className="gba-provider-error">{auth.error.message}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function getStringClaim(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value
+    : undefined;
+}
+
+function getEmailLocalPart(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return value.includes("@") ? value.split("@")[0] : value;
 }
 
 function messageFromError(e: unknown): string {

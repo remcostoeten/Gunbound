@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSpacetimeDB } from "spacetimedb/react";
 import { IntroRoot } from "@/features/intro";
-import { AuthRoot } from "@/features/auth";
+import { AuthRoot, SpacetimeAuthProvider } from "@/features/auth";
 import { LobbyRoot } from "@/features/lobby";
 import { GameShell } from "@/features/game/components/game-shell";
 import {
@@ -28,11 +28,13 @@ export function HomeScreen() {
   const [spacetimeSessionKey, setSpacetimeSessionKey] = useState(0);
 
   return (
-    <GunboundSpacetimeProvider sessionKey={spacetimeSessionKey}>
-      <HomeScreenInner
-        bumpSession={() => setSpacetimeSessionKey((value) => value + 1)}
-      />
-    </GunboundSpacetimeProvider>
+    <SpacetimeAuthProvider>
+      <GunboundSpacetimeProvider sessionKey={spacetimeSessionKey}>
+        <HomeScreenInner
+          bumpSession={() => setSpacetimeSessionKey((value) => value + 1)}
+        />
+      </GunboundSpacetimeProvider>
+    </SpacetimeAuthProvider>
   );
 }
 
@@ -48,6 +50,7 @@ function HomeScreenInner({ bumpSession }: { bumpSession: () => void }) {
   const [soloPractice, setSoloPractice] = useState(false);
   const [pendingRoomCode, setPendingRoomCode] = useState<string | null>(null);
   const resumedRef = useRef(false);
+  const syncedProfileRef = useRef<string | null>(null);
 
   useEffect(() => {
     setPendingRoomCode(readRoomCodeFromUrl());
@@ -102,12 +105,27 @@ function HomeScreenInner({ bumpSession }: { bumpSession: () => void }) {
     setStage("auth");
   }, [stage, connection.connectionError]);
 
+  useEffect(() => {
+    const conn = connection.getConnection();
+    if (!conn || !connection.identity || !username) return;
+    if (playerReady && player?.name === username) return;
+
+    const syncKey = `${connection.identity.toHexString()}:${username}`;
+    if (syncedProfileRef.current === syncKey) return;
+    syncedProfileRef.current = syncKey;
+
+    conn.reducers.setPlayerProfile({ name: username }).catch(() => {
+      syncedProfileRef.current = null;
+    });
+  }, [connection, player, playerReady, username]);
+
   function handleReplay() {
     const conn = connection.getConnection();
     if (conn) {
       conn.reducers.setLobbyPresence({ active: false });
     }
     setUsername(null);
+    syncedProfileRef.current = null;
     setBattleRoomId(undefined);
     setSoloPractice(false);
     setPendingRoomCode(null);
@@ -127,6 +145,7 @@ function HomeScreenInner({ bumpSession }: { bumpSession: () => void }) {
     clearStoredUsername();
     clearRoomCodeFromUrl();
     setUsername(null);
+    syncedProfileRef.current = null;
     setBattleRoomId(undefined);
     setSoloPractice(false);
     setPendingRoomCode(null);

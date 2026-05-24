@@ -796,7 +796,7 @@ function drawMobileSprite(context: CanvasRenderingContext2D, player: Player, spr
   const destinationY =
     player.mobile.position.y -
     destinationHeight +
-    14 +
+    4 +
     spriteSource.battleTranslateY;
 
   context.save();

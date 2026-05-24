@@ -11,12 +11,14 @@ import { GameCanvas } from "@/features/game/components/game-canvas";
 import { HistoryPanel } from "@/features/game/components/history-panel";
 import { Hud } from "@/features/game/components/hud";
 import { TurnBanner } from "@/features/game/components/turn-banner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useGameState } from "@/features/game/hooks/use-game-state";
 import { lobbyMatchStartAudioEvent, useGunboundSfx } from "@/features/game/hooks/use-gunbound-sfx";
 import { useSoloBot } from "@/features/game/hooks/use-solo-bot";
 import { defaultSetup, useGameStore } from "@/features/game/store/game-store";
 import { useBattleEventSync } from "@/features/game/multiplayer/use-battle-event-sync";
 import {
+    selectHistory,
     selectMessage,
     selectPlayers,
     selectRestartMatch,
@@ -30,6 +32,8 @@ import {
 import { selectPhase, selectTurn, selectWind } from "@/features/game/store/selectors/hud-selectors";
 import type { MatchConfig } from "@/features/game/types/state";
 import type { MapType, MobileType, PlayerAccent, PlayerTitle, TurnDurationMode } from "@/features/game/types/shared";
+import type { MatchEvent } from "@/features/game/types/events";
+import type { Player } from "@/features/game/types/entities";
 import { useRoomSession } from "@/features/lobby/spacetime/use-room-session";
 import { ROOM_STATUS } from "@/features/game/spacetime/room-status";
 import { getBattleImmersive, setBrowserFullscreen, subscribeDisplaySettings } from "@/lib/display-settings";
@@ -96,6 +100,7 @@ export function GameShell({ spacetimeRoomId, soloPractice = false, soloPlayerNam
     const restartMatch = useGameStore(selectRestartMatch);
     const returnToSetup = useGameStore(selectReturnToSetup);
     const surrenderMatch = useGameStore(selectSurrenderMatch);
+    const history = useGameState(selectHistory);
     const roomSession = useRoomSession(spacetimeRoomId);
     const isSpacetimeMatch = spacetimeRoomId !== undefined;
     const battleSync = useBattleEventSync(roomSession);
@@ -372,6 +377,7 @@ export function GameShell({ spacetimeRoomId, soloPractice = false, soloPlayerNam
                       isSpacetimeMatch && onExitToLobby
                           ? onExitToLobby
                           : returnToSetup,
+                      history,
                   )
                 : null}
         </main>
@@ -572,6 +578,9 @@ function renderStartScreen(
     vsBotMode: boolean,
 ): React.JSX.Element {
     const selectedMap = getMapPresentation(formState.mapType);
+    if (vsBotMode) {
+        return renderPracticeStartScreen();
+    }
 
     return (
         <div className="screen">
@@ -763,12 +772,17 @@ function renderStartScreen(
         });
     }
 
-    function handlePlayerOneMobileChange(
-        event: React.ChangeEvent<HTMLSelectElement>,
-    ): void {
+    function handlePlayerOneMobileChange(event: React.ChangeEvent<HTMLSelectElement>): void {
         setFormState({
             ...formState,
             playerOneMobile: event.target.value as MobileType,
+        });
+    }
+
+    function handlePracticePlayerOneMobileChange(value: MobileType): void {
+        setFormState({
+            ...formState,
+            playerOneMobile: value,
         });
     }
 
@@ -873,6 +887,220 @@ function renderStartScreen(
             soloBot: vsBotMode,
         });
     }
+
+    function renderPracticeStartScreen(): React.JSX.Element {
+        const playerPresentation = getMobilePresentation(formState.playerOneMobile);
+        const botPresentation = getMobilePresentation(formState.playerTwoMobile);
+
+        return (
+            <div className="screen">
+                <div className="lobby-bg-particles" />
+                <div className="lobby-bg-clouds" />
+                <div className="lobby lobby--practice">
+                    <div className="lobby-header practice-header">
+                        <span className="lobby-channel-badge">Vs Bot</span>
+                        <div className="lobby-title-group">
+                            <span className="lobby-kicker">Practice Setup</span>
+                            <h1 className="lobby-title">Practice Room</h1>
+                            <span className="lobby-subtitle">
+                                Pick your mobile, choose a map, and start training.
+                            </span>
+                        </div>
+                        <div className="lobby-room-info">
+                            <span className="lobby-room-tag">{selectedMap.label}</span>
+                            <span className="lobby-room-name">{formState.targetScore} target / {formState.roundLimit} rounds</span>
+                        </div>
+                    </div>
+                    {showLobbyAudioNotice ? (
+                        <div className="lobby-audio-notice" role="status">
+                            Browser autoplay blocked the lobby music. Click or press
+                            any key to enable it.
+                        </div>
+                    ) : null}
+
+                    <div className="practice-setup-grid">
+                        <section className="practice-panel practice-panel--player" aria-labelledby="practice-player-title">
+                            <div className="practice-panel-head">
+                                <span className="practice-panel-kicker">You</span>
+                                <h2 id="practice-player-title" className="practice-panel-title">{formState.playerOneName.trim() || "Player 1"}</h2>
+                            </div>
+                            {renderPracticeMobilePreview(formState.playerOneMobile)}
+                            <div className="practice-fields">
+                                <div className="lobby-field">
+                                    <label htmlFor="practice-name">Name</label>
+                                    <input
+                                        id="practice-name"
+                                        value={formState.playerOneName}
+                                        onChange={handlePlayerOneNameChange}
+                                        maxLength={18}
+                                        name="practice-player-name"
+                                        autoComplete="off"
+                                        placeholder="Player 1"
+                                    />
+                                </div>
+                                <div className="lobby-field">
+                                    <label htmlFor="practice-mobile">Mobile</label>
+                                    <Select value={formState.playerOneMobile} onValueChange={handlePracticePlayerOneMobileChange}>
+                                        <SelectTrigger id="practice-mobile" className="practice-select practice-select-trigger">
+                                            <SelectValue placeholder="Select mobile" />
+                                        </SelectTrigger>
+                                        <SelectContent className="practice-select-content">
+                                            {mobilePresentationOptions.map((option) => (
+                                                <SelectItem key={option.value} value={option.value}>
+                                                    {option.label}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+                            <div className="practice-profile">
+                                <span className="lobby-player-profile-role">{playerPresentation.role}</span>
+                                <span className="lobby-player-profile-copy">{playerPresentation.profile}</span>
+                            </div>
+                            {renderPracticeStats(playerPresentation)}
+                        </section>
+
+                        <section className="practice-panel practice-panel--match" aria-labelledby="practice-match-title">
+                            <div className="practice-panel-head">
+                                <span className="practice-panel-kicker">Arena</span>
+                                <h2 id="practice-match-title" className="practice-panel-title">{selectedMap.label}</h2>
+                            </div>
+                            <img
+                                className="practice-map-preview"
+                                src={selectedMap.previewImage}
+                                alt=""
+                                aria-hidden="true"
+                            />
+                            <div className="practice-fields practice-fields--compact">
+                                <div className="lobby-field">
+                                    <label htmlFor="practice-map">Map</label>
+                                    <select
+                                        id="practice-map"
+                                        name="practice-map"
+                                        className="practice-select"
+                                        value={formState.mapType}
+                                        onChange={handleMapTypeChange}
+                                    >
+                                        {mapPresentationOptions.map((option) => (
+                                            <option key={option.value} value={option.value}>
+                                                {option.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="lobby-field">
+                                    <label htmlFor="practice-target-score">Target</label>
+                                    <select
+                                        id="practice-target-score"
+                                        name="practice-target-score"
+                                        className="practice-select"
+                                        value={formState.targetScore}
+                                        onChange={handleTargetScoreChange}
+                                    >
+                                        {TARGET_SCORE_OPTIONS.map((value) => (
+                                            <option key={value} value={value}>
+                                                {value}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="lobby-field">
+                                    <label htmlFor="practice-round-limit">Rounds</label>
+                                    <select
+                                        id="practice-round-limit"
+                                        name="practice-round-limit"
+                                        className="practice-select"
+                                        value={formState.roundLimit}
+                                        onChange={handleRoundLimitChange}
+                                    >
+                                        {ROUND_LIMIT_OPTIONS.map((value) => (
+                                            <option key={value} value={value}>
+                                                {value}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            <span className="practice-map-copy">{selectedMap.description}</span>
+                            <div className="practice-actions">
+                                {onExitToLobby ? (
+                                    <button
+                                        type="button"
+                                        className="lobby-btn lobby-btn-secondary"
+                                        onClick={onExitToLobby}
+                                    >
+                                        <span className="lobby-btn-label">Back To Lobby</span>
+                                    </button>
+                                ) : null}
+                                <button
+                                    type="button"
+                                    className="lobby-btn lobby-btn-primary"
+                                    disabled={matchStarting}
+                                    onClick={handleStartClick}
+                                >
+                                    <span className="lobby-btn-icon">&#9654;</span>
+                                    <span className="lobby-btn-label">
+                                        {matchStarting ? "Starting" : "Start Practice"}
+                                    </span>
+                                </button>
+                            </div>
+                        </section>
+
+                        <section className="practice-panel practice-panel--bot" aria-labelledby="practice-bot-title">
+                            <div className="practice-panel-head">
+                                <span className="practice-panel-kicker">Opponent</span>
+                                <h2 id="practice-bot-title" className="practice-panel-title">Practice Bot</h2>
+                            </div>
+                            {renderPracticeMobilePreview(formState.playerTwoMobile)}
+                            <div className="practice-profile">
+                                <span className="lobby-player-profile-role">{botPresentation.role}</span>
+                                <span className="lobby-player-profile-copy">{botPresentation.profile}</span>
+                            </div>
+                            <div className="practice-bot-summary">
+                                <span className="practice-bot-tag">{botPresentation.hp} HP</span>
+                                <span className="practice-bot-tag">{botPresentation.move} move</span>
+                                <span className="practice-bot-tag">{botPresentation.shot} shot</span>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+}
+
+function renderPracticeMobilePreview(mobile: MobileType): React.JSX.Element {
+    const spriteSource = getMobileSpriteSource(mobile);
+
+    return (
+        <div className="practice-mobile-preview">
+            <div
+                className="lobby-player-sprite"
+                aria-label={mobile}
+                style={getLobbySpriteStyle(mobile, spriteSource)}
+            />
+        </div>
+    );
+}
+
+function renderPracticeStats(presentation: ReturnType<typeof getMobilePresentation>): React.JSX.Element {
+    return (
+        <div className="lobby-player-stats practice-stats">
+            <div className="lobby-stat">
+                <span className="lobby-stat-val">{presentation.hp}</span>
+                <span className="lobby-stat-label">HP</span>
+            </div>
+            <div className="lobby-stat">
+                <span className="lobby-stat-val">{presentation.move}</span>
+                <span className="lobby-stat-label">Move</span>
+            </div>
+            <div className="lobby-stat">
+                <span className="lobby-stat-val">{presentation.shot}</span>
+                <span className="lobby-stat-label">Shot</span>
+            </div>
+        </div>
+    );
 }
 
 function renderLobbyPlayer(
@@ -1077,6 +1305,43 @@ function getTurnDurationModeDescription(value: TurnDurationMode): string {
     return TURN_DURATION_OPTIONS.find((option) => option.value === value)?.description ?? TURN_DURATION_OPTIONS[0].description;
 }
 
+type MatchStats = {
+    shots: number;
+    hits: number;
+    damageDealt: number;
+    damageReceived: number;
+    hitRatio: number;
+};
+
+function computeMatchStats(players: [Player, Player], history: MatchEvent[]): [MatchStats, MatchStats] {
+    const stats: [MatchStats, MatchStats] = [
+        { shots: 0, hits: 0, damageDealt: 0, damageReceived: 0, hitRatio: 0 },
+        { shots: 0, hits: 0, damageDealt: 0, damageReceived: 0, hitRatio: 0 },
+    ];
+
+    for (const event of history) {
+        if (event.kind === "shot") {
+            stats[event.turn - 1].shots++;
+        } else if (event.kind === "hit") {
+            const turn = event.turn;
+            const damageMatch = event.text.match(/ for (\d+)\.$/);
+            if (damageMatch) {
+                const damage = parseInt(damageMatch[1], 10);
+                stats[turn - 1].hits++;
+                stats[turn - 1].damageDealt += damage;
+                const targetIndex = turn === 1 ? 1 : 0;
+                stats[targetIndex].damageReceived += damage;
+            }
+        }
+    }
+
+    for (let i = 0; i < 2; i++) {
+        stats[i].hitRatio = stats[i].shots > 0 ? stats[i].hits / stats[i].shots : 0;
+    }
+
+    return stats;
+}
+
 function renderEndScreen(
     winnerName: string,
     players: ReturnType<typeof useGameStore.getState>["players"],
@@ -1086,10 +1351,14 @@ function renderEndScreen(
     onLobby: {
         (): void;
     },
+    history: MatchEvent[],
 ): React.JSX.Element {
     const winnerId = players[0].name === winnerName ? 1 : 2;
     const winner = players[winnerId - 1];
     const loser = players[winnerId === 1 ? 1 : 0];
+    const stats = computeMatchStats(players, history);
+    const p1Stats = stats[0];
+    const p2Stats = stats[1];
 
     return (
         <div className="screen screen--result">
@@ -1157,6 +1426,41 @@ function renderEndScreen(
                         {winner.name} defeated {loser.name} with a final score of{" "}
                         {winner.score}–{loser.score}.
                     </p>
+
+                    <div className="result-stats">
+                        <div className="result-stats-table">
+                            <div className="result-stats-row result-stats-header">
+                                <span className="result-stats-cell result-stats-label">Stat</span>
+                                <span className="result-stats-cell result-stats-value">{players[0].name}</span>
+                                <span className="result-stats-cell result-stats-value">{players[1].name}</span>
+                            </div>
+                            <div className="result-stats-row">
+                                <span className="result-stats-cell result-stats-label">Shots</span>
+                                <span className="result-stats-cell result-stats-value">{p1Stats.shots}</span>
+                                <span className="result-stats-cell result-stats-value">{p2Stats.shots}</span>
+                            </div>
+                            <div className="result-stats-row">
+                                <span className="result-stats-cell result-stats-label">Hits</span>
+                                <span className="result-stats-cell result-stats-value">{p1Stats.hits}</span>
+                                <span className="result-stats-cell result-stats-value">{p2Stats.hits}</span>
+                            </div>
+                            <div className="result-stats-row">
+                                <span className="result-stats-cell result-stats-label">Hit Ratio</span>
+                                <span className="result-stats-cell result-stats-value">{Math.round(p1Stats.hitRatio * 100)}%</span>
+                                <span className="result-stats-cell result-stats-value">{Math.round(p2Stats.hitRatio * 100)}%</span>
+                            </div>
+                            <div className="result-stats-row">
+                                <span className="result-stats-cell result-stats-label">Dmg Dealt</span>
+                                <span className="result-stats-cell result-stats-value">{p1Stats.damageDealt}</span>
+                                <span className="result-stats-cell result-stats-value">{p2Stats.damageDealt}</span>
+                            </div>
+                            <div className="result-stats-row">
+                                <span className="result-stats-cell result-stats-label">Dmg Taken</span>
+                                <span className="result-stats-cell result-stats-value">{p1Stats.damageReceived}</span>
+                                <span className="result-stats-cell result-stats-value">{p2Stats.damageReceived}</span>
+                            </div>
+                        </div>
+                    </div>
 
                     <div className="result-actions">
                         <button

@@ -40,6 +40,9 @@ import type { MatchEvent } from "@/features/game/types/events";
 import type { GameState, InputState, MatchConfig } from "@/features/game/types/state";
 import type { BattleItemType, BonusType, WeaponType } from "@/features/game/types/shared";
 
+const movementSpeed = 100;
+const movementNoticeInterval = 0.45;
+
 type GameStoreState = GameState & {
   input: InputState;
   randomState: number;
@@ -253,12 +256,12 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
           nextTurnElapsed += dt;
         }
 
-        const moveDirection = state.input.moveLeft ? -1 : state.input.moveRight ? 1 : 0;
-        if (moveDirection !== 0 && state.phase !== "fire") {
+        const moveDirection = getMoveInputDirection(state.input);
+        if (moveDirection !== 0 && state.phase !== "fire" && !state.charging && nextTurnMoveRemaining > 0) {
           nextMoveRepeatTimer += dt;
-          if (nextMoveRepeatTimer >= 0.12 && nextTerrain !== null) {
-            nextMoveRepeatTimer = 0;
-            const moved = applyMoveInput(nextPlayers, state.turn, nextTerrain, moveDirection, nextTurnMoveRemaining);
+          if (nextTerrain !== null) {
+            const moveDistance = Math.min(movementSpeed * dt, nextTurnMoveRemaining);
+            const moved = applyMoveInput(nextPlayers, state.turn, nextTerrain, moveDirection, nextTurnMoveRemaining, moveDistance);
             nextPlayers = moved.players;
             nextTurnMoveRemaining = moved.turnMoveRemaining;
 
@@ -266,14 +269,17 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
               const pickupResult = pickupBonusBoxes(nextPlayers, state.turn, nextBonusBoxes);
               nextPlayers = pickupResult.players;
               nextBonusBoxes = pickupResult.bonusBoxes;
-              nextHistory = appendMatchEventEntries(nextHistory, [
-                {
-                  round: state.round,
-                  turn: state.turn,
-                  kind: "move",
-                  text: nextPlayers[state.turn - 1].name + " moved to x " + String(Math.round(nextPlayers[state.turn - 1].mobile.position.x)) + "."
-                }
-              ]);
+              if (nextMoveRepeatTimer >= movementNoticeInterval || nextTurnMoveRemaining <= 0) {
+                nextMoveRepeatTimer = 0;
+                nextHistory = appendMatchEventEntries(nextHistory, [
+                  {
+                    round: state.round,
+                    turn: state.turn,
+                    kind: "move",
+                    text: nextPlayers[state.turn - 1].name + " moved to x " + String(Math.round(nextPlayers[state.turn - 1].mobile.position.x)) + "."
+                  }
+                ]);
+              }
               nextMessage =
                 nextTurnMoveRemaining > 0
                   ? nextPlayers[state.turn - 1].name + " moved. " + String(Math.round(nextTurnMoveRemaining)) + " movement left."
@@ -899,7 +905,8 @@ function applyMoveInput(
   turn: 1 | 2,
   terrain: TerrainState,
   direction: -1 | 1,
-  turnMoveRemaining: number
+  turnMoveRemaining: number,
+  requestedDistance = 12
 ): {
   players: [Player, Player];
   turnMoveRemaining: number;
@@ -912,7 +919,7 @@ function applyMoveInput(
   const nextPlayers = clonePlayers(players);
   const currentPlayer = nextPlayers[turn - 1];
   const otherPlayer = nextPlayers[turn === 1 ? 1 : 0];
-  const moveDistance = Math.min(12, turnMoveRemaining);
+  const moveDistance = Math.min(requestedDistance, turnMoveRemaining);
   const moveResult = moveMobileAlongTerrain(currentPlayer.mobile, terrain, direction, otherPlayer.mobile, moveDistance);
 
   if (!moveResult.moved) {
@@ -928,6 +935,14 @@ function applyMoveInput(
     turnMoveRemaining: Math.max(0, turnMoveRemaining - moveResult.distanceMoved),
     moved: true
   };
+}
+
+function getMoveInputDirection(input: InputState): -1 | 0 | 1 {
+  if (input.moveLeft === input.moveRight) {
+    return 0;
+  }
+
+  return input.moveLeft ? -1 : 1;
 }
 
 function clonePlayers(players: [Player, Player]): [Player, Player] {
