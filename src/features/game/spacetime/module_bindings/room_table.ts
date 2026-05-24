@@ -19,5 +19,6 @@ export default __t.row({
   mapType: __t.string().name("map_type"),
   targetScore: __t.u32().name("target_score"),
   roundLimit: __t.u32().name("round_limit"),
+  turnDurationMode: __t.option(__t.string()).name("turn_duration_mode"),
   createdAt: __t.timestamp().name("created_at"),
 });

@@ -6,18 +6,14 @@ import { getMobilePresentation, mobilePresentationOptions } from "@/features/gam
 import { getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
 import { DEFAULT_MOBILE, parseMobileType } from "@/features/game/mobiles/mobile-factory";
 import { AimIndicator } from "@/features/game/components/aim-indicator";
+import { BattleChrome } from "@/features/game/components/battle-chrome";
 import { GameCanvas } from "@/features/game/components/game-canvas";
 import { HistoryPanel } from "@/features/game/components/history-panel";
 import { Hud } from "@/features/game/components/hud";
 import { RoomPanel } from "@/features/game/components/room-panel";
 import { TurnBanner } from "@/features/game/components/turn-banner";
 import { useGameState } from "@/features/game/hooks/use-game-state";
-import {
-    lobbyAudioBlockedEvent,
-    lobbyAudioStartedEvent,
-    lobbyMatchStartAudioEvent,
-    useGunboundSfx,
-} from "@/features/game/hooks/use-gunbound-sfx";
+import { lobbyMatchStartAudioEvent, useGunboundSfx } from "@/features/game/hooks/use-gunbound-sfx";
 import { defaultSetup, useGameStore } from "@/features/game/store/game-store";
 import { useBattleEventSync } from "@/features/game/multiplayer/use-battle-event-sync";
 import {
@@ -28,14 +24,24 @@ import {
     selectScene,
     selectSetup,
     selectStartMatch,
+    selectSurrenderMatch,
     selectWinner,
 } from "@/features/game/store/selectors/match-selectors";
-import { selectHistory } from "@/features/game/store/selectors/history-selectors";
+import { selectTurn } from "@/features/game/store/selectors/hud-selectors";
 import type { MatchConfig } from "@/features/game/types/state";
-import type { MapType, MobileType, PlayerAccent, PlayerTitle } from "@/features/game/types/shared";
+import type { MapType, MobileType, PlayerAccent, PlayerTitle, TurnDurationMode } from "@/features/game/types/shared";
 import { useRoomSession } from "@/features/lobby/spacetime/use-room-session";
+import { ROOM_STATUS } from "@/features/game/spacetime/room-status";
 import { getBattleImmersive, subscribeDisplaySettings } from "@/lib/display-settings";
-import { registerTrack, playTrack, stopAll } from "@/lib/music-bus";
+import {
+    LOBBY_BGM_SRC,
+    lobbyAudioBlockedEvent,
+    lobbyAudioStartedEvent,
+    playTrack,
+    registerTrack,
+    stopAll,
+    useMenuClickSound,
+} from "@/lib/music-bus";
 
 const BATTLE_TRACKS = [
     { id: "battle-01", src: "/audio/battle/01-Waterfall.mp3" },
@@ -52,6 +58,18 @@ const TITLE_OPTIONS: PlayerTitle[] = ["Captain", "Raider", "Engineer", "Oracle"]
 const ACCENT_OPTIONS: PlayerAccent[] = ["sky", "coral", "mint", "gold"];
 const TARGET_SCORE_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ROUND_LIMIT_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+const TURN_DURATION_OPTIONS: Array<{ value: TurnDurationMode; label: string; description: string }> = [
+    {
+        value: "timed",
+        label: "Timed turns",
+        description: "Current flow: reposition or take the shot before the timer expires.",
+    },
+    {
+        value: "infinite",
+        label: "Infinite turns",
+        description: "Async flow: a player can close and resume later on their turn.",
+    },
+];
 const MATCH_START_DELAY_MS = 850;
 const LOBBY_ENTRY_DELAY_MS = 2200;
 
@@ -167,16 +185,19 @@ type GameShellProps = {
 };
 
 export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
+    useMenuClickSound();
     const scene = useGameState(selectScene);
     const players = useGameState(selectPlayers);
     const winner = useGameState(selectWinner);
     const message = useGameState(selectMessage);
-    const history = useGameState(selectHistory);
     const setup = useGameState(selectSetup);
+    const turn = useGameState(selectTurn);
     const startMatch = useGameStore(selectStartMatch);
     const restartMatch = useGameStore(selectRestartMatch);
     const returnToSetup = useGameStore(selectReturnToSetup);
+    const surrenderMatch = useGameStore(selectSurrenderMatch);
     const roomSession = useRoomSession(spacetimeRoomId);
+    const isSpacetimeMatch = spacetimeRoomId !== undefined;
     const battleSync = useBattleEventSync(roomSession);
     const [formState, setFormState] = useState<MatchConfig>(
         setup || defaultSetup,
@@ -184,6 +205,7 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
     const [startView, setStartView] = useState<StartView>("channel");
     const [showLobbyEntry, setShowLobbyEntry] = useState(true);
     const [matchStarting, setMatchStarting] = useState(false);
+    const [surrenderBusy, setSurrenderBusy] = useState(false);
     const [showLobbyAudioNotice, setShowLobbyAudioNotice] = useState(false);
     const [battleImmersive, setBattleImmersiveState] = useState(function initialBattleImmersive(): boolean {
         return getBattleImmersive();
@@ -196,15 +218,20 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
 
     useEffect(function manageBattleBgm(): void {
         BATTLE_TRACKS.forEach((t) => registerTrack(t.id, t.src, 0.45));
+        registerTrack("lobby", LOBBY_BGM_SRC, 0.45);
     }, []);
 
     useEffect(function syncBattleBgm(): void {
         if (scene === "playing") {
             const pick = BATTLE_TRACKS[Math.floor(Math.random() * BATTLE_TRACKS.length)];
             playTrack(pick.id);
-        } else {
-            stopAll();
+            return;
         }
+        if (scene === "start") {
+            playTrack("lobby");
+            return;
+        }
+        stopAll();
     }, [scene]);
 
     useEffect(function resetPendingMatchStart(): void {
@@ -224,8 +251,14 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
         };
     }, []);
 
+    useEffect(function stopBattleBgmOnExit(): () => void {
+        return function cleanupBattleBgm(): void {
+            stopAll();
+        };
+    }, []);
+
     useEffect(function stageLobbyEntry(): () => void {
-        if (scene !== "start") {
+        if (isSpacetimeMatch || scene !== "start") {
             setShowLobbyEntry(false);
             return function noopCleanup(): void {};
         }
@@ -251,7 +284,7 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
                 lobbyEntryTimeoutRef.current = null;
             }
         };
-    }, [scene]);
+    }, [scene, isSpacetimeMatch]);
 
     useEffect(function bindLobbyAudioNotice(): () => void {
         function handleLobbyAudioBlocked(): void {
@@ -290,10 +323,10 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
     }, [scene]);
 
     useEffect(function resetStartViewForScene(): void {
-        if (scene === "start") {
+        if (scene === "start" && !isSpacetimeMatch) {
             setStartView("channel");
         }
-    }, [scene]);
+    }, [scene, isSpacetimeMatch]);
 
     useEffect(function bindBattleImmersiveSetting(): () => void {
         function syncBattleImmersive(): void {
@@ -304,9 +337,11 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
     }, []);
 
     useEffect(function startSpacetimeRoomMatch(): void {
-        if (spacetimeRoomId === undefined) return;
+        if (!isSpacetimeMatch) return;
         if (scene !== "start" || matchStarting) return;
-        if (!roomSession.room || roomSession.members.length < 2) return;
+        if (!roomSession.isLoaded || !roomSession.room) return;
+        if (roomSession.room.status !== ROOM_STATUS.IN_MATCH) return;
+        if (roomSession.members.length < 2) return;
 
         const roomKey = roomSession.room.id.toString();
         if (startedSpacetimeRoomRef.current === roomKey) return;
@@ -315,12 +350,19 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
         startedSpacetimeRoomRef.current = roomKey;
         setFormState(config);
         queueMatchStart(config);
-    }, [spacetimeRoomId, scene, matchStarting, roomSession.room, roomSession.members]);
+    }, [
+        isSpacetimeMatch,
+        scene,
+        matchStarting,
+        roomSession.isLoaded,
+        roomSession.room,
+        roomSession.members,
+    ]);
 
     return (
         <main className={battleImmersive ? "game-shell game-shell--immersive" : "game-shell"}>
             <GameCanvas />
-            {spacetimeRoomId !== undefined && onExitToLobby ? (
+            {spacetimeRoomId !== undefined && onExitToLobby && scene !== "end" ? (
                 <button
                     type="button"
                     className="game-shell-exit"
@@ -330,51 +372,93 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
                     ← Lobby
                 </button>
             ) : null}
-            {scene === "playing" ? <Hud /> : null}
-            {scene === "playing" ? <HistoryPanel /> : null}
-            {scene === "playing" ? <TurnBanner /> : null}
             {scene === "playing" ? (
-                <div className="status-line">
-                    {spacetimeRoomId !== undefined && !battleSync.canControl
-                        ? message + " Waiting for " + battleSync.activePlayerName + "."
-                        : message}
-                </div>
+                <button
+                    type="button"
+                    className="game-shell-surrender"
+                    onClick={handleSurrender}
+                    disabled={surrenderBusy || (isSpacetimeMatch && !roomSession.self)}
+                    title="Forfeit this match"
+                >
+                    {surrenderBusy ? "Surrendering" : "Surrender"}
+                </button>
             ) : null}
             {scene === "playing" ? (
-                <div className="hud-bottom-wrapper">
-                    <AimIndicator />
-                </div>
+                <BattleChrome
+                    hud={<Hud />}
+                    turnBanner={<TurnBanner />}
+                    aimControls={<AimIndicator />}
+                    statusLine={
+                        <div className="status-line">
+                            {spacetimeRoomId !== undefined && !battleSync.canControl
+                                ? message + " Waiting for " + battleSync.activePlayerName + "."
+                                : message}
+                        </div>
+                    }
+                    historyPanel={<HistoryPanel />}
+                />
             ) : null}
             {scene === "start"
-                ? showLobbyEntry
-                    ? renderLobbyEntryScreen(handleLobbyEntryComplete)
-                    : startView === "channel"
-                      ? renderChannelScreen(
-                            formState,
-                            openCreateRoom,
-                            cloneRoomSetup,
-                            showLobbyAudioNotice,
-                        )
-                      : renderStartScreen(
-                            formState,
-                            setFormState,
-                            queueMatchStart,
-                            openChannelLobby,
-                            matchStarting,
-                            showLobbyAudioNotice,
-                        )
+                ? isSpacetimeMatch
+                    ? renderSpacetimeMatchLoadingScreen(
+                          roomSession,
+                          matchStarting,
+                          showLobbyAudioNotice,
+                      )
+                    : showLobbyEntry
+                      ? renderLobbyEntryScreen(handleLobbyEntryComplete)
+                      : startView === "channel"
+                        ? renderChannelScreen(
+                              formState,
+                              openCreateRoom,
+                              cloneRoomSetup,
+                              showLobbyAudioNotice,
+                          )
+                        : renderStartScreen(
+                              formState,
+                              setFormState,
+                              queueMatchStart,
+                              openChannelLobby,
+                              matchStarting,
+                              showLobbyAudioNotice,
+                          )
                 : null}
             {scene === "end"
                 ? renderEndScreen(
                       players[winner === null ? 0 : winner - 1].name,
                       players,
-                      history,
                       restartMatch,
-                      returnToSetup,
+                      isSpacetimeMatch && onExitToLobby
+                          ? onExitToLobby
+                          : returnToSetup,
                   )
                 : null}
         </main>
     );
+
+    async function handleSurrender(): Promise<void> {
+        if (surrenderBusy || scene !== "playing") return;
+        const loser = isSpacetimeMatch && roomSession.self
+            ? ((roomSession.self.slotIndex + 1) as 1 | 2)
+            : turn;
+        const winnerPlayer = players[loser === 1 ? 1 : 0];
+        const loserPlayer = players[loser - 1];
+        const confirmed = window.confirm(
+            loserPlayer.name + " will surrender the match. " + winnerPlayer.name + " wins. Continue?",
+        );
+        if (!confirmed) return;
+
+        setSurrenderBusy(true);
+        try {
+            if (isSpacetimeMatch) {
+                await battleSync.surrender();
+                return;
+            }
+            surrenderMatch(loser);
+        } finally {
+            setSurrenderBusy(false);
+        }
+    }
 
     function queueMatchStart(config: MatchConfig): void {
         if (matchStarting) return;
@@ -424,6 +508,64 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
         });
         setStartView("room-setup");
     }
+}
+
+function renderSpacetimeMatchLoadingScreen(
+    roomSession: ReturnType<typeof useRoomSession>,
+    matchStarting: boolean,
+    showLobbyAudioNotice: boolean,
+): React.JSX.Element {
+    const room = roomSession.room;
+    const members = roomSession.members;
+    const mapLabel = room
+        ? getMapPresentation(parseMapType(room.mapType, defaultSetup.mapType)).label
+        : "Loading map";
+    const roomCode = room?.code ?? "----";
+    const playerCopy = members.length >= 2
+        ? members[0].name + " vs " + members[1].name
+        : members.length === 1
+          ? members[0].name + " is waiting for opponent sync"
+          : "Waiting for room roster";
+    const statusCopy = !roomSession.isLoaded
+        ? "Syncing room state from the server."
+        : matchStarting
+          ? "Both players are ready. Launching the duel."
+          : room?.status === ROOM_STATUS.IN_MATCH
+            ? "Preparing the battlefield."
+            : "Waiting for the room to enter match status.";
+
+    return (
+        <div className="screen">
+            <div className="lobby-entry">
+                <div className="lobby-entry-glow" />
+                <div className="lobby-entry-card">
+                    <div className="lobby-entry-badge">Room {roomCode}</div>
+                    <div className="lobby-entry-copy">
+                        <span className="lobby-entry-kicker">Match Starting</span>
+                        <h1 className="lobby-entry-title">{mapLabel}</h1>
+                        <p className="lobby-entry-text">{statusCopy}</p>
+                        <p className="lobby-entry-text lobby-entry-players">{playerCopy}</p>
+                    </div>
+                    <div className="lobby-entry-status">
+                        <div className="lobby-entry-progress">
+                            <span className="lobby-entry-progress-bar" />
+                        </div>
+                        <div className="lobby-entry-steps" aria-hidden="true">
+                            <span>{roomSession.isLoaded ? "Room synced" : "Syncing room"}</span>
+                            <span>{members.length >= 2 ? "Players ready" : "Loading players"}</span>
+                            <span>{matchStarting ? "Launching match" : "Preparing launch"}</span>
+                        </div>
+                    </div>
+                    {showLobbyAudioNotice ? (
+                        <div className="lobby-audio-notice" role="status">
+                            Browser autoplay blocked the lobby music. Click or press
+                            any key to enable it.
+                        </div>
+                    ) : null}
+                </div>
+            </div>
+        </div>
+    );
 }
 
 function renderLobbyEntryScreen(
@@ -594,6 +736,23 @@ function renderStartScreen(
                                 ))}
                             </select>
                         </div>
+                        <div className="lobby-option">
+                            <span className="lobby-option-label">Turn Duration</span>
+                            <select
+                                className="lobby-option-input"
+                                value={formState.turnDurationMode}
+                                onChange={handleTurnDurationModeChange}
+                            >
+                                {TURN_DURATION_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                        {option.label}
+                                    </option>
+                                ))}
+                            </select>
+                            <span className="lobby-option-copy">
+                                {getTurnDurationModeDescription(formState.turnDurationMode)}
+                            </span>
+                        </div>
                         <RoomPanel formState={formState} />
                     </div>
                     <div className="lobby-actions">
@@ -726,6 +885,15 @@ function renderStartScreen(
         setFormState({
             ...formState,
             roundLimit: Number(event.target.value),
+        });
+    }
+
+    function handleTurnDurationModeChange(
+        event: React.ChangeEvent<HTMLSelectElement>,
+    ): void {
+        setFormState({
+            ...formState,
+            turnDurationMode: event.target.value as TurnDurationMode,
         });
     }
 
@@ -1154,29 +1322,46 @@ function createMatchConfigFromRoom(
             roomSession.room?.targetScore ?? defaultSetup.targetScore,
         roundLimit:
             roomSession.room?.roundLimit ?? defaultSetup.roundLimit,
+        turnDurationMode:
+            parseTurnDurationMode(roomSession.room?.turnDurationMode, defaultSetup.turnDurationMode),
         seedText: roomSession.room
             ? "room-" + roomSession.room.code + "-" + roomSession.room.seed.toString()
             : defaultSetup.seedText,
     };
 }
 
+function parseTurnDurationMode(value: string | undefined, fallback: TurnDurationMode): TurnDurationMode {
+    return value === "infinite" || value === "timed" ? value : fallback;
+}
+
+function getTurnDurationModeDescription(value: TurnDurationMode): string {
+    return TURN_DURATION_OPTIONS.find((option) => option.value === value)?.description ?? TURN_DURATION_OPTIONS[0].description;
+}
+
 function renderEndScreen(
     winnerName: string,
     players: ReturnType<typeof useGameStore.getState>["players"],
-    history: ReturnType<typeof useGameStore.getState>["history"],
     restartMatch: {
         (): void;
     },
-    returnToSetup: {
+    onLobby: {
         (): void;
     },
 ): React.JSX.Element {
     const winnerId = players[0].name === winnerName ? 1 : 2;
+    const winner = players[winnerId - 1];
+    const loser = players[winnerId === 1 ? 1 : 0];
+
     return (
-        <div className="screen">
+        <div className="screen screen--result">
             <div className="result">
-                <div className="result-glow" />
+                <div className="result-glow" aria-hidden="true" />
                 <div className="result-card">
+                    <div className="result-header">
+                        <span className="screen-kicker">Match Complete</span>
+                        <h2 className="result-title">Victory</h2>
+                    </div>
+
                     <div
                         className={
                             "result-badge " + (winnerId === 1 ? "blue" : "red")
@@ -1184,57 +1369,73 @@ function renderEndScreen(
                     >
                         <span className="result-badge-label">Winner</span>
                         <span className="result-badge-name">{winnerName}</span>
+                        <span className="result-badge-meta">
+                            {winner.score} round{winner.score === 1 ? "" : "s"} won
+                        </span>
                     </div>
+
                     <div className="result-players">
                         <div
                             className={
-                                "result-player" +
+                                "result-player accent-" +
+                                players[0].accent +
                                 (winnerId === 1 ? " winner" : "")
                             }
                         >
-                            <span className="result-player-index">1</span>
+                            <span className="result-player-index">P1</span>
                             <div className="result-player-copy">
                                 <span className="result-player-name">
                                     {players[0].name}
                                 </span>
                                 <span className="result-player-score">
-                                    {players[0].score} rounds
+                                    {players[0].score} round
+                                    {players[0].score === 1 ? "" : "s"}
                                 </span>
                             </div>
                         </div>
                         <span className="result-vs">vs</span>
                         <div
                             className={
-                                "result-player" +
+                                "result-player accent-" +
+                                players[1].accent +
                                 (winnerId === 2 ? " winner" : "")
                             }
                         >
-                            <span className="result-player-index">2</span>
+                            <span className="result-player-index">P2</span>
                             <div className="result-player-copy">
                                 <span className="result-player-name">
                                     {players[1].name}
                                 </span>
                                 <span className="result-player-score">
-                                    {players[1].score} rounds
+                                    {players[1].score} round
+                                    {players[1].score === 1 ? "" : "s"}
                                 </span>
                             </div>
                         </div>
                     </div>
+
+                    <p className="result-summary">
+                        {winner.name} defeated {loser.name} with a final score of{" "}
+                        {winner.score}–{loser.score}.
+                    </p>
+
                     <div className="result-actions">
                         <button
                             type="button"
-                            className="lobby-btn lobby-btn-primary"
+                            className="result-btn result-btn-primary"
                             onClick={restartMatch}
                         >
-                            <span className="lobby-btn-icon">&#8635;</span>
-                            <span className="lobby-btn-label">Play Again</span>
+                            <span className="result-btn-icon" aria-hidden="true">
+                                ↺
+                            </span>
+                            <span className="result-btn-label">Play Again</span>
                         </button>
                         <button
                             type="button"
-                            className="lobby-btn lobby-btn-secondary"
-                            onClick={returnToSetup}
+                            className="result-btn result-btn-secondary"
+                            onClick={onLobby}
                         >
-                            <span className="lobby-btn-label">Lobby</span>
+                            <span className="result-btn-label">Back to Lobby</span>
                         </button>
                     </div>
                 </div>

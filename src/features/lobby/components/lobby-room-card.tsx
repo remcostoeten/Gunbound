@@ -12,7 +12,7 @@ export function LobbyRoomCard({ room, onClick }: Props) {
   const full = room.memberCount >= room.capacity;
   const playing = room.status === "Playing";
   const mineActive = Boolean(room.mine && playing);
-  const disabled = (playing || full) && !mineActive;
+  const disabled = (playing && !mineActive) || (full && !room.mine);
   const yourTurn = Boolean(mineActive && room.yourTurn);
   const statusLabel = yourTurn ? "Your Turn" : mineActive ? "Resume" : room.status;
   return (

@@ -6,11 +6,21 @@ import type { LobbyRoom } from "../types";
 
 type Props = {
   rooms: LobbyRoom[];
+  emptyStateAnimated: boolean;
   onRoomClick: (r: LobbyRoom) => void;
   onBuddyClick: (name: string) => void;
+  onFriendRequestResponse: (requestId: bigint, accept: boolean) => void;
+  onOpenInbox: () => void;
 };
 
-export function LobbyBody({ rooms, onRoomClick, onBuddyClick }: Props) {
+export function LobbyBody({
+  rooms,
+  emptyStateAnimated,
+  onRoomClick,
+  onBuddyClick,
+  onFriendRequestResponse,
+  onOpenInbox,
+}: Props) {
   return (
     <div className="gb-body">
       <section
@@ -19,7 +29,10 @@ export function LobbyBody({ rooms, onRoomClick, onBuddyClick }: Props) {
         style={{ ["--gb-stagger" as string]: "120ms" }}
       >
         {rooms.length === 0 ? (
-          <div className="gb-empty gb-empty-rooms" role="status">
+          <div
+            className={`gb-empty gb-empty-rooms ${emptyStateAnimated ? "is-animated" : ""}`}
+            role="status"
+          >
             <span className="gb-empty-glyph" aria-hidden="true">🪐</span>
             <span className="gb-empty-title">No rooms in this channel</span>
             <span className="gb-empty-sub">Press <b>Create</b> to open the first room.</span>
@@ -43,7 +56,11 @@ export function LobbyBody({ rooms, onRoomClick, onBuddyClick }: Props) {
           <button type="button" className="gb-arrow" aria-label="Scroll down">▼</button>
         </div>
       </section>
-      <LobbySidePanel onBuddyClick={onBuddyClick} />
+      <LobbySidePanel
+        onBuddyClick={onBuddyClick}
+        onFriendRequestResponse={onFriendRequestResponse}
+        onOpenInbox={onOpenInbox}
+      />
     </div>
   );
 }

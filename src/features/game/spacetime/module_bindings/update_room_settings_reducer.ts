@@ -15,4 +15,5 @@ export default {
   mapType: __t.string(),
   targetScore: __t.u32(),
   roundLimit: __t.u32(),
+  turnDurationMode: __t.string(),
 };

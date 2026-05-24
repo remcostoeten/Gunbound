@@ -5,9 +5,8 @@ import Link from "next/link";
 import { AuthWindow } from "./auth-window";
 import { AuthLogo } from "./auth-logo";
 import { AuthSettingsMenu } from "./auth-settings-menu";
-import { playTrack, registerTrack } from "@/lib/music-bus";
+import { playTrack, registerTrack, LOBBY_BGM_SRC, resetLobbyTrackSelection, useMenuClickSound } from "@/lib/music-bus";
 const loginMp3 = "/audio/login.mp3";
-const lobbyMp3 = "/audio/lobby.mp3";
 import {
   DEFAULT_AUTH_THEME,
   resolveAuthThemeStyle,
@@ -43,11 +42,14 @@ export function AuthRoot({ onAuthed, theme: initialTheme = DEFAULT_AUTH_THEME }:
   const [mode, setMode] = useState<Mode>("login");
   const [theme, setTheme] = useState<AuthThemeId>(initialTheme);
 
+  useMenuClickSound();
+
   // GunBound-style login BGM — register tracks lazily on the client (SSR-safe),
   // then crossfade smoothly into the lobby track on auth.
   useEffect(() => {
+    resetLobbyTrackSelection();
     registerTrack("login", loginMp3, 0.45);
-    registerTrack("lobby", lobbyMp3, 0.45);
+    registerTrack("lobby", LOBBY_BGM_SRC, 0.45);
     const t = window.setTimeout(() => playTrack("login"), 120);
     return () => clearTimeout(t);
   }, []);
@@ -95,9 +97,12 @@ export function AuthRoot({ onAuthed, theme: initialTheme = DEFAULT_AUTH_THEME }:
         <AuthLogo />
         <AuthWindow mode={mode} onSwitchMode={setMode} onAuthed={onAuthed} />
         <div className="gba-foot">
-          <span>v1.337 &nbsp;·&nbsp; © RemBound Online</span>
+          <span>v0.0.1 &nbsp;·&nbsp; © RemBound Online</span>
           <Link className="gba-foot-link" href="/policy">
             POLICY
+          </Link>
+          <Link className="gba-foot-link" href="https://github.com/remcostoeten/gunbound" target="_blank" rel="noopener noreferrer">
+            SOURCE
           </Link>
         </div>
       </div>

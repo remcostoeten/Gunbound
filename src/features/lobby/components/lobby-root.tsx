@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSpacetimeDB } from "spacetimedb/react";
-import { playTrack, registerTrack } from "@/lib/music-bus";
+import { playTrack, registerTrack, LOBBY_BGM_SRC, useMenuClickSound } from "@/lib/music-bus";
+import { getLobbyEmptyStateAnimated, subscribeDisplaySettings } from "@/lib/display-settings";
 import { LOBBY_TOP_ICONS } from "../config/top-icons";
 import { LobbyActionRow } from "./lobby-action-row";
 import { LobbyBody } from "./lobby-body";
@@ -13,6 +14,7 @@ import { LobbyInboxModal } from "./lobby-inbox-modal";
 import { LobbyMyInfoModal } from "./lobby-my-info-modal";
 import { LobbyRoomSearchModal } from "./lobby-room-search-modal";
 import { LobbyLeaderboardModal } from "./lobby-leaderboard-modal";
+import { LobbyOptionsModal } from "./lobby-options-modal";
 import { LobbyToastStack } from "./lobby-toast-stack";
 import { useMatchmakingQueue } from "../spacetime/use-matchmaking-queue";
 import { useYourTurnInRoom } from "../spacetime/use-your-turn-in-room";
@@ -33,7 +35,7 @@ type Props = {
   onEnterBattle?: (roomId: bigint) => void;
 };
 
-const lobbyMp3 = "/audio/lobby.mp3";
+// Lobby background music is randomized from music-bus
 
 function toLobbyRoom(view: LobbyRoomView, mineRoomId?: bigint, yourTurn?: boolean): LobbyRoom {
   const mine = mineRoomId !== undefined && view.id === mineRoomId;
@@ -58,11 +60,17 @@ export function LobbyRoot({
   onLogout,
   onEnterBattle,
 }: Props) {
+  useMenuClickSound();
   const connection = useSpacetimeDB();
   const [inboxOpen, setInboxOpen] = useState(false);
   const [myInfoOpen, setMyInfoOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [createMinimized, setCreateMinimized] = useState(false);
+  const [roomModalOpen, setRoomModalOpen] = useState(false);
+  const roomModalDismissedRef = useRef(false);
+  const [emptyStateAnimated, setEmptyStateAnimated] = useState(() => getLobbyEmptyStateAnimated());
   const { player } = useCurrentPlayer();
   usePlayerCountrySync();
   const emptyDataMode = useEmptyDataMode();
@@ -81,6 +89,7 @@ export function LobbyRoot({
     () => roomViews.map((view) => toLobbyRoom(view, currentDbRoom?.id, isYourTurn)),
     [roomViews, currentDbRoom, isYourTurn],
   );
+  const inboxCount = lobbyFriends.incomingRequests.length + lobbyFriends.incomingRoomInvites.length;
   const messages = useMemo<LobbyChatMsg[]>(() => {
     const requestMessages = lobbyFriends.incomingRequests.map<LobbyChatMsg>((request) => ({
       id: `friend-request-${request.id.toString()}`,
@@ -103,9 +112,35 @@ export function LobbyRoot({
     return [...lobbyChat.messages, ...requestMessages, ...roomInviteMessages].sort(compareLobbyMessages);
   }, [lobbyChat.messages, lobbyFriends.incomingRequests, lobbyFriends.incomingRoomInvites]);
 
+  const openRoomModal = useCallback(
+    (room: LobbyRoom) => {
+      roomModalDismissedRef.current = false;
+      s.setActiveRoom(room);
+      setRoomModalOpen(true);
+    },
+    [s],
+  );
+
+  const dismissRoomModal = useCallback(() => {
+    roomModalDismissedRef.current = true;
+    setRoomModalOpen(false);
+  }, []);
+
+  const handleLeaveRoom = useCallback(() => {
+    roomModalDismissedRef.current = false;
+    s.setActiveRoom(null);
+    setRoomModalOpen(false);
+  }, [s]);
+
   useEffect(() => {
-    registerTrack("lobby", lobbyMp3, 0.45);
+    registerTrack("lobby", LOBBY_BGM_SRC, 0.45);
     playTrack("lobby");
+  }, []);
+
+  useEffect(() => {
+    return subscribeDisplaySettings(function syncDisplaySettings(): void {
+      setEmptyStateAnimated(getLobbyEmptyStateAnimated());
+    });
   }, []);
 
   const connectionRef = useRef(connection);
@@ -145,8 +180,8 @@ export function LobbyRoot({
     const view = roomViews.find((r) => r.id === currentDbRoom.id);
     if (!view) return;
     restoredRoomRef.current = true;
-    s.setActiveRoom(toLobbyRoom(view));
-  }, [currentDbRoom, roomViews, s]);
+    openRoomModal(toLobbyRoom(view, currentDbRoom.id, isYourTurn));
+  }, [currentDbRoom, openRoomModal, roomViews, s, isYourTurn]);
 
   const joinAttemptedCodeRef = useRef<string | null>(null);
   useEffect(() => {
@@ -157,7 +192,7 @@ export function LobbyRoot({
       const view = roomViews.find((r) => r.id === currentDbRoom.id);
       if (view && view.code === pendingRoomCode) {
         joinAttemptedCodeRef.current = pendingRoomCode;
-        s.setActiveRoom(toLobbyRoom(view));
+        openRoomModal(toLobbyRoom(view, currentDbRoom.id, isYourTurn));
         onPendingRoomConsumed?.();
         return;
       }
@@ -177,7 +212,7 @@ export function LobbyRoot({
         onPendingRoomConsumed?.();
       }
     })();
-  }, [pendingRoomCode, currentDbRoom, currentRoomReady, roomViews, connection, joinRoomByCode, s, onPendingRoomConsumed]);
+  }, [pendingRoomCode, currentDbRoom, currentRoomReady, roomViews, connection, joinRoomByCode, openRoomModal, isYourTurn, s, onPendingRoomConsumed]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -217,13 +252,13 @@ export function LobbyRoot({
       return;
     }
     if (!wasSearchingRef.current) return;
-    if (!currentDbRoom || s.activeRoom) return;
+    wasSearchingRef.current = false;
+    if (!currentDbRoom || roomModalDismissedRef.current) return;
     const view = roomViews.find(r => r.id === currentDbRoom.id);
     if (view) {
-      wasSearchingRef.current = false;
-      s.setActiveRoom(toLobbyRoom(view));
+      openRoomModal(toLobbyRoom(view, currentDbRoom.id, isYourTurn));
     }
-  }, [matchmaking.inQueue, currentDbRoom, roomViews, s]);
+  }, [matchmaking.inQueue, currentDbRoom, openRoomModal, roomViews, isYourTurn]);
 
   const handleWaiting = useCallback(async () => {
     try {
@@ -249,6 +284,10 @@ export function LobbyRoot({
       onEnterBattle?.(r.id);
       return;
     }
+    if (r.mine) {
+      openRoomModal(r);
+      return;
+    }
     if (r.status === "Playing") {
       s.pushToast(`Room ${r.code} is already playing`);
       return;
@@ -259,11 +298,11 @@ export function LobbyRoot({
     }
     try {
       await joinRoomByCode(r.code);
-      s.setActiveRoom(r);
+      openRoomModal(r);
     } catch (e) {
       s.pushToast(messageFromError(e));
     }
-  }, [joinRoomByCode, onEnterBattle, s]);
+  }, [joinRoomByCode, onEnterBattle, openRoomModal, s]);
 
   const handleQuickjoin = useCallback(async () => {
     try {
@@ -272,23 +311,23 @@ export function LobbyRoot({
         s.pushToast("No rooms to join");
         return;
       }
-      s.setActiveRoom(toLobbyRoom(target));
+      openRoomModal(toLobbyRoom(target));
     } catch (e) {
       s.pushToast(messageFromError(e));
     }
-  }, [quickJoin, s]);
+  }, [quickJoin, openRoomModal, s]);
 
   const handleCreated = useCallback(async (code: string) => {
     // The newly created room will arrive via subscription; reflect immediately.
     const created = roomViews.find(r => r.code === code);
     if (created) {
-      s.setActiveRoom(toLobbyRoom(created));
+      openRoomModal(toLobbyRoom(created));
     } else {
       // Subscription may not have flushed yet — push a toast and rely on the
       // re-render to surface the modal once the row lands.
       s.pushToast(`Created room ${code}`);
     }
-  }, [roomViews, s]);
+  }, [roomViews, openRoomModal, s]);
 
   const handleToggleEmptyData = useCallback(async () => {
     try {
@@ -301,6 +340,7 @@ export function LobbyRoot({
 
   const handleStarted = useCallback((roomId: bigint) => {
     s.setActiveRoom(null);
+    setRoomModalOpen(false);
     if (onEnterBattle) onEnterBattle(roomId);
   }, [onEnterBattle, s]);
 
@@ -329,7 +369,7 @@ export function LobbyRoot({
       await lobbyFriends.respondToRoomInvite(invite.id, accept);
       if (accept) {
         const target = roomViews.find((room) => room.id === invite.roomId);
-        if (target) s.setActiveRoom(toLobbyRoom(target));
+        if (target) openRoomModal(toLobbyRoom(target, currentDbRoom?.id, isYourTurn));
       }
       s.pushToast(accept ? `Joined room ${invite.roomCode}` : "Room invite declined");
       if (accept) setInboxOpen(false);
@@ -354,8 +394,15 @@ export function LobbyRoot({
           onWaiting={handleWaiting}
           inQueue={matchmaking.inQueue}
           onQuickjoin={handleQuickjoin}
-          onCreate={() => s.setCreating(true)}
+          onCreate={() => {
+            if (createMinimized) {
+              setCreateMinimized(false);
+            } else {
+              s.setCreating(true);
+            }
+          }}
           onFriend={() => setInboxOpen(true)}
+          inboxCount={inboxCount}
           onSearch={() => setSearchOpen(true)}
           onIconClick={(label) => {
             const icon = LOBBY_TOP_ICONS.find((i) => i.label === label);
@@ -378,11 +425,15 @@ export function LobbyRoot({
         />
         <LobbyBody
           rooms={rooms}
+          emptyStateAnimated={emptyStateAnimated}
           onRoomClick={handleRoomClick}
           onBuddyClick={(name) => { s.setWhisperTo(name); s.pushToast(`Whisper to ${name}`); }}
+          onFriendRequestResponse={handleFriendRequestResponse}
+          onOpenInbox={() => setInboxOpen(true)}
         />
         <LobbyBottom
           onBack={onReplay}
+          onOptions={() => setOptionsOpen(true)}
           messages={messages}
           onSend={handleChatSend}
           whisperTo={s.whisperTo}
@@ -391,19 +442,40 @@ export function LobbyRoot({
         />
       </div>
 
-      {s.activeRoom && (
+      {s.activeRoom && roomModalOpen && (
         <LobbyRoomModal
           room={s.activeRoom}
-          onClose={() => s.setActiveRoom(null)}
+          onDismiss={dismissRoomModal}
+          onLeave={handleLeaveRoom}
           onStarted={handleStarted}
           onInvite={handleSendRoomInvite}
         />
       )}
+      {s.activeRoom && !roomModalOpen && (
+        <button
+          type="button"
+          className="gb-create-restore"
+          onClick={() => {
+            const room = s.activeRoom;
+            if (room) openRoomModal(room);
+          }}
+        >
+          <span>Room</span>
+          <span className="gb-create-restore-code">{s.activeRoom.code}</span>
+        </button>
+      )}
       {s.creating && (
         <LobbyCreateModal
-          onClose={() => s.setCreating(false)}
+          minimized={createMinimized}
+          onMinimize={() => setCreateMinimized(true)}
+          onClose={() => { s.setCreating(false); setCreateMinimized(false); }}
           onCreated={handleCreated}
         />
+      )}
+      {createMinimized && (
+        <button className="gb-create-restore" onClick={() => setCreateMinimized(false)}>
+          <span>Create Room</span>
+        </button>
       )}
       {inboxOpen && (
         <LobbyInboxModal
@@ -429,9 +501,12 @@ export function LobbyRoot({
           onJoin={async (code) => {
             await joinRoomByCode(code);
             const target = roomViews.find(r => r.code === code.toUpperCase());
-            if (target) s.setActiveRoom(toLobbyRoom(target));
+            if (target) openRoomModal(toLobbyRoom(target, currentDbRoom?.id, isYourTurn));
           }}
         />
+      )}
+      {optionsOpen && (
+        <LobbyOptionsModal onClose={() => setOptionsOpen(false)} />
       )}
 
       <LobbyToastStack toasts={s.toasts} />

@@ -12,6 +12,7 @@ type Props = {
   onQuickjoin: () => void;
   onCreate: () => void;
   onFriend: () => void;
+  inboxCount?: number;
   onSearch: () => void;
   onIconClick: (label: string) => void;
   canToggleEmptyData?: boolean;
@@ -31,6 +32,7 @@ export function LobbyActionRow({
   onQuickjoin,
   onCreate,
   onFriend,
+  inboxCount = 0,
   onSearch,
   onIconClick,
   canToggleEmptyData = false,
@@ -123,9 +125,11 @@ export function LobbyActionRow({
           })}
           <LobbyActionButton
             layout="toolbar"
-            label="Friend"
-            glyph="👁"
+            label="Inbox"
+            glyph="📬"
             tone="blue"
+            badge={inboxCount > 0 ? String(inboxCount) : undefined}
+            active={inboxCount > 0}
             onClick={onFriend}
             hint={TOOLBAR_HINTS.friend}
           />

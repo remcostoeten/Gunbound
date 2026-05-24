@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useSpacetimeDB } from "spacetimedb/react";
 
 import {
@@ -12,6 +12,7 @@ import {
   parseBattleEventPayload,
   type BattleFirePayload,
   type BattleMovePayload,
+  type BattleSurrenderPayload,
   type BattleSwitchWeaponPayload,
 } from "@/features/game/multiplayer/battle-events";
 import { useGameStore } from "@/features/game/store/game-store";
@@ -23,6 +24,7 @@ type RoomSession = ReturnType<typeof useRoomSession>;
 type UseBattleEventSyncResult = {
   canControl: boolean;
   activePlayerName: string;
+  surrender(): Promise<void>;
 };
 
 type BattleEventConnection = {
@@ -67,9 +69,32 @@ export function useBattleEventSync(roomSession: RoomSession): UseBattleEventSync
   const submittedStatsRoundIds = useRef<Set<string>>(new Set());
   const endedRoundIds = useRef<Set<string>>(new Set());
   const pendingCommand = useRef(false);
+  const optimisticTicks = useRef<Set<string>>(new Set());
+
+  const surrender = useCallback(async (): Promise<void> => {
+    const activeRound = roomSession.activeRound;
+    const self = roomSession.self;
+    const connectionValue = connection.getConnection() as BattleEventConnection | null;
+    if (!activeRound || !self || !connectionValue) return;
+
+    const loser = (self.slotIndex + 1) as 1 | 2;
+    const tick = BigInt(roomSession.roundEvents.length + 1);
+    useGameStore.getState().surrenderMatch(loser);
+    optimisticTicks.current.add(tick.toString());
+    try {
+      await recordRoundEvent(connectionValue, activeRound.id, tick, BATTLE_EVENT_KIND.SURRENDER, {
+        v: 1,
+        turn: loser,
+      } satisfies BattleSurrenderPayload);
+    } catch (err) {
+      optimisticTicks.current.delete(tick.toString());
+      throw err;
+    }
+  }, [connection, roomSession.activeRound, roomSession.roundEvents.length, roomSession.self]);
 
   useEffect(() => {
     processedEventIds.current.clear();
+    optimisticTicks.current.clear();
     pendingCommand.current = false;
   }, [roomSession.activeRound?.id]);
 
@@ -90,6 +115,14 @@ export function useBattleEventSync(roomSession: RoomSession): UseBattleEventSync
     for (const event of roomSession.roundEvents) {
       const eventId = event.id.toString();
       if (processedEventIds.current.has(eventId)) continue;
+
+      const tickKey = event.tick.toString();
+      if (optimisticTicks.current.has(tickKey)) {
+        optimisticTicks.current.delete(tickKey);
+        processedEventIds.current.add(eventId);
+        continue;
+      }
+
       const payload = parseBattleEventPayload(event.kind, event.payload);
       if (!payload) {
         processedEventIds.current.add(eventId);
@@ -166,6 +199,7 @@ export function useBattleEventSync(roomSession: RoomSession): UseBattleEventSync
         command,
         roomSession,
         connection.getConnection() as BattleEventConnection | null,
+        optimisticTicks,
       ).catch(() => {
         pendingCommand.current = false;
       });
@@ -178,6 +212,7 @@ export function useBattleEventSync(roomSession: RoomSession): UseBattleEventSync
   return {
     canControl,
     activePlayerName: activeMember?.name ?? "Opponent",
+    surrender,
   };
 }
 
@@ -185,41 +220,67 @@ async function recordCommand(
   command: BattleInputCommand,
   roomSession: RoomSession,
   connection: BattleEventConnection | null | undefined,
+  optimisticTicks: { current: Set<string> },
 ): Promise<void> {
   const activeRound = roomSession.activeRound;
   if (!activeRound || !connection) return;
 
-  const state = useGameStore.getState();
-  const currentPlayer = state.players[state.turn - 1];
+  const store = useGameStore.getState();
+  const currentPlayer = store.players[store.turn - 1];
   const tick = BigInt(roomSession.roundEvents.length + 1);
+  const tickKey = tick.toString();
 
   if (command.kind === "move") {
-    await recordRoundEvent(connection, activeRound.id, tick, BATTLE_EVENT_KIND.MOVE, {
+    const payload: BattleMovePayload = {
       v: 1,
-      turn: state.turn,
+      turn: store.turn,
       direction: command.direction,
-    } satisfies BattleMovePayload);
+    };
+    store.applyBattleMove(command.direction);
+    optimisticTicks.current.add(tickKey);
+    try {
+      await recordRoundEvent(connection, activeRound.id, tick, BATTLE_EVENT_KIND.MOVE, payload);
+    } catch (err) {
+      optimisticTicks.current.delete(tickKey);
+      throw err;
+    }
     return;
   }
 
   if (command.kind === "switch-weapon") {
     const nextWeapon = currentPlayer.mobile.weapon === "primary" ? "secondary" : "primary";
-    await recordRoundEvent(connection, activeRound.id, tick, BATTLE_EVENT_KIND.SWITCH_WEAPON, {
+    const payload: BattleSwitchWeaponPayload = {
       v: 1,
-      turn: state.turn,
+      turn: store.turn,
       weapon: nextWeapon,
-    } satisfies BattleSwitchWeaponPayload);
+    };
+    store.applyBattleWeaponSwitch(nextWeapon);
+    optimisticTicks.current.add(tickKey);
+    try {
+      await recordRoundEvent(connection, activeRound.id, tick, BATTLE_EVENT_KIND.SWITCH_WEAPON, payload);
+    } catch (err) {
+      optimisticTicks.current.delete(tickKey);
+      throw err;
+    }
     return;
   }
 
   if (command.kind === "release-charge") {
-    await recordRoundEvent(connection, activeRound.id, tick, BATTLE_EVENT_KIND.FIRE, {
+    const payload: BattleFirePayload = {
       v: 1,
-      turn: state.turn,
+      turn: store.turn,
       angle: currentPlayer.mobile.angle,
-      power: state.power,
+      power: store.power,
       weapon: currentPlayer.mobile.weapon,
-    } satisfies BattleFirePayload);
+    };
+    store.releaseCharge();
+    optimisticTicks.current.add(tickKey);
+    try {
+      await recordRoundEvent(connection, activeRound.id, tick, BATTLE_EVENT_KIND.FIRE, payload);
+    } catch (err) {
+      optimisticTicks.current.delete(tickKey);
+      throw err;
+    }
   }
 }
 
@@ -228,7 +289,7 @@ async function recordRoundEvent(
   roundId: bigint,
   tick: bigint,
   kind: string,
-  payload: BattleMovePayload | BattleSwitchWeaponPayload | BattleFirePayload,
+  payload: BattleMovePayload | BattleSwitchWeaponPayload | BattleFirePayload | BattleSurrenderPayload,
 ): Promise<void> {
   await connection.reducers.recordRoundEvent({
     roundId,
@@ -241,7 +302,7 @@ async function recordRoundEvent(
 function applyBattlePayload(kind: string, payload: ReturnType<typeof parseBattleEventPayload>): boolean {
   if (!payload) return true;
   const store = useGameStore.getState();
-  if (store.turn !== payload.turn) return false;
+  if (kind !== BATTLE_EVENT_KIND.SURRENDER && store.turn !== payload.turn) return false;
 
   if (kind === BATTLE_EVENT_KIND.MOVE && "direction" in payload) {
     store.applyBattleMove(payload.direction);
@@ -255,6 +316,11 @@ function applyBattlePayload(kind: string, payload: ReturnType<typeof parseBattle
 
   if (kind === BATTLE_EVENT_KIND.FIRE && "angle" in payload) {
     store.applyBattleFire(payload);
+    return true;
+  }
+
+  if (kind === BATTLE_EVENT_KIND.SURRENDER) {
+    store.surrenderMatch(payload.turn);
     return true;
   }
 

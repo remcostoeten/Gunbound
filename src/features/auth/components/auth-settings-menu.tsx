@@ -3,7 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { AUTH_THEME_LIST, AUTH_THEMES, BASE_AUTH_TOKENS, type AuthThemeId } from "../theme/auth-themes";
 import { getAudioVolume, setAudioVolume, subscribeAudioSettings } from "@/lib/audio-settings";
-import { getBattleImmersive, setBattleImmersive, subscribeDisplaySettings } from "@/lib/display-settings";
+import {
+  getBattleImmersive,
+  getLobbyEmptyStateAnimated,
+  setBattleImmersive,
+  setLobbyEmptyStateAnimated,
+  subscribeDisplaySettings,
+} from "@/lib/display-settings";
 
 type Toggle = { key: string; label: string; on: boolean };
 
@@ -17,6 +23,7 @@ export function AuthSettingsMenu({ theme, onThemeChange }: Props) {
   const [musicVolume, setMusicVolume] = useState(() => getAudioVolume("music"));
   const [sfxVolume, setSfxVolume] = useState(() => getAudioVolume("sfx"));
   const [battleImmersive, setBattleImmersiveState] = useState(() => getBattleImmersive());
+  const [emptyStateAnimated, setEmptyStateAnimatedState] = useState(() => getLobbyEmptyStateAnimated());
   const [toggles, setToggles] = useState<Toggle[]>([
     { key: "lowfx", label: "LOW EFFECTS", on: false },
   ]);
@@ -41,6 +48,7 @@ export function AuthSettingsMenu({ theme, onThemeChange }: Props) {
   useEffect(() => {
     return subscribeDisplaySettings(function syncDisplaySettings(): void {
       setBattleImmersiveState(getBattleImmersive());
+      setEmptyStateAnimatedState(getLobbyEmptyStateAnimated());
     });
   }, []);
 
@@ -94,6 +102,22 @@ export function AuthSettingsMenu({ theme, onThemeChange }: Props) {
                 <span>IMMERSIVE</span>
                 <span className={`gba-pill ${battleImmersive ? "is-on" : ""}`}>
                   {battleImmersive ? "ON" : "OFF"}
+                </span>
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                className="gba-settings-row"
+                onClick={function handleEmptyMotionToggle(): void {
+                  setLobbyEmptyStateAnimated(!emptyStateAnimated);
+                }}
+                role="menuitemcheckbox"
+                aria-checked={emptyStateAnimated}
+              >
+                <span>EMPTY MOTION</span>
+                <span className={`gba-pill ${emptyStateAnimated ? "is-on" : ""}`}>
+                  {emptyStateAnimated ? "ON" : "OFF"}
                 </span>
               </button>
             </li>

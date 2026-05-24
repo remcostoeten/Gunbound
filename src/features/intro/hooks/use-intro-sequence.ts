@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import { INTRO_LETTERS } from "../config/letters";
 import { playThud } from "../audio/play-thud";
 import { playEngine } from "../audio/play-engine";
-import { playIntroMusic } from "../audio/play-music";
 import type { IntroExitMode } from "../types";
 
 type Params = {
   exitMode: IntroExitMode;
+  enabled: boolean;
   replayKey: number;
   onComplete?: () => void;
 };
@@ -18,7 +18,7 @@ const PULL_DURATION_MS = 900; // mascot yanks the logo across-screen
 const FADE_DURATION_MS = 700; // root fades to the next screen
 const FADE_ONLY_HOLD_BONUS_MS = 900; // give pure-fade mode a longer beat
 
-export function useIntroSequence({ exitMode, replayKey, onComplete }: Params) {
+export function useIntroSequence({ exitMode, enabled, replayKey, onComplete }: Params) {
   const [started, setStarted] = useState(false);
   const [landed, setLanded] = useState<Record<string, boolean>>({});
   const [shake, setShake] = useState(0);
@@ -34,7 +34,7 @@ export function useIntroSequence({ exitMode, replayKey, onComplete }: Params) {
     setExiting(false);
     setFading(false);
 
-    const music = playIntroMusic();
+    if (!enabled) return;
 
     const t0 = window.setTimeout(() => setStarted(true), 50);
     const t1 = window.setTimeout(() => setMascotIn(true), 1600);
@@ -77,9 +77,8 @@ export function useIntroSequence({ exitMode, replayKey, onComplete }: Params) {
       clearTimeout(tFade);
       clearTimeout(tDone);
       timers.forEach(clearTimeout);
-      music.stop();
     };
-  }, [exitMode, replayKey, onComplete]);
+  }, [exitMode, enabled, replayKey, onComplete]);
 
   return { started, landed, shake, flash, mascotIn, exiting, fading };
 }

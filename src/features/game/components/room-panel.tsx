@@ -48,6 +48,10 @@ export function RoomPanel(props: {
           <span className="room-value">{props.formState.roundLimit} rounds</span>
         </div>
         <div className="room-row">
+          <span className="room-key">Turns</span>
+          <span className="room-value">{props.formState.turnDurationMode === "infinite" ? "Infinite" : "Timed"}</span>
+        </div>
+        <div className="room-row">
           <span className="room-key">Variant</span>
           <span className="room-value">{mapSeed} / #{String(seedVariant).padStart(3, "0")}</span>
         </div>

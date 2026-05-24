@@ -1,18 +1,10 @@
 "use client";
 
-import { createTurnGuide } from "@/features/game/engine/action-guide";
 import { getWindLabel } from "@/features/game/engine/wind";
 import { useGameState } from "@/features/game/hooks/use-game-state";
 import {
-  selectBonusBoxes,
-  selectCharging,
-  selectPhase,
-  selectPhaseDuration,
-  selectPhaseTimer,
   selectPlayers,
-  selectPower,
   selectTurn,
-  selectTurnCount,
   selectWind
 } from "@/features/game/store/selectors/hud-selectors";
 
@@ -20,16 +12,7 @@ export function Hud(): React.JSX.Element {
   const players = useGameState(selectPlayers);
   const turn = useGameState(selectTurn);
   const wind = useGameState(selectWind);
-  const phase = useGameState(selectPhase);
-  const phaseTimer = useGameState(selectPhaseTimer);
-  const phaseDuration = useGameState(selectPhaseDuration);
-  const turnCount = useGameState(selectTurnCount);
-  const power = useGameState(selectPower);
-  const charging = useGameState(selectCharging);
-  const bonusBoxes = useGameState(selectBonusBoxes);
   const currentPlayer = players[turn - 1];
-  const landedBoxes = countLandedBoxes(bonusBoxes);
-  const turnGuide = createTurnGuide(currentPlayer, phase, charging, phaseTimer, power, turnCount);
 
   return (
     <div className="hud">
@@ -92,38 +75,6 @@ export function Hud(): React.JSX.Element {
           </div>
         </div>
       </div>
-      <div className="hud-bottom">
-        <div className="hud-card turn-card">
-          <span className="turn-label">Current Turn</span>
-          <span className="turn-value">
-            {currentPlayer.title} {currentPlayer.name} / {capitalize(currentPlayer.mobile.type)}
-          </span>
-          <div className="turn-phase-strip">
-            {turnGuide.phaseSteps.map(renderPhaseStep)}
-          </div>
-          <div className="turn-meta-row">
-            <span>Phase {turnGuide.phaseLabel}</span>
-            <span>
-              {formatTimer(phaseTimer)} / {String(turnCount).padStart(2, "0")}
-            </span>
-          </div>
-          <div className="phase-meter">
-            <div className="phase-meter-fill" style={{ width: getPhaseWidth(phaseTimer, phaseDuration) }} />
-          </div>
-          <div className="turn-meta-row subtle">
-            <span>Supply Boxes {landedBoxes}</span>
-            <span>Power {String(turnGuide.powerPercent).padStart(2, "0")}%</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function renderPhaseStep(step: ReturnType<typeof createTurnGuide>["phaseSteps"][number]): React.JSX.Element {
-  return (
-    <div key={step.label} className={"turn-phase-pill " + step.state}>
-      <span>{step.label}</span>
     </div>
   );
 }
@@ -156,35 +107,6 @@ function getWindMeterLeft(horizontalWind: number): string {
   const normalized = Math.max(-0.75, Math.min(0.75, horizontalWind));
   const percentage = ((normalized + 0.75) / 1.5) * 100;
   return String(percentage) + "%";
-}
-
-function getPhaseWidth(phaseTimer: number, phaseDuration: number): string {
-  if (phaseDuration <= 0) {
-    return "0%";
-  }
-
-  const percentage = Math.max(0, Math.min(100, Math.round((phaseTimer / phaseDuration) * 100)));
-  return String(percentage) + "%";
-}
-
-function formatTimer(value: number): string {
-  return String(Math.max(0, Math.ceil(value))).padStart(2, "0");
-}
-
-function countLandedBoxes(
-  bonusBoxes: ReturnType<typeof import("@/features/game/store/game-store").useGameStore.getState>["bonusBoxes"]
-): number {
-  let landed = 0;
-  let index = 0;
-
-  while (index < bonusBoxes.length) {
-    if (bonusBoxes[index].landed) {
-      landed += 1;
-    }
-    index += 1;
-  }
-
-  return landed;
 }
 
 function capitalize(value: string): string {

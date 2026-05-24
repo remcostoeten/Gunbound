@@ -89,17 +89,17 @@
 
   &--immersive {
     .battle-chrome-top {
-      padding: 8px 12px 0;
+      padding: 6px 10px 0;
     }
 
     .battle-chrome-foot {
-      padding: 0 12px 12px;
-      gap: 10px;
+      padding: 0 10px 10px;
+      gap: 8px;
     }
 
     .battle-chrome .hud-top {
-      gap: 8px;
-      grid-template-columns: minmax(200px, 1fr) 176px minmax(200px, 1fr);
+      gap: 6px;
+      grid-template-columns: minmax(180px, 1fr) 136px minmax(180px, 1fr);
     }
 
     .battle-chrome .aim-card {
@@ -107,16 +107,16 @@
     }
 
     .command-panel {
-      max-width: min(760px, calc(100vw - 320px));
+      max-width: min(540px, calc(100vw - 288px));
     }
 
     .battle-chrome .history-panel {
-      width: min(320px, 32vw);
+      width: min(260px, 28vw);
     }
 
     .hud-card,
     .aim-card {
-      border-radius: 14px;
+      border-radius: 10px;
     }
   }
 
@@ -211,8 +211,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 10px 14px 0;
+  gap: 5px;
+  padding: 8px 12px 0;
   width: 100%;
   box-sizing: border-box;
 }
@@ -220,8 +220,8 @@
 .battle-chrome-foot {
   display: flex;
   align-items: flex-end;
-  gap: 12px;
-  padding: 0 14px 14px;
+  gap: 8px;
+  padding: 0 12px 12px;
   width: 100%;
   box-sizing: border-box;
 }
@@ -238,7 +238,7 @@
 .command-panel {
   display: grid;
   width: 100%;
-  max-width: min(720px, calc(100vw - 340px));
+  max-width: min(540px, calc(100vw - 292px));
   pointer-events: auto;
 }
 
@@ -256,11 +256,11 @@
   border-top: 0;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
-  border-bottom-left-radius: 14px;
-  border-bottom-right-radius: 14px;
-  padding: 8px 12px;
-  font-size: 0.62rem;
-  line-height: 1.4;
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+  padding: 6px 10px;
+  font-size: 0.54rem;
+  line-height: 1.3;
 }
 
 .battle-chrome .aim-card {
@@ -297,13 +297,13 @@
   position: relative;
   right: auto;
   bottom: auto;
-  width: min(300px, 34vw);
+  width: min(250px, 28vw);
   flex-shrink: 0;
   pointer-events: auto;
-  max-height: min(220px, 28vh);
+  max-height: min(170px, 24vh);
   overflow: hidden;
-  padding: 10px 12px;
-  gap: 8px;
+  padding: 8px 10px;
+  gap: 6px;
 }
 
 .battle-chrome .history-panel.is-collapsed {
@@ -360,15 +360,15 @@
 
 .battle-chrome .history-list {
   overflow: auto;
-  max-height: min(160px, 22vh);
+  max-height: min(112px, 18vh);
 }
 
 .battle-chrome .history-item {
-  padding: 8px;
+  padding: 6px;
 }
 
 .battle-chrome .history-item-text {
-  font-size: 0.72rem;
+  font-size: 0.64rem;
 }
 
 /* ====== IN-GAME (KEPT FROM ORIGINAL) ====== */
@@ -1885,13 +1885,13 @@
 .hud-card,
 .aim-card {
   border: 2px solid rgba(255, 255, 255, 0.14);
-  border-radius: 18px;
+  border-radius: 12px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0)),
     var(--panel);
-  box-shadow: 0 14px 38px rgba(8, 20, 36, 0.18);
-  backdrop-filter: blur(8px);
-  padding: 10px;
+  box-shadow: 0 10px 28px rgba(8, 20, 36, 0.16);
+  backdrop-filter: blur(7px);
+  padding: 8px;
 }
 
 .hud-card.right {
@@ -1904,28 +1904,28 @@
 .wind-label,
 .aim-label {
   display: block;
-  font-size: 0.52rem;
+  font-size: 0.46rem;
   color: #ffe8ad;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .hud-player-row {
   display: grid;
-  gap: 7px;
+  gap: 5px;
 }
 
 .hud-meta {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  font-size: 0.76rem;
+  gap: 10px;
+  font-size: 0.66rem;
   color: #eff7ff;
 }
 
 .hud-meta.secondary {
-  font-size: 0.64rem;
+  font-size: 0.56rem;
   color: #c7d9ea;
 }
 
@@ -1936,9 +1936,9 @@
 .hud-player-identity {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 7px;
-  font-size: 0.72rem;
+  gap: 6px;
+  margin-bottom: 5px;
+  font-size: 0.62rem;
 }
 
 .hud-card.right .hud-player-identity {
@@ -1946,8 +1946,8 @@
 }
 
 .hp-bar {
-  width: min(260px, 30vw);
-  height: 12px;
+  width: min(220px, 26vw);
+  height: 10px;
   border: 2px solid rgba(255, 255, 255, 0.15);
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.22);
@@ -1970,7 +1970,7 @@
 }
 
 .wind-card {
-  width: 156px;
+  width: 128px;
   justify-self: center;
 }
 
@@ -1981,25 +1981,25 @@
 .wind-value,
 .turn-value,
 .aim-value {
-  font-size: 0.78rem;
-  line-height: 1.35;
+  font-size: 0.68rem;
+  line-height: 1.25;
 }
 
 .wind-value {
   display: grid;
-  gap: 8px;
+  gap: 5px;
 }
 
 .wind-glyph {
-  font-size: 1rem;
+  font-size: 0.86rem;
   color: #fff6d1;
 }
 
 .wind-meter {
   position: relative;
-  width: 132px;
-  height: 10px;
-  margin-top: 8px;
+  width: 104px;
+  height: 8px;
+  margin-top: 5px;
   border: 2px solid rgba(255, 255, 255, 0.16);
   border-radius: 999px;
   background: linear-gradient(90deg, rgba(98, 195, 255, 0.28), rgba(255, 255, 255, 0.1), rgba(255, 146, 98, 0.28));
@@ -2018,8 +2018,8 @@
 .wind-meter-pointer {
   position: absolute;
   top: 50%;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   border: 2px solid rgba(107, 63, 20, 0.88);
   border-radius: 999px;
   background: linear-gradient(180deg, #fff2bf, #f7b44d);
@@ -2068,10 +2068,10 @@
   width: 100%;
   min-width: 0;
   display: grid;
-  gap: 10px;
+  gap: 6px;
   align-content: start;
   text-align: left;
-  border-radius: 14px;
+  border-radius: 12px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0)),
     rgba(11, 29, 56, 0.74);
@@ -2080,29 +2080,44 @@
 .aim-card-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  gap: 8px;
   align-items: flex-start;
-  padding-bottom: 8px;
+  padding-bottom: 5px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .aim-card-body {
   display: grid;
-  grid-template-columns: minmax(132px, 156px) minmax(0, 1fr) minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: minmax(116px, 132px) minmax(0, 1fr);
+  grid-template-areas:
+    "status weapons"
+    "commands commands";
+  gap: 6px 8px;
   align-items: start;
+}
+
+.aim-card-body > .aim-status-grid {
+  grid-area: status;
+}
+
+.aim-card-body > .aim-panel-section:nth-child(2) {
+  grid-area: weapons;
+}
+
+.aim-card-body > .aim-panel-section:nth-child(3) {
+  grid-area: commands;
 }
 
 .aim-panel-section {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
 }
 
 .aim-section-label {
   color: #aac0d4;
   font-family: var(--font-display), sans-serif;
-  font-size: 0.5rem;
+  font-size: 0.44rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -2126,7 +2141,7 @@
 
 .aim-card-copy {
   display: grid;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -2135,7 +2150,7 @@
   align-items: center;
   gap: 4px;
   color: #ffe8ad;
-  font-size: 0.52rem;
+  font-size: 0.46rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-family: var(--font-display), sans-serif;
@@ -2144,9 +2159,9 @@
 .aim-headline {
   color: #fff9e8;
   font-family: var(--font-display), sans-serif;
-  font-size: clamp(0.62rem, 1.4vw, 0.78rem);
+  font-size: 0.58rem;
   letter-spacing: 0.03em;
-  line-height: 1.35;
+  line-height: 1.25;
   text-transform: uppercase;
 }
 
@@ -2158,11 +2173,11 @@
 
 .aim-card-phase {
   display: grid;
-  gap: 3px;
+  gap: 2px;
   justify-items: end;
-  min-width: 58px;
-  padding: 6px 8px;
-  border-radius: 10px;
+  min-width: 50px;
+  padding: 4px 6px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
@@ -2170,7 +2185,7 @@
 
 .aim-phase-label {
   color: #fff0b8;
-  font-size: 0.6rem;
+  font-size: 0.5rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-family: var(--font-display), sans-serif;
@@ -2179,7 +2194,7 @@
 .aim-phase-timer {
   color: #fff9e8;
   font-family: var(--font-display), sans-serif;
-  font-size: 0.82rem;
+  font-size: 0.68rem;
 }
 
 .aim-phase-steps,
@@ -2222,14 +2237,15 @@
 .aim-status-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: 4px;
 }
 
 .aim-segment {
   display: grid;
-  gap: 4px;
-  padding: 7px;
-  border-radius: 10px;
+  gap: 2px;
+  min-height: 36px;
+  padding: 5px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
@@ -2239,8 +2255,8 @@
 }
 
 .meter {
-  height: 9px;
-  border: 2px solid rgba(255, 255, 255, 0.12);
+  height: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.2);
   overflow: hidden;
@@ -2254,14 +2270,14 @@
 
 .aim-meter-value {
   color: #fff6d1;
-  font-size: 0.66rem;
+  font-size: 0.56rem;
   text-align: right;
 }
 
 .aim-weapon-row,
 .aim-command-row {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .aim-weapon-row {
@@ -2270,32 +2286,33 @@
 
 .aim-shot-slot-card {
   display: grid;
-  grid-template-columns: auto 32px minmax(0, 1fr);
+  grid-template-columns: auto 24px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 10px;
+  gap: 6px;
+  min-height: 36px;
+  padding: 4px 6px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
   min-width: 0;
 
   .aim-shot-slot {
     align-self: start;
-    min-width: 38px;
+    min-width: 32px;
   }
 
   .aim-shot-icon-frame {
     display: grid;
     place-items: center;
-    width: 32px;
-    height: 32px;
+    width: 24px;
+    height: 24px;
     image-rendering: pixelated;
   }
 
   .aim-shot-icon {
     display: block;
-    width: 32px;
-    height: 32px;
+    width: 24px;
+    height: 24px;
   }
 
   .aim-shot-copy {
@@ -2308,9 +2325,10 @@
 .aim-command {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: 10px;
+  gap: 5px;
+  min-height: 30px;
+  padding: 4px 6px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
   min-width: 0;
@@ -2328,33 +2346,33 @@
 .aim-shot-slot,
 .aim-command-detail {
   color: #aac0d4;
-  font-size: 0.56rem;
+  font-size: 0.5rem;
 }
 
 .aim-shot-name {
   color: #fff9e8;
-  font-size: 0.68rem;
-  line-height: 1.25;
+  font-size: 0.58rem;
+  line-height: 1.18;
 }
 
 .aim-shot-detail {
   color: #ffe8ad;
-  font-size: 0.6rem;
-  line-height: 1.3;
+  font-size: 0.52rem;
+  line-height: 1.15;
 }
 
 .aim-command-row {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .aim-command-key {
   color: #fff9e8;
   font-family: var(--font-display), sans-serif;
-  font-size: 0.58rem;
+  font-size: 0.5rem;
   text-transform: uppercase;
   flex-shrink: 0;
-  min-width: 52px;
-  padding: 3px 6px;
+  min-width: 40px;
+  padding: 2px 5px;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.22);
   text-align: center;
@@ -2362,7 +2380,7 @@
 
 .aim-command-action {
   color: #eef8ff;
-  font-size: 0.64rem;
+  font-size: 0.56rem;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2384,6 +2402,14 @@
 
 .aim-command-detail {
   display: none;
+}
+
+.aim-touch-grid {
+  display: none;
+}
+
+.aim-touch-button {
+  touch-action: none;
 }
 
 .status-line {
@@ -2591,15 +2617,11 @@
 
 @media (max-width: 1100px) and (min-width: 861px) {
   .command-panel {
-    max-width: min(680px, calc(100vw - 280px));
+    max-width: min(500px, calc(100vw - 252px));
   }
 
   .aim-card-body {
-    grid-template-columns: minmax(120px, 140px) minmax(0, 1fr);
-  }
-
-  .aim-panel-section:last-child {
-    grid-column: 1 / -1;
+    grid-template-columns: minmax(108px, 124px) minmax(0, 1fr);
   }
 
   .aim-weapon-row {
@@ -2629,10 +2651,10 @@
 
   .aim-card-body {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .aim-status-grid {
-    grid-column: 1 / -1;
+    grid-template-areas:
+      "status status"
+      "weapons weapons"
+      "commands commands";
   }
 
   .battle-chrome .aim-card {
@@ -2712,22 +2734,64 @@
 }
 
 @media (max-width: 580px) {
-  .battle-chrome-top {
-    padding: 8px 8px 0;
+  .game-shell-exit,
+  .game-shell-surrender {
+    top: 6px;
+    padding: 5px 9px;
+    border-radius: 8px;
+    font-size: 0.56rem;
   }
 
-  .battle-chrome-foot {
-    padding: 0 8px 8px;
+  .game-shell-exit {
+    left: 6px;
   }
 
-  .battle-chrome .hud-top {
-    grid-template-columns: minmax(0, 1fr) 86px minmax(0, 1fr);
+  .game-shell-surrender {
+    right: 6px;
+  }
+
+  .battle-chrome {
     gap: 6px;
   }
 
+  .battle-chrome-top {
+    padding: 5px 6px 0;
+  }
+
+  .battle-chrome-foot {
+    padding: 0 6px 6px;
+    gap: 6px;
+  }
+
+  .battle-chrome-main {
+    justify-content: end;
+  }
+
+  .battle-chrome .hud-top {
+    grid-template-columns: minmax(0, 1fr) 76px minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .command-panel {
+    max-height: 42vh;
+  }
+
+  .command-panel .aim-card {
+    overflow: hidden;
+  }
+
   .command-panel .status-line {
-    font-size: 0.56rem;
-    padding: 6px 10px;
+    display: block;
+    min-height: 24px;
+    max-height: 38px;
+    overflow: hidden;
+    padding: 5px 8px;
+    font-size: 0.48rem;
+    line-height: 1.3;
+  }
+
+  .battle-chrome .history-panel {
+    display: none;
   }
 
   .battle-chrome .history-panel.is-open {
@@ -2751,7 +2815,7 @@
 
   .hud-card {
     border-radius: 12px;
-    padding: 7px;
+    padding: 6px;
   }
 
   .hud-player-identity,
@@ -2763,25 +2827,201 @@
   .turn-label,
   .wind-label,
   .aim-label {
-    font-size: 0.46rem;
-    margin-bottom: 4px;
+    font-size: 0.42rem;
+    margin-bottom: 3px;
   }
 
   .hud-meta {
-    font-size: 0.62rem;
+    font-size: 0.54rem;
   }
 
   .wind-meter {
-    width: 72px;
+    width: 58px;
+    height: 7px;
   }
 
   .wind-glyph {
-    font-size: 0.78rem;
+    font-size: 0.68rem;
   }
 
   .aim-card {
-    gap: 8px;
+    gap: 6px;
     border-radius: 12px;
+    padding: 7px;
+  }
+
+  .aim-card-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+    padding-bottom: 5px;
+  }
+
+  .aim-card-phase {
+    min-width: 48px;
+    padding: 4px 6px;
+    border-radius: 8px;
+  }
+
+  .aim-card-body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+    grid-template-areas:
+      "status weapons"
+      "commands commands";
+    gap: 6px;
+  }
+
+  .aim-kicker {
+    font-size: 0.43rem;
+  }
+
+  .aim-title-badge {
+    width: 12px;
+    height: 12px;
+  }
+
+  .aim-headline {
+    font-size: 0.5rem;
+    line-height: 1.25;
+  }
+
+  .aim-phase-label {
+    font-size: 0.45rem;
+  }
+
+  .aim-phase-timer {
+    font-size: 0.64rem;
+  }
+
+  .aim-section-label {
+    display: none;
+  }
+
+  .aim-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .aim-segment {
+    min-height: 34px;
+    gap: 2px;
+    padding: 5px;
+    border-radius: 8px;
+  }
+
+  .aim-value,
+  .aim-meter-value {
+    font-size: 0.54rem;
+  }
+
+  .meter {
+    height: 7px;
+    border-width: 1px;
+  }
+
+  .aim-weapon-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .aim-shot-slot-card {
+    grid-template-columns: auto 20px minmax(0, 1fr);
+    gap: 5px;
+    min-height: 34px;
+    padding: 4px 5px;
+    border-radius: 8px;
+  }
+
+  .aim-shot-slot-card .aim-shot-slot {
+    min-width: 26px;
+    font-size: 0.46rem;
+  }
+
+  .aim-shot-slot-card .aim-shot-icon-frame,
+  .aim-shot-slot-card .aim-shot-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .aim-shot-name {
+    font-size: 0.54rem;
+    line-height: 1.15;
+  }
+
+  .aim-shot-detail {
+    font-size: 0.48rem;
+    line-height: 1.1;
+  }
+
+  .aim-command-row {
+    display: none;
+  }
+
+  .aim-touch-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .game-shell .aim-touch-button {
+    display: grid;
+    min-width: 0;
+    min-height: 42px;
+    place-items: center;
+    gap: 2px;
+    padding: 5px;
+    border: 1px solid rgba(254, 213, 93, 0.28);
+    border-radius: 8px;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0)),
+      rgba(18, 33, 56, 0.9);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    color: #eef8ff;
+    font-size: 0.54rem;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  .game-shell .aim-touch-button:active {
+    border-color: rgba(254, 213, 93, 0.62);
+    background:
+      linear-gradient(180deg, rgba(254, 213, 93, 0.24), rgba(254, 213, 93, 0.08)),
+      rgba(18, 33, 56, 0.96);
+  }
+
+  .aim-touch-key {
+    color: #fff0b8;
+    font-family: var(--font-display), sans-serif;
+    font-size: 0.58rem;
+  }
+
+  .game-shell .aim-touch-fire {
+    border-color: rgba(254, 213, 93, 0.54);
+    background:
+      linear-gradient(180deg, #ffe48e 0%, #f9bc4c 54%, #d98e2d 100%);
+    color: #4f2708;
+  }
+
+  .aim-touch-fire .aim-touch-key {
+    color: #4f2708;
+  }
+}
+
+@media (max-width: 430px) {
+  .battle-chrome-top {
+    padding-top: 3px;
+  }
+
+  .battle-chrome-foot {
+    padding-inline: 4px;
+    padding-bottom: 4px;
+  }
+
+  .command-panel {
+    max-height: 38vh;
+  }
+
+  .aim-card {
+    padding: 6px;
   }
 
   .aim-card-header {
@@ -2789,20 +3029,15 @@
   }
 
   .aim-card-phase {
-    justify-items: start;
+    display: none;
   }
 
   .aim-card-body {
     grid-template-columns: 1fr;
-  }
-
-  .aim-status-grid {
-    grid-column: auto;
-  }
-
-  .aim-weapon-row,
-  .aim-command-row {
-    grid-template-columns: 1fr;
+    grid-template-areas:
+      "status"
+      "weapons"
+      "commands";
   }
 
   .channel-shell {

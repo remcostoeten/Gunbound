@@ -2,13 +2,15 @@
 // Tracks are pre-created HTMLAudioElements keyed by id so the same instance
 // stays alive across mount/unmount and the crossfade is gapless.
 
-import { getAudioVolume, subscribeAudioSettings } from "@/lib/audio-settings";
+import { useEffect } from "react";
+import { getAudioVolume, getUiClickEnabled, subscribeAudioSettings } from "@/lib/audio-settings";
 
 type TrackId = string;
 
 interface Track {
   el: HTMLAudioElement;
   baseVolume: number;
+  src: string;
 }
 
 const tracks = new Map<TrackId, Track>();
@@ -19,6 +21,45 @@ let settingsSubscribed = false;
 
 const FADE_MS = 1400;
 
+export const lobbyAudioBlockedEvent = "gunbound:lobby-audio-blocked";
+export const lobbyAudioStartedEvent = "gunbound:lobby-audio-started";
+
+let currentLobbyTrack: string | null = null;
+
+export const LOBBY_BGM_SRC = "/audio/lobby.mp3";
+
+export function getRandomLobbyTrack(): string {
+  if (typeof window === "undefined") return LOBBY_BGM_SRC;
+  if (!currentLobbyTrack) {
+    currentLobbyTrack = LOBBY_BGM_SRC;
+  }
+  return currentLobbyTrack;
+}
+
+export function resetLobbyTrackSelection(): void {
+  currentLobbyTrack = null;
+}
+
+function notifyPlaybackStarted(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(lobbyAudioStartedEvent));
+}
+
+function notifyPlaybackBlocked(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(lobbyAudioBlockedEvent));
+}
+
+function attemptTrackPlay(playPromise: Promise<void> | undefined): void {
+  if (!playPromise || typeof playPromise.then !== "function") return;
+  void playPromise
+    .then(() => notifyPlaybackStarted())
+    .catch(() => {
+      ensureUnlockListener();
+      notifyPlaybackBlocked();
+    });
+}
+
 function ensureUnlockListener() {
   if (unlocked) return;
   const unlock = () => {
@@ -26,7 +67,7 @@ function ensureUnlockListener() {
     // Try to start whatever is current
     if (current) {
       const t = tracks.get(current);
-      t?.el.play().catch(() => {});
+      attemptTrackPlay(t?.el.play());
     }
     window.removeEventListener("pointerdown", unlock);
     window.removeEventListener("keydown", unlock);
@@ -42,6 +83,12 @@ export function registerTrack(id: TrackId, src: string, volume = 0.5) {
   if (typeof window === "undefined" || typeof Audio === "undefined") return null;
   ensureSettingsSubscription();
   let t = tracks.get(id);
+  if (t && t.src !== src) {
+    t.el.pause();
+    t.el.src = "";
+    tracks.delete(id);
+    t = undefined;
+  }
   if (!t) {
     const el = new Audio(src);
     el.loop = true;
@@ -49,16 +96,13 @@ export function registerTrack(id: TrackId, src: string, volume = 0.5) {
     el.volume = 0;
     // Equal-power-ish crossfade sounds smoother if both tracks share a similar
     // perceived loudness; we still ramp via tick().
-    t = { el, baseVolume: volume };
+    t = { el, baseVolume: volume, src };
     tracks.set(id, t);
   } else {
     t.baseVolume = volume;
   }
   if (current === id) {
-    const p = t.el.play();
-    if (p && typeof p.catch === "function") {
-      p.catch(() => ensureUnlockListener());
-    }
+    attemptTrackPlay(t.el.play());
     scheduleTick();
   }
   return t;
@@ -111,14 +155,42 @@ export function playTrack(id: TrackId) {
   const t = tracks.get(id);
   if (!t) return;
   // Start playing (may be blocked until user gesture)
-  const p = t.el.play();
-  if (p && typeof p.catch === "function") {
-    p.catch(() => ensureUnlockListener());
-  }
+  attemptTrackPlay(t.el.play());
   scheduleTick();
 }
 
 export function stopAll() {
   current = null;
   scheduleTick();
+}
+
+let clickAudio: HTMLAudioElement | null = null;
+
+export function playClick(): void {
+  if (typeof window === "undefined" || typeof Audio === "undefined") return;
+  if (!getUiClickEnabled()) return;
+  if (!clickAudio) {
+    clickAudio = new Audio("/audio/button-click-1.mp3");
+    clickAudio.preload = "auto";
+  }
+  const volume = 0.5 * getAudioVolume("sfx");
+  const clone = clickAudio.cloneNode(true) as HTMLAudioElement;
+  clone.volume = volume;
+  clone.play().catch(() => {});
+}
+
+export function useMenuClickSound() {
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleGlobalClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const button = target.closest("button");
+      if (button && !button.disabled) {
+        playClick();
+      }
+    };
+    window.addEventListener("click", handleGlobalClick);
+    return () => window.removeEventListener("click", handleGlobalClick);
+  }, []);
 }

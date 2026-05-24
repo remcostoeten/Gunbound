@@ -373,5 +373,9 @@ function getPhaseOrder(phase: GamePhase): number {
 }
 
 function formatTimer(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "∞";
+  }
+
   return String(Math.max(0, Math.ceil(value))).padStart(2, "0");
 }

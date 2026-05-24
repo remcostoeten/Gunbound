@@ -1,8 +1,9 @@
-import type { GamePhase } from "@/features/game/types/shared";
+import type { GamePhase, TurnDurationMode } from "@/features/game/types/shared";
 
 export const defaultTargetScore = 2;
 export const defaultRoundLimit = 5;
 export const defaultSuddenDeathTurn = 12;
+export const defaultTurnDurationMode: TurnDurationMode = "timed";
 
 export const phaseDurations: Readonly<Record<GamePhase, number>> = {
   move: 12,
@@ -12,6 +13,14 @@ export const phaseDurations: Readonly<Record<GamePhase, number>> = {
   end: 0
 };
 
-export function getPhaseDuration(phase: GamePhase): number {
+export function getPhaseDuration(phase: GamePhase, turnDurationMode: TurnDurationMode = defaultTurnDurationMode): number {
+  if (turnDurationMode === "infinite" && isPlayerDecisionPhase(phase)) {
+    return Infinity;
+  }
+
   return phaseDurations[phase];
+}
+
+export function isPlayerDecisionPhase(phase: GamePhase): boolean {
+  return phase === "move" || phase === "aim" || phase === "fire";
 }

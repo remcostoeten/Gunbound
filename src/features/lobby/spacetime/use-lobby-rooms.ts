@@ -8,7 +8,7 @@ import { ROOM_STATUS, type RoomStatus } from "@/features/game/spacetime/room-sta
 import { parseMapType } from "@/features/game/constants/map-presentation";
 import { generateRoomCode, generateSeed } from "./generate-code";
 import type { LobbyRoomSettings } from "../types";
-import type { MapType } from "@/features/game/types/shared";
+import type { MapType, TurnDurationMode } from "@/features/game/types/shared";
 const ROOM_CAPACITY = 2;
 
 export type LobbyRoomView = {
@@ -66,7 +66,8 @@ export function useLobbyRooms() {
           settings: {
             mapType: parseMapType(r.mapType),
             targetScore: r.targetScore,
-            roundLimit: r.roundLimit
+            roundLimit: r.roundLimit,
+            turnDurationMode: parseTurnDurationMode(r.turnDurationMode)
           },
           createdAtMicros: r.createdAt.microsSinceUnixEpoch
         } satisfies LobbyRoomView;
@@ -96,6 +97,7 @@ export function useLobbyRooms() {
             mapType: options.mapType,
             targetScore: created.settings.targetScore,
             roundLimit: created.settings.roundLimit,
+            turnDurationMode: created.settings.turnDurationMode,
           });
         }
       }
@@ -125,4 +127,8 @@ export function useLobbyRooms() {
   }, [rooms, joinRoomByCode]);
 
   return { rooms, roomsReady, createRoom, joinRoomByCode, quickJoin };
+}
+
+function parseTurnDurationMode(value: string | undefined): TurnDurationMode {
+  return value === "infinite" || value === "timed" ? value : "timed";
 }
