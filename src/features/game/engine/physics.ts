@@ -1,3 +1,4 @@
+import { applyWeatherToFlightState } from "@/features/game/engine/weather";
 import { tracePlayerCollision, traceTerrainCollision } from "@/features/game/engine/collision";
 import { clamp, getTerrainNormal } from "@/features/game/engine/terrain";
 import type {
@@ -7,7 +8,7 @@ import type {
   ProjectileState,
 } from "@/features/game/types/combat";
 import type { Mobile, Player, TerrainState } from "@/features/game/types/entities";
-import type { Vec2 } from "@/features/game/types/shared";
+import type { Vec2, WeatherState } from "@/features/game/types/shared";
 
 export type ProjectileStep = {
   projectile: ProjectileState | null;
@@ -53,16 +54,38 @@ export function stepProjectile(
   terrain: TerrainState,
   players: [Player, Player],
   wind: Vec2,
+  weather: WeatherState,
   dt: number
 ): ProjectileStep {
   const previousPosition = projectile.position;
-  const velocity = {
+  let velocity = {
     x: projectile.velocity.x + wind.x * 580 * projectile.windScale * dt,
     y: projectile.velocity.y + (530 * projectile.gravityScale + wind.y * 120) * dt
   };
-  const nextPosition = {
+  let nextPosition = {
     x: projectile.position.x + velocity.x * dt,
     y: projectile.position.y + velocity.y * dt
+  };
+  const weatherFlight = applyWeatherToFlightState(
+    {
+      position: nextPosition,
+      previousPosition,
+      velocity,
+      damage: projectile.damage,
+      blastRadius: projectile.blastRadius,
+      forceBoosted: projectile.forceBoosted,
+      tornadoTriggered: projectile.tornadoTriggered
+    },
+    weather
+  );
+  velocity = weatherFlight.velocity;
+  nextPosition = weatherFlight.position;
+  const effectiveProjectile: ProjectileState = {
+    ...projectile,
+    damage: weatherFlight.damage,
+    blastRadius: weatherFlight.blastRadius,
+    forceBoosted: weatherFlight.forceBoosted,
+    tornadoTriggered: weatherFlight.tornadoTriggered
   };
 
   const directHit = tracePlayerCollision(players, projectile.owner, previousPosition, nextPosition, projectile.radius);
@@ -70,7 +93,7 @@ export function stepProjectile(
     return {
       projectile: null,
       bonusExplosion: null,
-      explosion: buildExplosion(projectile, {
+      explosion: buildExplosion(effectiveProjectile, {
         x: directHit.mobile.position.x,
         y: directHit.mobile.position.y - directHit.mobile.height * 0.55
       })
@@ -82,12 +105,12 @@ export function stepProjectile(
       return {
         projectile: null,
         bonusExplosion: null,
-        explosion: buildExplosion(projectile, nextPosition)
+        explosion: buildExplosion(effectiveProjectile, nextPosition)
       };
     }
 
     return {
-      projectile: advanceProjectile(projectile, nextPosition, previousPosition, velocity, dt, projectile.tunnelingTicks - 1),
+      projectile: advanceProjectile(projectile, nextPosition, previousPosition, velocity, dt, projectile.tunnelingTicks - 1, weatherFlight.damage, weatherFlight.blastRadius, weatherFlight.forceBoosted, weatherFlight.tornadoTriggered),
       bonusExplosion: null,
       explosion: null
     };
@@ -97,7 +120,7 @@ export function stepProjectile(
   if (terrainHit !== null) {
     if (projectile.mobileType === "nak" && projectile.weapon === "primary") {
       return {
-        projectile: advanceProjectile(projectile, nextPosition, previousPosition, velocity, dt, 22),
+        projectile: advanceProjectile(projectile, nextPosition, previousPosition, velocity, dt, 22, weatherFlight.damage, weatherFlight.blastRadius, weatherFlight.forceBoosted, weatherFlight.tornadoTriggered),
         bonusExplosion: null,
         explosion: null
       };
@@ -119,7 +142,7 @@ export function stepProjectile(
       if (magnitude > 120) {
         const bounceExplosion: ExplosionState | null =
           projectile.mobileType === "frog"
-            ? buildExplosion(projectile, terrainHit, projectile.damage * 0.35, projectile.blastRadius * 0.55)
+            ? buildExplosion(effectiveProjectile, terrainHit, effectiveProjectile.damage * 0.35, effectiveProjectile.blastRadius * 0.55)
             : null;
 
         return {
@@ -135,15 +158,17 @@ export function stepProjectile(
             owner: projectile.owner,
             mobileType: projectile.mobileType,
             weapon: projectile.weapon,
-            damage: projectile.damage,
-            blastRadius: projectile.blastRadius,
+            damage: effectiveProjectile.damage,
+            blastRadius: effectiveProjectile.blastRadius,
             bouncesLeft: projectile.bouncesLeft - 1,
             tunnelingTicks: 0,
             power: projectile.power,
             life: projectile.life + dt,
             windScale: projectile.windScale,
             gravityScale: projectile.gravityScale,
-            item: projectile.item
+            item: projectile.item,
+            forceBoosted: weatherFlight.forceBoosted,
+            tornadoTriggered: weatherFlight.tornadoTriggered
           },
           bonusExplosion: bounceExplosion,
           explosion: null
@@ -154,7 +179,7 @@ export function stepProjectile(
     return {
       projectile: null,
       bonusExplosion: null,
-      explosion: buildExplosion(projectile, terrainHit)
+      explosion: buildExplosion(effectiveProjectile, terrainHit)
     };
   }
 
@@ -162,15 +187,15 @@ export function stepProjectile(
     return {
       projectile: null,
       bonusExplosion: null,
-      explosion: buildExplosion(projectile, {
+      explosion: buildExplosion(effectiveProjectile, {
         x: clamp(nextPosition.x, 0, terrain.width - 1),
         y: clamp(nextPosition.y, 0, terrain.height - 1)
-      }, projectile.damage * 0.6)
+      }, effectiveProjectile.damage * 0.6)
     };
   }
 
   return {
-    projectile: advanceProjectile(projectile, nextPosition, previousPosition, velocity, dt, 0),
+    projectile: advanceProjectile(projectile, nextPosition, previousPosition, velocity, dt, 0, weatherFlight.damage, weatherFlight.blastRadius, weatherFlight.forceBoosted, weatherFlight.tornadoTriggered),
     bonusExplosion: null,
     explosion: null
   };
@@ -182,7 +207,11 @@ function advanceProjectile(
   previousPosition: Vec2,
   velocity: Vec2,
   dt: number,
-  tunnelingTicks: number
+  tunnelingTicks: number,
+  damage: number,
+  blastRadius: number,
+  forceBoosted: boolean,
+  tornadoTriggered: boolean
 ): ProjectileState {
   return {
     active: true,
@@ -193,15 +222,17 @@ function advanceProjectile(
     owner: projectile.owner,
     mobileType: projectile.mobileType,
     weapon: projectile.weapon,
-    damage: projectile.damage,
-    blastRadius: projectile.blastRadius,
+    damage,
+    blastRadius,
     bouncesLeft: projectile.bouncesLeft,
     tunnelingTicks,
     power: projectile.power,
     life: projectile.life + dt,
     windScale: projectile.windScale,
     gravityScale: projectile.gravityScale,
-    item: projectile.item
+    item: projectile.item,
+    forceBoosted,
+    tornadoTriggered
   };
 }
 

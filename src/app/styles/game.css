@@ -1385,26 +1385,55 @@
 }
 
 .lobby--practice {
-  gap: 14px;
+  gap: 10px;
+  width: min(960px, 100%);
+  padding-top: 6px;
 }
 
-.practice-header {
-  min-height: 132px;
+.practice-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(8, 27, 48, 0.58);
+}
+
+.practice-toolbar-badge {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(254, 213, 93, 0.12);
+  border: 1px solid rgba(254, 213, 93, 0.24);
+  color: #ffe8ad;
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.52rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.practice-toolbar-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
 }
 
 .practice-setup-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.15fr) minmax(240px, 0.78fr);
-  gap: 12px;
+  grid-template-columns: minmax(220px, 0.82fr) minmax(280px, 1.08fr) minmax(200px, 0.72fr);
+  gap: 10px;
   align-items: stretch;
 }
 
 .practice-panel {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   align-content: start;
   min-width: 0;
-  padding: 14px;
+  padding: 10px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(8, 27, 48, 0.66);
@@ -1424,15 +1453,17 @@
 }
 
 .practice-panel-head {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
   min-width: 0;
 }
 
 .practice-panel-kicker {
   color: #fcecb8;
   font-family: var(--font-display), sans-serif;
-  font-size: 0.56rem;
+  font-size: 0.52rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -1441,9 +1472,9 @@
   margin: 0;
   overflow: hidden;
   color: #fff7de;
-  font-size: 1rem;
+  font-size: 0.88rem;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1452,74 +1483,106 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 132px;
+  min-height: 84px;
   border-radius: 8px;
   background: rgba(7, 22, 39, 0.42);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.practice-fields {
-  display: grid;
-  gap: 10px;
+.practice-mobile-preview .lobby-player-sprite {
+  width: 72px;
+  height: 72px;
 }
 
-.practice-select {
+.practice-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.game-shell .practice-fields input,
+.game-shell .practice-fields select,
+.game-shell .practice-fields--compact input,
+.game-shell .practice-fields--compact select {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 2px solid rgba(254, 213, 93, 0.24);
+  border-radius: 8px;
+  background-color: rgba(7, 23, 43, 0.88);
+  color: #eef8ff;
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.15;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  text-transform: none;
+}
+
+.game-shell .practice-fields input::placeholder {
+  color: rgba(199, 217, 234, 0.72);
+}
+
+.game-shell .practice-fields input:hover,
+.game-shell .practice-fields select:hover,
+.game-shell .practice-fields--compact input:hover,
+.game-shell .practice-fields--compact select:hover {
+  border-color: rgba(254, 213, 93, 0.42);
+  background-color: rgba(9, 28, 50, 0.94);
+}
+
+.game-shell .practice-fields input:focus-visible,
+.game-shell .practice-fields select:focus-visible,
+.game-shell .practice-fields--compact input:focus-visible,
+.game-shell .practice-fields--compact select:focus-visible {
+  outline: 3px solid rgba(255, 245, 190, 0.95);
+  outline-offset: 2px;
+  border-color: rgba(254, 213, 93, 0.72);
+}
+
+.game-shell .practice-select {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
-  background:
-    linear-gradient(180deg, rgba(7, 23, 43, 0.94), rgba(12, 33, 61, 0.92)) padding-box,
-    linear-gradient(180deg, rgba(254, 213, 93, 0.34), rgba(255, 255, 255, 0.06)) border-box;
-  border-color: rgba(254, 213, 93, 0.22);
-  padding-right: 42px;
-  position: relative;
-}
-
-.practice-select:hover {
-  border-color: rgba(254, 213, 93, 0.38);
-  background:
-    linear-gradient(180deg, rgba(9, 28, 50, 0.98), rgba(14, 37, 68, 0.96)) padding-box,
-    linear-gradient(180deg, rgba(254, 213, 93, 0.48), rgba(255, 255, 255, 0.08)) border-box;
-}
-
-.practice-select {
+  padding-right: 36px;
+  cursor: pointer;
   background-image:
     linear-gradient(45deg, transparent 50%, rgba(255, 241, 196, 0.96) 50%),
-    linear-gradient(135deg, rgba(255, 241, 196, 0.96) 50%, transparent 50%),
-    linear-gradient(180deg, rgba(7, 23, 43, 0.94), rgba(12, 33, 61, 0.92));
+    linear-gradient(135deg, rgba(255, 241, 196, 0.96) 50%, transparent 50%);
   background-position:
-    calc(100% - 22px) 55%,
-    calc(100% - 16px) 55%,
-    0 0;
+    calc(100% - 18px) calc(50% - 1px),
+    calc(100% - 13px) calc(50% - 1px);
   background-size:
-    6px 6px,
-    6px 6px,
-    100% 100%;
+    5px 5px,
+    5px 5px;
   background-repeat: no-repeat;
 }
 
-.practice-select-trigger {
-  display: flex;
-  align-items: center;
-  min-height: 48px;
-  padding-block: 0;
-  padding-inline: 14px 44px;
-  line-height: 1.25;
+.lobby--practice .lobby-field {
+  gap: 4px;
 }
 
-.practice-select-content {
-  background: rgba(8, 27, 48, 0.98);
-  border-color: rgba(254, 213, 93, 0.24);
-  box-shadow: 0 24px 48px rgba(5, 17, 34, 0.42);
+.lobby--practice .lobby-field label {
+  font-size: 0.52rem;
 }
 
-.practice-select-content [data-radix-select-viewport] {
+.lobby--practice .lobby-player-profile-role {
+  font-size: 0.64rem;
+}
+
+.lobby--practice .lobby-player-profile-copy,
+.lobby--practice .practice-map-copy {
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.lobby--practice .lobby-stat {
   padding: 6px;
 }
 
-.practice-select-content [data-radix-select-item] {
-  border-radius: 6px;
-  margin-bottom: 2px;
+.lobby--practice .lobby-stat-val {
+  font-size: 0.82rem;
+}
+
+.lobby--practice .lobby-stat-label {
+  font-size: 0.5rem;
 }
 
 .practice-fields--compact {
@@ -1557,7 +1620,7 @@
 .practice-map-preview {
   display: block;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 16 / 8;
   object-fit: cover;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -1573,13 +1636,179 @@
 .practice-actions {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-  gap: 10px;
-  margin-top: 4px;
+  gap: 8px;
+  margin-top: 2px;
 }
 
 .practice-actions .lobby-btn {
   width: 100%;
-  min-height: 48px;
+  min-height: 40px;
+  padding: 8px 12px;
+}
+
+@media (max-width: 768px) {
+  .game-shell .screen:has(.lobby--practice) {
+    padding:
+      calc(10px + env(safe-area-inset-top, 0px))
+      calc(10px + env(safe-area-inset-right, 0px))
+      calc(10px + env(safe-area-inset-bottom, 0px))
+      calc(10px + env(safe-area-inset-left, 0px));
+  }
+
+  .lobby--practice {
+    width: 100%;
+    max-height: none;
+    padding:
+      0
+      0
+      calc(8px + env(safe-area-inset-bottom, 0px));
+    gap: 8px;
+  }
+
+  .practice-toolbar {
+    flex-wrap: wrap;
+    padding: 8px 10px;
+  }
+
+  .practice-toolbar-copy {
+    flex: 1 1 100%;
+    font-size: 0.72rem;
+  }
+
+  .practice-setup-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .lobby--practice .practice-panel--player {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    grid-template-areas:
+      "head head"
+      "preview fields"
+      "profile profile"
+      "stats stats";
+    align-items: start;
+    column-gap: 10px;
+  }
+
+  .lobby--practice .practice-panel--player .practice-panel-head {
+    grid-area: head;
+  }
+
+  .lobby--practice .practice-panel--player .practice-mobile-preview {
+    grid-area: preview;
+    min-height: 72px;
+  }
+
+  .lobby--practice .practice-panel--player .practice-fields {
+    grid-area: fields;
+    align-self: center;
+  }
+
+  .lobby--practice .practice-panel--player .practice-profile {
+    grid-area: profile;
+  }
+
+  .lobby--practice .practice-panel--player .practice-stats {
+    grid-area: stats;
+  }
+
+  .lobby--practice .practice-panel--bot {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px 10px;
+  }
+
+  .lobby--practice .practice-panel--bot .practice-mobile-preview,
+  .lobby--practice .practice-panel--bot .practice-profile {
+    display: none;
+  }
+
+  .lobby--practice .practice-panel--bot .practice-bot-summary {
+    grid-column: 1 / -1;
+    gap: 6px;
+  }
+
+  .lobby--practice .practice-fields--compact {
+    grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(72px, 0.8fr));
+  }
+
+  .game-shell .practice-fields input,
+  .game-shell .practice-fields select,
+  .game-shell .practice-fields--compact input,
+  .game-shell .practice-fields--compact select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .lobby--practice .practice-panel--match .practice-actions {
+    position: sticky;
+    bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+    z-index: 2;
+    padding-top: 8px;
+    margin-top: 2px;
+    background:
+      linear-gradient(180deg, rgba(8, 27, 48, 0), rgba(8, 27, 48, 0.92) 28%);
+  }
+
+  .practice-actions .lobby-btn {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 430px) {
+  .game-shell .screen:has(.lobby--practice) {
+    padding:
+      calc(8px + env(safe-area-inset-top, 0px))
+      calc(8px + env(safe-area-inset-right, 0px))
+      calc(8px + env(safe-area-inset-bottom, 0px))
+      calc(8px + env(safe-area-inset-left, 0px));
+  }
+
+  .lobby--practice .practice-panel {
+    padding: 8px;
+  }
+
+  .lobby--practice .practice-panel--player {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "head"
+      "preview"
+      "fields"
+      "profile"
+      "stats";
+  }
+
+  .lobby--practice .practice-panel--player .practice-mobile-preview {
+    min-height: 68px;
+  }
+
+  .lobby--practice .practice-mobile-preview .lobby-player-sprite {
+    width: 64px;
+    height: 64px;
+  }
+
+  .lobby--practice .practice-fields--compact {
+    grid-template-columns: 1fr;
+  }
+
+  .practice-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .lobby--practice .practice-map-copy {
+    display: none;
+  }
+
+  .lobby--practice .lobby-player-profile-copy {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
 }
 
 /* ====== MATCH RESULT ====== */
@@ -2433,6 +2662,51 @@
   color: #d7e8f8;
 }
 
+.weather-readout {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+  padding: 5px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  text-align: left;
+}
+
+.weather-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 241, 196, 0.3), rgba(247, 180, 77, 0.18));
+  border: 1px solid rgba(255, 230, 163, 0.34);
+  color: #fff4ca;
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.weather-copy {
+  display: grid;
+  gap: 2px;
+  color: #eff7ff;
+}
+
+.weather-copy b {
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.weather-copy small {
+  font-size: 0.48rem;
+  line-height: 1.25;
+  color: #c7d9ea;
+}
+
 .turn-value {
   color: #fff6d1;
 }
@@ -2644,6 +2918,14 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
+}
+
+.aim-angle-detail {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.5rem;
+  line-height: 1.2;
+  color: #c7d9ea;
 }
 
 .aim-segment {
@@ -3023,6 +3305,14 @@
   .practice-fields--compact,
   .practice-actions {
     grid-template-columns: 1fr;
+  }
+
+  .lobby--practice {
+    width: 100%;
+  }
+
+  .practice-toolbar {
+    text-align: left;
   }
 
   .setup-grid,

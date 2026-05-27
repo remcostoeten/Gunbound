@@ -1,3 +1,4 @@
+import { getTrueAngleDamageScale } from "@/features/game/engine/aiming";
 import { getMuzzlePosition, getLaunchRadians } from "@/features/game/engine/physics";
 import { createWeaponProfile } from "@/features/game/engine/weapons";
 import type { ProjectileState } from "@/features/game/types/combat";
@@ -10,6 +11,7 @@ export function createProjectile(mobile: Mobile, owner: PlayerId, power: number,
   const muzzle = getMuzzlePosition(mobile, launchAngle);
   const damageScale = item === "power" ? 1.35 : 1;
   const blastRadiusScale = item === "bunge" ? 1.28 : 1;
+  const trueAngleDamageScale = getTrueAngleDamageScale(mobile.type, mobile.angle);
 
   return {
     active: true,
@@ -23,7 +25,7 @@ export function createProjectile(mobile: Mobile, owner: PlayerId, power: number,
     owner,
     mobileType: mobile.type,
     weapon: mobile.weapon,
-    damage: profile.damage * damageScale,
+    damage: profile.damage * damageScale * trueAngleDamageScale,
     blastRadius: profile.blastRadius * blastRadiusScale,
     bouncesLeft: profile.bouncesLeft,
     tunnelingTicks: 0,
@@ -31,6 +33,8 @@ export function createProjectile(mobile: Mobile, owner: PlayerId, power: number,
     life: 0,
     windScale: profile.windScale,
     gravityScale: profile.gravityScale,
-    item
+    item,
+    forceBoosted: false,
+    tornadoTriggered: false
   };
 }

@@ -1,9 +1,11 @@
 "use client";
 
+import { getWeatherDetail, getWeatherGlyph, getWeatherLabel } from "@/features/game/engine/weather";
 import { getWindDirectionLabel, getWindLabel } from "@/features/game/engine/wind";
 import { useGameState } from "@/features/game/hooks/use-game-state";
 import {
   selectPlayers,
+  selectWeather,
   selectTurn,
   selectTurnDelays,
   selectTurnElapsed,
@@ -16,6 +18,7 @@ export function Hud(): React.JSX.Element {
   const turnDelays = useGameState(selectTurnDelays);
   const turnElapsed = useGameState(selectTurnElapsed);
   const wind = useGameState(selectWind);
+  const weather = useGameState(selectWeather);
   const currentPlayer = players[turn - 1];
 
   return (
@@ -53,6 +56,13 @@ export function Hud(): React.JSX.Element {
           <div className="wind-meter">
             <div className="wind-meter-center" />
             <div className="wind-meter-pointer" style={{ left: getWindMeterLeft(wind.x) }} />
+          </div>
+          <div className="weather-readout" aria-label="Current weather">
+            <span className="weather-chip">{getWeatherGlyph(weather)}</span>
+            <span className="weather-copy">
+              <b>{getWeatherLabel(weather)}</b>
+              <small>{getWeatherDetail(weather)}</small>
+            </span>
           </div>
           <div className="delay-readout" aria-label="Turn delay queue">
             <span>P1 {formatDelay(turnDelays[0])}</span>

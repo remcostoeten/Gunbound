@@ -44,6 +44,8 @@ export type ProjectileState = {
   windScale: number;
   gravityScale: number;
   item: BattleItemType | null;
+  forceBoosted: boolean;
+  tornadoTriggered: boolean;
 };
 
 export type ExplosionState = {

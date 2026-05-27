@@ -7,10 +7,9 @@ import {
   defaultSuddenDeathTurn,
   defaultTargetScore,
   defaultTurnDurationMode,
-  getPhaseDuration,
-  maxAimAngle,
-  minAimAngle
+  getPhaseDuration
 } from "@/features/game/constants/gameplay";
+import { clampMobileAngle } from "@/features/game/engine/aiming";
 import {
   type BattleItemInventory,
   consumeBattleItem,
@@ -27,6 +26,7 @@ import { applyExplosionDamage, stepProjectile } from "@/features/game/engine/phy
 import { advanceRoundTurn, getRoundWinner, resolveMatchContinuation, resolveRoundWinner } from "@/features/game/engine/rounds";
 import { normalizeSeed } from "@/features/game/engine/random";
 import { carveCrater, clamp, getSurfaceY } from "@/features/game/engine/terrain";
+import { createDefaultWeather, isWeatherItemLocked } from "@/features/game/engine/weather";
 import { canSelectWeapon, getNextWeapon, getWeaponDisplayName, shouldConsumeSpecialCharge } from "@/features/game/engine/weapons";
 import { appendHistory, appendMatchEventEntries, createMatchEvent as buildMatchEvent, resetHistoryEventCounter } from "@/features/game/factories/create-match-event";
 import { createPlaceholderPlayers } from "@/features/game/factories/create-player";
@@ -103,6 +103,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
     phase: "move",
     turn: 1,
     wind: { x: 0, y: 0 },
+    weather: createDefaultWeather(),
     players: createPlaceholderPlayers(defaultSetup),
     tick: 0,
     seed: normalizeSeed(defaultSetup.seedText),
@@ -164,6 +165,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         scene: "start",
         phase: "move",
         projectile: null,
+        weather: createDefaultWeather(),
         charging: false,
         power: 0,
         turnElapsed: 0,
@@ -230,6 +232,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       let nextPhase = state.phase;
       let nextPlayers = clonePlayers(state.players);
       let nextProjectile = state.projectile;
+      let nextWeather = state.weather;
       let nextPower = state.power;
       let nextCharging = state.charging;
       let nextWinner = state.winner;
@@ -315,7 +318,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       }
 
       if (nextProjectile !== null && nextTerrain !== null) {
-        const step = stepProjectile(nextProjectile, nextTerrain, nextPlayers, state.wind, dt);
+        const step = stepProjectile(nextProjectile, nextTerrain, nextPlayers, state.wind, state.weather, dt);
         nextProjectile = step.projectile;
 
         if (step.bonusExplosion !== null) {
@@ -389,7 +392,9 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
 
       if (state.phase !== "end" && nextPhaseTimer <= 0) {
         if (nextCharging && state.terrain !== null) {
-          const activeItem = getUsableBattleItem(nextBattleItemInventories[state.turn - 1], nextSelectedBattleItems[state.turn - 1]);
+          const activeItem = isWeatherItemLocked(state.weather)
+            ? null
+            : getUsableBattleItem(nextBattleItemInventories[state.turn - 1], nextSelectedBattleItems[state.turn - 1]);
           const fired = forceReleaseCharge(nextPlayers, state.turn, state.turnCount, nextPower, nextTurnElapsed, activeItem);
           nextPlayers = fired.players;
           nextProjectile = fired.projectile;
@@ -451,6 +456,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
             players: resolution.players,
             turn: advanced.turn,
             wind: advanced.wind,
+            weather: advanced.weather,
             phase: "end",
             projectile: null,
             power: 0,
@@ -488,6 +494,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
           players: advanced.players,
           turn: advanced.turn,
           wind: advanced.wind,
+          weather: advanced.weather,
           phase: "move",
           projectile: null,
           power: 0,
@@ -536,6 +543,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
 
       set({
         scene: nextScene,
+        weather: nextWeather,
         players: nextPlayers,
         projectile: nextProjectile,
         power: nextPower,
@@ -736,6 +744,13 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         return;
       }
 
+      if (isWeatherItemLocked(state.weather)) {
+        set({
+          message: "Eclipse blocks items this turn."
+        });
+        return;
+      }
+
       const currentInventory = state.battleItemInventories[state.turn - 1];
       const nextItem = getNextAvailableBattleItem(currentInventory, state.selectedBattleItems[state.turn - 1]);
       const selectedBattleItems: [BattleItemType | null, BattleItemType | null] = [
@@ -813,6 +828,13 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         return;
       }
 
+      if (isWeatherItemLocked(state.weather)) {
+        set({
+          message: "Eclipse blocks items this turn."
+        });
+        return;
+      }
+
       if (item !== null && !hasBattleItem(state.battleItemInventories[state.turn - 1], item)) {
         return;
       }
@@ -858,11 +880,13 @@ function fireCurrentShot(
 
   const players = clonePlayers(state.players);
   const currentPlayer = players[state.turn - 1];
-  currentPlayer.mobile.angle = clamp(input.angle, minAimAngle, maxAimAngle);
+  currentPlayer.mobile.angle = clampMobileAngle(currentPlayer.mobile.type, input.angle);
   currentPlayer.mobile.weapon = input.weapon;
 
   const power = clamp(input.power, 0.08, 1);
-  const requestedItem = input.item === undefined ? state.selectedBattleItems[state.turn - 1] : input.item;
+  const requestedItem = isWeatherItemLocked(state.weather)
+    ? null
+    : input.item === undefined ? state.selectedBattleItems[state.turn - 1] : input.item;
   const activeItem = getUsableBattleItem(state.battleItemInventories[state.turn - 1], requestedItem);
   const projectile = createProjectile(currentPlayer.mobile, state.turn, power, activeItem);
   const turnDelay = input.turnDelay ?? calculateShotDelay(currentPlayer.mobile, currentPlayer.mobile.weapon, state.turnElapsed) + getBattleItemDelay(activeItem);
@@ -1030,7 +1054,7 @@ function applyAimInput(players: [Player, Player], turn: 1 | 2, input: InputState
   }
 
   if (delta !== 0) {
-    mobile.angle = clamp(mobile.angle + delta, minAimAngle, maxAimAngle);
+    mobile.angle = clampMobileAngle(mobile.type, mobile.angle + delta);
   }
 
   return nextPlayers;

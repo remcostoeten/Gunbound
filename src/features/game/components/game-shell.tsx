@@ -11,7 +11,6 @@ import { GameCanvas } from "@/features/game/components/game-canvas";
 import { HistoryPanel } from "@/features/game/components/history-panel";
 import { Hud } from "@/features/game/components/hud";
 import { TurnBanner } from "@/features/game/components/turn-banner";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useGameState } from "@/features/game/hooks/use-game-state";
 import { lobbyMatchStartAudioEvent, useGunboundSfx } from "@/features/game/hooks/use-gunbound-sfx";
 import { useSoloBot } from "@/features/game/hooks/use-solo-bot";
@@ -286,9 +285,10 @@ export function GameShell({ spacetimeRoomId, soloPractice = false, soloPlayerNam
     useEffect(function prepareLocalSoloPractice(): void {
         if (!soloPractice || isSpacetimeMatch) return;
 
+        const accountName = soloPlayerName?.trim() || "";
         setFormState((current) => ({
             ...current,
-            playerOneName: soloPlayerName?.trim() || current.playerOneName.trim() || "Player 1",
+            playerOneName: accountName || current.playerOneName.trim() || "Player 1",
             playerTwoName: "Practice Bot",
             playerTwoTitle: "Oracle",
             playerTwoAccent: "coral",
@@ -367,6 +367,7 @@ export function GameShell({ spacetimeRoomId, soloPractice = false, soloPlayerNam
                             matchStarting,
                             showLobbyAudioNotice,
                             soloPractice,
+                            soloPlayerName,
                         )
                 : null}
             {scene === "end"
@@ -576,8 +577,11 @@ function renderStartScreen(
     matchStarting: boolean,
     showLobbyAudioNotice: boolean,
     vsBotMode: boolean,
+    accountPlayerName?: string | null,
 ): React.JSX.Element {
     const selectedMap = getMapPresentation(formState.mapType);
+    const lockedPlayerName = accountPlayerName?.trim() || "";
+    const isPlayerNameLocked = lockedPlayerName.length > 0;
     if (vsBotMode) {
         return renderPracticeStartScreen();
     }
@@ -779,13 +783,6 @@ function renderStartScreen(
         });
     }
 
-    function handlePracticePlayerOneMobileChange(value: MobileType): void {
-        setFormState({
-            ...formState,
-            playerOneMobile: value,
-        });
-    }
-
     function handlePlayerTwoMobileChange(
         event: React.ChangeEvent<HTMLSelectElement>,
     ): void {
@@ -879,7 +876,9 @@ function renderStartScreen(
     function handleStartClick(): void {
         queueMatchStart({
             ...formState,
-            playerOneName: formState.playerOneName.trim() || "Player 1",
+            playerOneName: isPlayerNameLocked
+                ? lockedPlayerName
+                : formState.playerOneName.trim() || "Player 1",
             playerTwoName: vsBotMode ? "Practice Bot" : formState.playerTwoName.trim() || "Player 2",
             playerTwoTitle: vsBotMode ? "Oracle" : formState.playerTwoTitle,
             playerTwoAccent: vsBotMode ? "coral" : formState.playerTwoAccent,
@@ -891,25 +890,20 @@ function renderStartScreen(
     function renderPracticeStartScreen(): React.JSX.Element {
         const playerPresentation = getMobilePresentation(formState.playerOneMobile);
         const botPresentation = getMobilePresentation(formState.playerTwoMobile);
+        const displayPlayerName = isPlayerNameLocked
+            ? lockedPlayerName
+            : formState.playerOneName.trim() || "Player 1";
 
         return (
             <div className="screen">
                 <div className="lobby-bg-particles" />
                 <div className="lobby-bg-clouds" />
                 <div className="lobby lobby--practice">
-                    <div className="lobby-header practice-header">
-                        <span className="lobby-channel-badge">Vs Bot</span>
-                        <div className="lobby-title-group">
-                            <span className="lobby-kicker">Practice Setup</span>
-                            <h1 className="lobby-title">Practice Room</h1>
-                            <span className="lobby-subtitle">
-                                Pick your mobile, choose a map, and start training.
-                            </span>
-                        </div>
-                        <div className="lobby-room-info">
-                            <span className="lobby-room-tag">{selectedMap.label}</span>
-                            <span className="lobby-room-name">{formState.targetScore} target / {formState.roundLimit} rounds</span>
-                        </div>
+                    <div className="practice-toolbar">
+                        <span className="practice-toolbar-badge">Vs Bot</span>
+                        <p className="practice-toolbar-copy">
+                            Pick your mobile, map, and start training.
+                        </p>
                     </div>
                     {showLobbyAudioNotice ? (
                         <div className="lobby-audio-notice" role="status">
@@ -922,36 +916,39 @@ function renderStartScreen(
                         <section className="practice-panel practice-panel--player" aria-labelledby="practice-player-title">
                             <div className="practice-panel-head">
                                 <span className="practice-panel-kicker">You</span>
-                                <h2 id="practice-player-title" className="practice-panel-title">{formState.playerOneName.trim() || "Player 1"}</h2>
+                                <h2 id="practice-player-title" className="practice-panel-title">{displayPlayerName}</h2>
                             </div>
                             {renderPracticeMobilePreview(formState.playerOneMobile)}
                             <div className="practice-fields">
-                                <div className="lobby-field">
-                                    <label htmlFor="practice-name">Name</label>
-                                    <input
-                                        id="practice-name"
-                                        value={formState.playerOneName}
-                                        onChange={handlePlayerOneNameChange}
-                                        maxLength={18}
-                                        name="practice-player-name"
-                                        autoComplete="off"
-                                        placeholder="Player 1"
-                                    />
-                                </div>
+                                {!isPlayerNameLocked ? (
+                                    <div className="lobby-field">
+                                        <label htmlFor="practice-name">Name</label>
+                                        <input
+                                            id="practice-name"
+                                            value={formState.playerOneName}
+                                            onChange={handlePlayerOneNameChange}
+                                            maxLength={18}
+                                            name="practice-player-name"
+                                            autoComplete="off"
+                                            placeholder="Player 1"
+                                        />
+                                    </div>
+                                ) : null}
                                 <div className="lobby-field">
                                     <label htmlFor="practice-mobile">Mobile</label>
-                                    <Select value={formState.playerOneMobile} onValueChange={handlePracticePlayerOneMobileChange}>
-                                        <SelectTrigger id="practice-mobile" className="practice-select practice-select-trigger">
-                                            <SelectValue placeholder="Select mobile" />
-                                        </SelectTrigger>
-                                        <SelectContent className="practice-select-content">
-                                            {mobilePresentationOptions.map((option) => (
-                                                <SelectItem key={option.value} value={option.value}>
-                                                    {option.label}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
+                                    <select
+                                        id="practice-mobile"
+                                        name="practice-mobile"
+                                        className="practice-select"
+                                        value={formState.playerOneMobile}
+                                        onChange={handlePlayerOneMobileChange}
+                                    >
+                                        {mobilePresentationOptions.map((option) => (
+                                            <option key={option.value} value={option.value}>
+                                                {option.label}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
                             <div className="practice-profile">

@@ -1,8 +1,9 @@
 import { getBattleItemDisplayName, getNextAvailableBattleItem, type BattleItemInventory } from "@/features/game/engine/battle-items";
+import { isWeatherItemLocked } from "@/features/game/engine/weather";
 import { canSelectWeapon, getWeaponDisplayName } from "@/features/game/engine/weapons";
 import type { Player } from "@/features/game/types/entities";
 import type { TurnGuide, TurnGuideCommand, TurnGuidePhaseStep, TurnGuideWeaponSlot } from "@/features/game/types/presentation";
-import type { BattleItemType, GamePhase } from "@/features/game/types/shared";
+import type { BattleItemType, GamePhase, WeatherState } from "@/features/game/types/shared";
 
 export function createTurnGuide(
   player: Player,
@@ -13,7 +14,8 @@ export function createTurnGuide(
   turnCount: number,
   turnMoveRemaining: number,
   battleItemInventory: BattleItemInventory,
-  selectedBattleItem: BattleItemType | null
+  selectedBattleItem: BattleItemType | null,
+  weather: WeatherState
 ): TurnGuide {
   const ssAvailable = canSelectWeapon("ss", player.mobile.specialCharges, turnCount);
 
@@ -24,7 +26,7 @@ export function createTurnGuide(
     tone: getTurnGuideTone(phase),
     timerLabel: formatTimer(phaseTimer),
     powerPercent: charging ? Math.round(power * 100) : 0,
-    commands: createTurnGuideCommands(player, phase, charging, ssAvailable, turnMoveRemaining, battleItemInventory, selectedBattleItem),
+    commands: createTurnGuideCommands(player, phase, charging, ssAvailable, turnMoveRemaining, battleItemInventory, selectedBattleItem, weather),
     weaponSlots: createTurnGuideWeaponSlots(player, turnCount, ssAvailable),
     phaseSteps: createTurnGuidePhaseSteps(phase)
   };
@@ -57,13 +59,14 @@ function createTurnGuideCommands(
   ssAvailable: boolean,
   turnMoveRemaining: number,
   battleItemInventory: BattleItemInventory,
-  selectedBattleItem: BattleItemType | null
+  selectedBattleItem: BattleItemType | null,
+  weather: WeatherState
 ): TurnGuideCommand[] {
   return [
     createTurnGuideCommand("A / D", "Move", getMoveDetailLabel(phase, charging, turnMoveRemaining), getMoveCommandState(phase, charging, turnMoveRemaining)),
     createTurnGuideCommand("Up / Down", "Aim", getAimDetailLabel(phase, charging), getAimCommandState(phase, charging)),
     createTurnGuideCommand("Q", "Shot", getWeaponDetailLabel(player, phase, charging, ssAvailable), getWeaponCommandState(player, phase, charging)),
-    createTurnGuideCommand("E", "Item", getItemDetailLabel(phase, charging, battleItemInventory, selectedBattleItem), getItemCommandState(phase, charging, battleItemInventory)),
+    createTurnGuideCommand("E", "Item", getItemDetailLabel(phase, charging, battleItemInventory, selectedBattleItem, weather), getItemCommandState(phase, charging, battleItemInventory, weather)),
     createTurnGuideCommand("Space", charging ? "Release" : "Charge", getFireDetailLabel(phase, charging), getFireCommandState(phase, charging))
   ];
 }
@@ -286,7 +289,8 @@ function getItemDetailLabel(
   phase: GamePhase,
   charging: boolean,
   inventory: BattleItemInventory,
-  selectedItem: BattleItemType | null
+  selectedItem: BattleItemType | null,
+  weather: WeatherState
 ): string {
   if (charging) {
     return selectedItem === null ? "None" : getBattleItemDisplayName(selectedItem);
@@ -294,6 +298,10 @@ function getItemDetailLabel(
 
   if (phase === "resolve" || phase === "end" || phase === "fire") {
     return "Locked";
+  }
+
+  if (isWeatherItemLocked(weather)) {
+    return "Eclipse";
   }
 
   if (selectedItem !== null) {
@@ -347,9 +355,14 @@ function getWeaponCommandState(
 function getItemCommandState(
   phase: GamePhase,
   charging: boolean,
-  inventory: BattleItemInventory
+  inventory: BattleItemInventory,
+  weather: WeatherState
 ): TurnGuideCommand["state"] {
   if (charging || phase === "fire" || phase === "resolve" || phase === "end") {
+    return "locked";
+  }
+
+  if (isWeatherItemLocked(weather)) {
     return "locked";
   }
 

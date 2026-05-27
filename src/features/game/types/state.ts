@@ -3,7 +3,7 @@ import type { TurnDelayQueue } from "@/features/game/engine/delay";
 import type { BonusBox, Player, TerrainState } from "@/features/game/types/entities";
 import type { DamagePopup, ExplosionVisual, TurnAnnouncement } from "@/features/game/types/effects";
 import type { MatchEvent } from "@/features/game/types/events";
-import type { BattleItemType, GamePhase, GameScene, MapType, MobileType, PlayerAccent, PlayerId, PlayerTitle, TurnDurationMode, Vec2 } from "@/features/game/types/shared";
+import type { BattleItemType, GamePhase, GameScene, MapType, MobileType, PlayerAccent, PlayerId, PlayerTitle, TurnDurationMode, Vec2, WeatherState } from "@/features/game/types/shared";
 import type { BattleItemInventory } from "@/features/game/engine/battle-items";
 
 export type MatchConfig = {
@@ -35,6 +35,7 @@ export type GameState = {
   phase: GamePhase;
   turn: PlayerId;
   wind: Vec2;
+  weather: WeatherState;
   players: [Player, Player];
   tick: number;
   seed: number;

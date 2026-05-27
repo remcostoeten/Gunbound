@@ -14,6 +14,10 @@ export function selectWind(state: GameStoreState) {
   return state.wind;
 }
 
+export function selectWeather(state: GameStoreState) {
+  return state.weather;
+}
+
 export function selectPhase(state: GameStoreState) {
   return state.phase;
 }

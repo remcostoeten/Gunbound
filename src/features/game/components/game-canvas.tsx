@@ -2,12 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import { getBonusIconPath } from "@/features/game/constants/weapon-icons";
+import { isTrueAngle } from "@/features/game/engine/aiming";
 import { createCameraRig, getCameraFrame, stepCameraRig } from "@/features/game/engine/camera";
 import { createVisualEffectsState, stepVisualEffectsState } from "@/features/game/engine/effects";
 import { createMapDecor } from "@/features/game/engine/map-decor";
 import { createProjectileRenderStyle, getProjectileImpactStyle, getProjectileTrailStyle } from "@/features/game/engine/projectile-presentation";
 import { clamp } from "@/features/game/engine/terrain";
 import { getSkyPalette, getTerrainPalette } from "@/features/game/engine/terrain-theme";
+import { applyWeatherToFlightState } from "@/features/game/engine/weather";
 import { getMobileSpriteFrame, getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
 import { getLaunchRadians, getMuzzlePosition } from "@/features/game/engine/physics";
 import { getMobileRiderMount, getMobileRiderSpriteSource } from "@/features/game/engine/rider-sprites";
@@ -35,7 +37,7 @@ import type {
   WindLeaf
 } from "@/features/game/types/effects";
 import type { CameraFrame, MapDecorPlan, MapDecorPrimitive } from "@/features/game/types/presentation";
-import type { BonusType, MobileType, PlayerAccent, TerrainTheme, Vec2, WeaponType } from "@/features/game/types/shared";
+import type { BonusType, MobileType, PlayerAccent, TerrainTheme, Vec2, WeatherState, WeaponType } from "@/features/game/types/shared";
 import type { InputState } from "@/features/game/types/state";
 
 type SpriteCache = {
@@ -202,6 +204,7 @@ export function GameCanvas(): React.JSX.Element {
     applyCameraFrame(context, cameraFrame);
 
     drawBackground(context, state.terrain?.theme || "meadow", visualTimeRef.current, mapDecor);
+    drawWeatherOverlay(context, state.weather, visualTimeRef.current);
 
     if (state.terrain !== null) {
       drawTerrain(context, state.terrain);
@@ -215,7 +218,7 @@ export function GameCanvas(): React.JSX.Element {
     drawBonusBoxes(context, state.bonusBoxes, bonusIconCacheRef.current);
 
     if (state.scene === "playing" && state.projectile === null && state.terrain !== null) {
-      drawAimGuide(context, state.players[state.turn - 1], state.wind, state.power, state.charging, state.terrain);
+      drawAimGuide(context, state.players[state.turn - 1], state.wind, state.weather, state.power, state.charging, state.terrain);
     }
 
     drawProjectileTrail(context, visualEffects.trail, visualEffects.lastMobileType, visualEffects.lastWeapon);
@@ -530,9 +533,10 @@ function drawAngleBadge(context: CanvasRenderingContext2D, player: Player, accen
   const muzzle = getMuzzlePosition(player.mobile, launchRadians);
   const directionX = Math.cos(launchRadians);
   const directionY = Math.sin(launchRadians);
+  const trueAngleActive = isTrueAngle(player.mobile.type, player.mobile.angle);
   const isRearArc = player.mobile.angle > 90;
   const label = Math.round(player.mobile.angle) + " DEG";
-  const modeLabel = isRearArc ? "REAR" : "FRONT";
+  const modeLabel = trueAngleActive ? "TRUE" : isRearArc ? "REAR" : "FRONT";
   const width = 68;
   const height = 22;
   const anchorX = clamp(muzzle.x + directionX * 24, width * 0.5 + 10, worldWidth - width * 0.5 - 10);
@@ -1161,15 +1165,29 @@ function drawDamagePopups(context: CanvasRenderingContext2D, damagePopups: Damag
   }
 }
 
-function drawAimGuide(context: CanvasRenderingContext2D, player: Player, wind: { x: number; y: number }, power: number, charging: boolean, terrain: TerrainState): void {
+function drawAimGuide(
+  context: CanvasRenderingContext2D,
+  player: Player,
+  wind: { x: number; y: number },
+  weather: WeatherState,
+  power: number,
+  charging: boolean,
+  terrain: TerrainState
+): void {
   const launchRadians = getLaunchRadians(player.mobile);
   const muzzle = getMuzzlePosition(player.mobile, launchRadians);
   const guidePower = charging ? Math.max(0.14, power) : 0.56;
   const profile = createWeaponProfile(player.mobile.type, player.mobile.weapon, guidePower);
-  let velocityX = Math.cos(launchRadians) * profile.speed;
-  let velocityY = -Math.sin(launchRadians) * profile.speed;
+  let damage = profile.damage;
+  let blastRadius = profile.blastRadius;
+  let velocity = {
+    x: Math.cos(launchRadians) * profile.speed,
+    y: -Math.sin(launchRadians) * profile.speed
+  };
   let x = muzzle.x;
   let y = muzzle.y;
+  let forceBoosted = false;
+  let tornadoTriggered = false;
   let step = 0;
 
   context.strokeStyle = "rgba(255, 255, 255, 0.48)";
@@ -1177,10 +1195,35 @@ function drawAimGuide(context: CanvasRenderingContext2D, player: Player, wind: {
   context.beginPath();
 
   while (step < 28) {
-    velocityX += wind.x * 580 * profile.windScale * 0.08;
-    velocityY += (530 * profile.gravityScale + wind.y * 120) * 0.08;
-    x += velocityX * 0.08;
-    y += velocityY * 0.08;
+    const previous = { x, y };
+    velocity = {
+      x: velocity.x + wind.x * 580 * profile.windScale * 0.08,
+      y: velocity.y + (530 * profile.gravityScale + wind.y * 120) * 0.08
+    };
+    let position = {
+      x: x + velocity.x * 0.08,
+      y: y + velocity.y * 0.08
+    };
+    const weatherFlight = applyWeatherToFlightState(
+      {
+        position,
+        previousPosition: previous,
+        velocity,
+        damage,
+        blastRadius,
+        forceBoosted,
+        tornadoTriggered
+      },
+      weather
+    );
+    velocity = weatherFlight.velocity;
+    position = weatherFlight.position;
+    damage = weatherFlight.damage;
+    blastRadius = weatherFlight.blastRadius;
+    forceBoosted = weatherFlight.forceBoosted;
+    tornadoTriggered = weatherFlight.tornadoTriggered;
+    x = position.x;
+    y = position.y;
 
     if (step === 0) context.moveTo(x, y);
     else context.lineTo(x, y);
@@ -1195,6 +1238,46 @@ function drawAimGuide(context: CanvasRenderingContext2D, player: Player, wind: {
   context.beginPath();
   context.arc(muzzle.x, muzzle.y, 4, 0, Math.PI * 2);
   context.fill();
+}
+
+function drawWeatherOverlay(context: CanvasRenderingContext2D, weather: WeatherState, visualTime: number): void {
+  if (weather.kind === "force") {
+    const glow = context.createLinearGradient(weather.beamX - 18, 0, weather.beamX + 18, 0);
+    glow.addColorStop(0, "rgba(255, 214, 94, 0)");
+    glow.addColorStop(0.5, "rgba(255, 214, 94, 0.34)");
+    glow.addColorStop(1, "rgba(255, 214, 94, 0)");
+    context.fillStyle = glow;
+    context.fillRect(weather.beamX - 18, 0, 36, worldHeight);
+    return;
+  }
+
+  if (weather.kind === "tornado") {
+    context.save();
+    context.translate(weather.vortex.x, weather.vortex.y);
+    context.strokeStyle = "rgba(196, 238, 255, 0.55)";
+    context.lineWidth = 2;
+    let ring = 0;
+    while (ring < 4) {
+      const radius = weather.radius - ring * 10;
+      context.beginPath();
+      context.arc(0, Math.sin(visualTime * 2.2 + ring) * 6, radius, visualTime * weather.swirl * 0.6 + ring * 0.5, visualTime * weather.swirl * 0.6 + Math.PI * 1.15 + ring * 0.5);
+      context.stroke();
+      ring += 1;
+    }
+    context.restore();
+    return;
+  }
+
+  if (weather.kind === "moon") {
+    context.fillStyle = "rgba(210, 236, 255, 0.08)";
+    context.fillRect(0, 0, worldWidth, worldHeight);
+    return;
+  }
+
+  if (weather.kind === "eclipse") {
+    context.fillStyle = "rgba(35, 24, 58, 0.12)";
+    context.fillRect(0, 0, worldWidth, worldHeight);
+  }
 }
 
 // ---- Particle draw functions ----

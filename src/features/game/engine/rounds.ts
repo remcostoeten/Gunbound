@@ -1,3 +1,4 @@
+import { getWeatherDetail, getWeatherLabel, rollWeather } from "@/features/game/engine/weather";
 import { worldWidth } from "@/features/game/constants/world";
 import { selectNextTurn, type TurnDelayQueue } from "@/features/game/engine/delay";
 import { randomInt } from "@/features/game/engine/random";
@@ -9,13 +10,14 @@ import type { BonusBox, Mobile, Player, TerrainState } from "@/features/game/typ
 import type { DamagePopup } from "@/features/game/types/effects";
 import type { MatchEvent } from "@/features/game/types/events";
 import type { MatchConfig } from "@/features/game/types/state";
-import type { BonusType, PlayerId } from "@/features/game/types/shared";
+import type { BonusType, PlayerId, WeatherState } from "@/features/game/types/shared";
 
 export type TurnAdvanceResult = {
   players: [Player, Player];
   turn: PlayerId;
   turnDelays: TurnDelayQueue;
   wind: { x: number; y: number };
+  weather: WeatherState;
   turnCount: number;
   bonusBoxes: BonusBox[];
   message: string;
@@ -127,9 +129,10 @@ export function advanceRoundTurn(
   const nextTurn = turnSelection.turn;
   const nextTurnCount = turnCount + 1;
   const windRoll = rollWind(randomState);
+  const weatherRoll = rollWeather(windRoll.state, terrain.width, terrain.height);
   const nextPlayers = clonePlayers(players);
   const suddenDeathState = getSuddenDeathState(nextTurnCount, suddenDeathTurn);
-  const bonusRoll = maybeSpawnBonusBoxes(windRoll.state, bonusBoxes, nextTurnCount, terrain);
+  const bonusRoll = maybeSpawnBonusBoxes(weatherRoll.state, bonusBoxes, nextTurnCount, terrain);
   let history = appendMatchEventEntries([], [
     {
       round,
@@ -159,10 +162,26 @@ export function advanceRoundTurn(
     damagePopups = suddenDeathResult.damagePopups;
   }
 
+  if (weatherRoll.weather.kind === "moon") {
+    const currentMobile = nextPlayers[nextTurn - 1].mobile;
+    const healed = Math.min(currentMobile.maxHp, currentMobile.hp + weatherRoll.weather.heal) - currentMobile.hp;
+    if (healed > 0) {
+      currentMobile.hp += healed;
+      history = appendMatchEventEntries(history, [
+        {
+          round,
+          turn: nextTurn,
+          kind: "bonus",
+          text: nextPlayers[nextTurn - 1].name + " recovered " + String(healed) + " HP under Moon."
+        }
+      ]);
+    }
+  }
+
   const winner = getRoundWinner(nextPlayers);
   const message =
     winner === null
-      ? nextPlayers[nextTurn - 1].name + " turn. Wind " + getWindLabel(windRoll.wind) + "."
+      ? nextPlayers[nextTurn - 1].name + " turn. Wind " + getWindLabel(windRoll.wind) + ". " + getWeatherLabel(weatherRoll.weather) + ": " + getWeatherDetail(weatherRoll.weather) + "."
       : createWinnerMessage(nextPlayers, winner);
 
   return {
@@ -170,6 +189,7 @@ export function advanceRoundTurn(
     turn: nextTurn,
     turnDelays: turnSelection.queue,
     wind: windRoll.wind,
+    weather: weatherRoll.weather,
     turnCount: nextTurnCount,
     bonusBoxes: bonusRoll.bonusBoxes,
     message,

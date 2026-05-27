@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { maxAimAngle, minAimAngle } from "@/features/game/constants/gameplay";
+import { clampMobileAngle, getMobileAngleProfile } from "@/features/game/engine/aiming";
 import { stepProjectile, distanceDamage } from "@/features/game/engine/physics";
 import { canSelectWeapon } from "@/features/game/engine/weapons";
 import { createProjectile } from "@/features/game/factories/create-projectile";
@@ -134,8 +134,9 @@ function planBotShot(state: GameState): BotShot {
   }
 
   let best: ScoredShot | null = null;
+  const angleProfile = getMobileAngleProfile(botMobile.type);
   for (const weapon of weapons) {
-    for (let angle = 18; angle <= 162; angle += 4) {
+    for (let angle = angleProfile.min; angle <= angleProfile.max; angle += 4) {
       for (let powerStep = 0; powerStep <= 15; powerStep += 1) {
         const power = 0.25 + powerStep * 0.05;
         const score = scoreShot(state, terrain, angle, power, weapon);
@@ -173,6 +174,7 @@ function scoreShot(
       terrain,
       players,
       state.wind,
+      state.weather,
       SIMULATION_STEP_SECONDS,
     );
 
@@ -206,7 +208,7 @@ function softenShot(shot: ScoredShot, state: GameState): BotShot {
   const powerError = randomBetween(-0.045, 0.045) + randomBetween(-0.01, distancePenalty * 0.012);
 
   return {
-    angle: clamp(shot.angle + angleError, minAimAngle, maxAimAngle),
+    angle: clampMobileAngle(state.players[BOT_PLAYER_ID - 1].mobile.type, shot.angle + angleError),
     power: clamp(shot.power + powerError, 0.12, 1),
     weapon: shot.weapon,
   };

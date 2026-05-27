@@ -1,5 +1,6 @@
 "use client";
 
+import { getMobileAngleProfile, isTrueAngle } from "@/features/game/engine/aiming";
 import { createTurnGuide } from "@/features/game/engine/action-guide";
 import { getWeaponIconPath } from "@/features/game/constants/weapon-icons";
 import { useGameState } from "@/features/game/hooks/use-game-state";
@@ -15,7 +16,8 @@ import {
   selectSelectedBattleItems,
   selectTurn,
   selectTurnCount,
-  selectTurnMoveRemaining
+  selectTurnMoveRemaining,
+  selectWeather
 } from "@/features/game/store/selectors/hud-selectors";
 
 export function AimIndicator(): React.JSX.Element {
@@ -29,8 +31,11 @@ export function AimIndicator(): React.JSX.Element {
   const turnMoveRemaining = useGameState(selectTurnMoveRemaining);
   const battleItemInventories = useGameState(selectBattleItemInventories);
   const selectedBattleItems = useGameState(selectSelectedBattleItems);
+  const weather = useGameState(selectWeather);
   const player = players[turn - 1];
-  const turnGuide = createTurnGuide(player, phase, charging, phaseTimer, power, turnCount, turnMoveRemaining, battleItemInventories[turn - 1], selectedBattleItems[turn - 1]);
+  const turnGuide = createTurnGuide(player, phase, charging, phaseTimer, power, turnCount, turnMoveRemaining, battleItemInventories[turn - 1], selectedBattleItems[turn - 1], weather);
+  const angleProfile = getMobileAngleProfile(player.mobile.type);
+  const trueAngleActive = isTrueAngle(player.mobile.type, player.mobile.angle);
 
   return (
     <div className={"aim-card tone-" + turnGuide.tone}>
@@ -53,6 +58,11 @@ export function AimIndicator(): React.JSX.Element {
           <div className="aim-segment emphasis">
             <span className="aim-label">Angle</span>
             <span className="aim-value">{Math.round(player.mobile.angle)}°</span>
+            <span className="aim-angle-detail">
+              {trueAngleActive
+                ? "True +" + String(Math.round((angleProfile.trueAngleDamageScale - 1) * 100)) + "%"
+                : String(angleProfile.min) + "-" + String(angleProfile.max) + " arc"}
+            </span>
           </div>
           <div className="aim-segment emphasis">
             <span className="aim-label">Power</span>
