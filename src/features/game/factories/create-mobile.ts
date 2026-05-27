@@ -18,6 +18,8 @@ export function createMobile(type: MobileType, id: string, playerId: PlayerId, x
       moveRange: 82,
       shotDelay: 1.04,
       specialCharges: 0,
+      lastShotAngle: null,
+      lastShotTechnique: null,
       doubleDamageTurns: 0,
       verticalVelocity: 0
     };
@@ -38,6 +40,8 @@ export function createMobile(type: MobileType, id: string, playerId: PlayerId, x
       moveRange: 74,
       shotDelay: 1,
       specialCharges: 0,
+      lastShotAngle: null,
+      lastShotTechnique: null,
       doubleDamageTurns: 0,
       verticalVelocity: 0
     };
@@ -58,6 +62,8 @@ export function createMobile(type: MobileType, id: string, playerId: PlayerId, x
       moveRange: 76,
       shotDelay: 1.06,
       specialCharges: 0,
+      lastShotAngle: null,
+      lastShotTechnique: null,
       doubleDamageTurns: 0,
       verticalVelocity: 0
     };
@@ -78,6 +84,8 @@ export function createMobile(type: MobileType, id: string, playerId: PlayerId, x
       moveRange: 84,
       shotDelay: 1.1,
       specialCharges: 0,
+      lastShotAngle: null,
+      lastShotTechnique: null,
       doubleDamageTurns: 0,
       verticalVelocity: 0
     };
@@ -98,6 +106,8 @@ export function createMobile(type: MobileType, id: string, playerId: PlayerId, x
       moveRange: 78,
       shotDelay: 1.08,
       specialCharges: 0,
+      lastShotAngle: null,
+      lastShotTechnique: null,
       doubleDamageTurns: 0,
       verticalVelocity: 0
     };
@@ -118,6 +128,8 @@ export function createMobile(type: MobileType, id: string, playerId: PlayerId, x
       moveRange: 88,
       shotDelay: 1,
       specialCharges: 0,
+      lastShotAngle: null,
+      lastShotTechnique: null,
       doubleDamageTurns: 0,
       verticalVelocity: 0
     };
@@ -138,6 +150,8 @@ export function createMobile(type: MobileType, id: string, playerId: PlayerId, x
       moveRange: 64,
       shotDelay: 1.04,
       specialCharges: 0,
+      lastShotAngle: null,
+      lastShotTechnique: null,
       doubleDamageTurns: 0,
       verticalVelocity: 0
     };
@@ -158,6 +172,8 @@ export function createMobile(type: MobileType, id: string, playerId: PlayerId, x
       moveRange: 82,
       shotDelay: 1.02,
       specialCharges: 0,
+      lastShotAngle: null,
+      lastShotTechnique: null,
       doubleDamageTurns: 0,
       verticalVelocity: 0
     };
@@ -178,6 +194,8 @@ export function createMobile(type: MobileType, id: string, playerId: PlayerId, x
       moveRange: 74,
       shotDelay: 1.04,
       specialCharges: 0,
+      lastShotAngle: null,
+      lastShotTechnique: null,
       doubleDamageTurns: 0,
       verticalVelocity: 0
     };
@@ -197,6 +215,8 @@ export function createMobile(type: MobileType, id: string, playerId: PlayerId, x
     moveRange: 68,
     shotDelay: 0.92,
     specialCharges: 0,
+    lastShotAngle: null,
+    lastShotTechnique: null,
     doubleDamageTurns: 0,
     verticalVelocity: 0
   };

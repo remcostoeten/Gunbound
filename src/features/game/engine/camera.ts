@@ -10,8 +10,11 @@ const overviewViewport: CameraViewport = {
 };
 
 const playerViewportMinWidth = 960;
-const playerViewportPadding = 320;
+const playerViewportPadding = 380;
 const playerViewportAspect = 9 / 16;
+// Keeps mobiles clear of the very edge of the frame when the camera leans
+// toward the active player.
+const bothMobilesMargin = 96;
 
 const projectileViewport: CameraViewport = {
   width: 1120,
@@ -163,14 +166,20 @@ function getAdaptivePlayerFocus(
 ): Vec2 {
   const activeFocus = getPlayerFocus(players[turn - 1]);
   const midpoint = getOverviewFocus(players);
-  const widthBlend = clamp(
-    (viewport.width - playerViewportMinWidth) / Math.max(1, worldWidth - playerViewportMinWidth),
-    0,
-    1
-  );
+  const left = Math.min(players[0].mobile.position.x, players[1].mobile.position.x);
+  const right = Math.max(players[0].mobile.position.x, players[1].mobile.position.x);
+  const halfWidth = viewport.width * 0.5;
+
+  // Lean toward the active player for readability, but clamp the center so both
+  // mobiles stay inside the frame. If the pair is wider than the viewport can
+  // hold with margin, fall back to centering on their midpoint.
+  const minCenterX = right - halfWidth + bothMobilesMargin;
+  const maxCenterX = left + halfWidth - bothMobilesMargin;
+  const focusX = minCenterX <= maxCenterX ? clamp(activeFocus.x, minCenterX, maxCenterX) : midpoint.x;
+
   return {
-    x: lerp(activeFocus.x, midpoint.x, widthBlend),
-    y: lerp(activeFocus.y, midpoint.y, widthBlend)
+    x: focusX,
+    y: lerp(activeFocus.y, midpoint.y, 0.5)
   };
 }
 

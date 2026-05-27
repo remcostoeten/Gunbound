@@ -25,6 +25,14 @@ import { moveMobileAlongTerrain } from "@/features/game/engine/movement";
 import { applyExplosionDamage, stepProjectile } from "@/features/game/engine/physics";
 import { advanceRoundTurn, getRoundWinner, resolveMatchContinuation, resolveRoundWinner } from "@/features/game/engine/rounds";
 import { normalizeSeed } from "@/features/game/engine/random";
+import {
+  buttShotWindowSeconds,
+  canTriggerButtShot,
+  defaultShotMode,
+  getShotTechniqueLabel,
+  isButtShotEligible,
+  mirrorShotAngle
+} from "@/features/game/engine/shot-techniques";
 import { carveCrater, clamp, getSurfaceY } from "@/features/game/engine/terrain";
 import { createDefaultWeather, isWeatherItemLocked } from "@/features/game/engine/weather";
 import { canSelectWeapon, getNextWeapon, getWeaponDisplayName, shouldConsumeSpecialCharge } from "@/features/game/engine/weapons";
@@ -45,7 +53,7 @@ import type {
 } from "@/features/game/types/entities";
 import type { DamagePopup, ExplosionVisual, TurnAnnouncement } from "@/features/game/types/effects";
 import type { MatchEvent } from "@/features/game/types/events";
-import type { GameState, InputState, MatchConfig } from "@/features/game/types/state";
+import type { GameState, InputState, MatchConfig, PendingButtShot } from "@/features/game/types/state";
 import type { BattleItemType, BonusType, WeaponType } from "@/features/game/types/shared";
 
 const movementSpeed = 100;
@@ -53,6 +61,7 @@ const movementNoticeInterval = 0.45;
 
 type GameStoreState = GameState & {
   input: InputState;
+  pendingButtShot: PendingButtShot | null;
   randomState: number;
   setup: MatchConfig;
   resolveTimer: number;
@@ -69,6 +78,7 @@ type GameStoreState = GameState & {
   attemptMove(direction: -1 | 1): void;
   switchWeapon(): void;
   switchBattleItem(): void;
+  applyBattleFlipTech(direction: -1 | 1): void;
   applyBattleMove(direction: -1 | 1): void;
   applyBattleWeaponSwitch(weapon?: WeaponType): void;
   applyBattleItemSwitch(item?: BattleItemType | null): void;
@@ -102,6 +112,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
     scene: "start",
     phase: "move",
     turn: 1,
+    shotMode: defaultShotMode,
     wind: { x: 0, y: 0 },
     weather: createDefaultWeather(),
     players: createPlaceholderPlayers(defaultSetup),
@@ -116,6 +127,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
     suddenDeathActive: false,
     power: 0,
     charging: false,
+    chargeAscending: true,
     turnCount: 1,
     turnElapsed: 0,
     turnDelays: createInitialTurnDelays(),
@@ -137,6 +149,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       moveLeft: false,
       moveRight: false
     },
+    pendingButtShot: null,
     randomState: normalizeSeed(defaultSetup.seedText),
     setup: defaultSetup,
     resolveTimer: 0,
@@ -153,6 +166,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
           moveLeft: false,
           moveRight: false
         },
+        pendingButtShot: null,
         setup: config
       });
     },
@@ -164,6 +178,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       set({
         scene: "start",
         phase: "move",
+        shotMode: defaultShotMode,
         projectile: null,
         weather: createDefaultWeather(),
         charging: false,
@@ -186,7 +201,8 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         turnAnnouncement: null,
         history: [],
         message: "Set up a local match.",
-        moveRepeatTimer: 0
+        moveRepeatTimer: 0,
+        pendingButtShot: null
       });
     },
     surrenderMatch: function surrenderMatch(loser: 1 | 2): void {
@@ -235,6 +251,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       let nextWeather = state.weather;
       let nextPower = state.power;
       let nextCharging = state.charging;
+      let nextChargeAscending = state.chargeAscending;
       let nextWinner = state.winner;
       let nextScene: GameState["scene"] = state.scene;
       let nextRound = state.round;
@@ -259,8 +276,21 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       let nextTurnAnnouncement = tickTurnAnnouncement(state.turnAnnouncement, dt);
       let nextHistory = state.history;
       let nextMoveRepeatTimer = state.moveRepeatTimer;
+      let nextPendingButtShot = state.pendingButtShot;
       let shouldAdvanceTurn = false;
       let waitingForSettling = false;
+
+      if (nextPendingButtShot !== null) {
+        nextPendingButtShot = state.projectile === null
+          ? null
+          : {
+              ...nextPendingButtShot,
+              remaining: nextPendingButtShot.remaining - dt
+            };
+        if (nextPendingButtShot !== null && nextPendingButtShot.remaining <= 0) {
+          nextPendingButtShot = null;
+        }
+      }
 
       if (state.phase !== "resolve" && state.phase !== "end") {
         if (state.projectile === null) {
@@ -313,13 +343,33 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
 
       if (nextCharging) {
         const currentPlayer = nextPlayers[state.turn - 1];
+        // The power meter sweeps up to full, then back down, ping-ponging while
+        // held — you release to lock in whatever the bar reads, the classic
+        // Gunbound timing skill rather than a "hold longer = more power" ramp.
         const chargeRate = 1 / currentPlayer.mobile.shotDelay;
-        nextPower = clamp(nextPower + dt * chargeRate, 0.08, 1);
+        const sweep = nextPower + (nextChargeAscending ? 1 : -1) * dt * chargeRate;
+        if (sweep >= 1) {
+          nextPower = 1;
+          nextChargeAscending = false;
+        } else if (sweep <= 0.08) {
+          nextPower = 0.08;
+          nextChargeAscending = true;
+        } else {
+          nextPower = sweep;
+        }
       }
 
       if (nextProjectile !== null && nextTerrain !== null) {
         const step = stepProjectile(nextProjectile, nextTerrain, nextPlayers, state.wind, state.weather, dt);
         nextProjectile = step.projectile;
+
+        if (nextProjectile !== null) {
+          const currentTechnique = nextPlayers[state.turn - 1].mobile.lastShotTechnique;
+          if (currentTechnique === null && nextProjectile.technique !== null) {
+            nextPlayers[state.turn - 1].mobile.lastShotTechnique = nextProjectile.technique;
+            nextMessage = nextPlayers[state.turn - 1].name + " found a " + getShotTechniqueLabel(nextProjectile.technique).toLowerCase() + ".";
+          }
+        }
 
         if (step.bonusExplosion !== null) {
           nextTerrain = carveCrater(nextTerrain, step.bonusExplosion.point, step.bonusExplosion.radius);
@@ -333,6 +383,10 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         }
 
         if (step.explosion !== null) {
+          const resolvedTechnique = nextProjectile?.technique ?? state.projectile?.technique ?? null;
+          if (resolvedTechnique !== null) {
+            nextPlayers[state.turn - 1].mobile.lastShotTechnique = resolvedTechnique;
+          }
           const explosions = buildExplosionList(step.explosion);
           const explosionVisuals: ExplosionVisual[] = [];
 
@@ -352,6 +406,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
 
           nextPower = 0;
           nextCharging = false;
+          nextPendingButtShot = null;
           nextWinner = getRoundWinner(nextPlayers);
           if (nextWinner !== null) {
             const resolution = resolveRoundWinner(nextPlayers, nextWinner, state.round, state.turn, nextHistory);
@@ -420,8 +475,18 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
                 "."
             }
           ]);
+          nextPendingButtShot = isButtShotEligible(fired.players[state.turn - 1].mobile, state.shotMode)
+            ? {
+                turn: state.turn,
+                remaining: buttShotWindowSeconds,
+                sourceFacing: fired.players[state.turn - 1].mobile.facing,
+                sourceAngle: fired.players[state.turn - 1].mobile.angle,
+                weapon: fired.players[state.turn - 1].mobile.weapon
+              }
+            : null;
         } else if (nextPhase !== "resolve" && nextPhase !== "end" && nextProjectile === null) {
           nextPhase = "resolve";
+          nextPendingButtShot = null;
           nextResolveTimer = 0.45;
           nextPhaseTimer = getPhaseDuration("resolve");
           nextPhaseDuration = getPhaseDuration("resolve");
@@ -485,7 +550,8 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
             randomState: advanced.randomState,
             resolveTimer: 0,
             moveRepeatTimer: 0,
-            terrain: nextTerrain
+            terrain: nextTerrain,
+            pendingButtShot: null
           });
           return;
         }
@@ -523,7 +589,8 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
           randomState: advanced.randomState,
           resolveTimer: 0,
           moveRepeatTimer: 0,
-          terrain: nextTerrain
+          terrain: nextTerrain,
+          pendingButtShot: null
         });
         return;
       }
@@ -548,6 +615,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         projectile: nextProjectile,
         power: nextPower,
         charging: nextCharging,
+        chargeAscending: nextChargeAscending,
         phase: nextPhase,
         winner: nextWinner,
         round: nextRound,
@@ -571,7 +639,8 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         moveRepeatTimer: nextMoveRepeatTimer,
         terrain: nextTerrain,
         bonusBoxes: nextBonusBoxes,
-        tick: state.tick + 1
+        tick: state.tick + 1,
+        pendingButtShot: nextPendingButtShot
       });
     },
     setAimKey: function setAimKey(key: "up" | "down", active: boolean): void {
@@ -638,7 +707,8 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       set({
         charging: true,
         phase: "fire",
-        power: Math.max(state.power, 0.08),
+        power: 0.08,
+        chargeAscending: true,
         phaseTimer: getPhaseDuration("fire", state.setup.turnDurationMode),
         phaseDuration: getPhaseDuration("fire", state.setup.turnDurationMode),
         message: currentPlayer.name + " is charging."
@@ -775,6 +845,34 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         message: currentPlayer.name + " selected " + itemLabel + "."
       });
     },
+    applyBattleFlipTech: function applyBattleFlipTech(direction: -1 | 1): void {
+      const state = get();
+      const pendingButtShot = state.pendingButtShot;
+      if (pendingButtShot === null || !canTriggerButtShot(pendingButtShot, direction) || state.projectile === null) {
+        return;
+      }
+
+      const players = clonePlayers(state.players);
+      const currentPlayer = players[state.turn - 1];
+      currentPlayer.mobile.facing = direction;
+      currentPlayer.mobile.angle = mirrorShotAngle(pendingButtShot.sourceAngle);
+      currentPlayer.mobile.lastShotAngle = currentPlayer.mobile.angle;
+      currentPlayer.mobile.lastShotTechnique = "buttshot";
+
+      set({
+        players,
+        pendingButtShot: null,
+        history: appendMatchEventEntries(state.history, [
+          {
+            round: state.round,
+            turn: state.turn,
+            kind: "shot-tech",
+            text: currentPlayer.name + " flipped into a butt-shot."
+          }
+        ]),
+        message: currentPlayer.name + " flipped into a butt-shot."
+      });
+    },
     applyBattleMove: function applyBattleMove(direction: -1 | 1): void {
       get().attemptMove(direction);
     },
@@ -896,6 +994,17 @@ function fireCurrentShot(
     state.selectedBattleItems[0],
     state.selectedBattleItems[1]
   ];
+  currentPlayer.mobile.lastShotAngle = currentPlayer.mobile.angle;
+  currentPlayer.mobile.lastShotTechnique = null;
+  const pendingButtShot = isButtShotEligible(currentPlayer.mobile, state.shotMode)
+    ? {
+        turn: state.turn,
+        remaining: buttShotWindowSeconds,
+        sourceFacing: currentPlayer.mobile.facing,
+        sourceAngle: currentPlayer.mobile.angle,
+        weapon: currentPlayer.mobile.weapon
+      }
+    : null;
 
   if (shouldConsumeCharge) {
     currentPlayer.mobile.specialCharges -= 1;
@@ -920,6 +1029,7 @@ function fireCurrentShot(
     phase: "fire",
     phaseTimer: getPhaseDuration("fire", state.setup.turnDurationMode),
     phaseDuration: getPhaseDuration("fire", state.setup.turnDurationMode),
+    pendingButtShot,
     history: appendMatchEventEntries(state.history, [
       {
         round: state.round,
@@ -1035,6 +1145,8 @@ function cloneMobile(mobile: Mobile): Mobile {
     moveRange: mobile.moveRange,
     shotDelay: mobile.shotDelay,
     specialCharges: mobile.specialCharges,
+    lastShotAngle: mobile.lastShotAngle,
+    lastShotTechnique: mobile.lastShotTechnique,
     doubleDamageTurns: mobile.doubleDamageTurns,
     verticalVelocity: mobile.verticalVelocity
   };
@@ -1198,6 +1310,8 @@ function forceReleaseCharge(
   const projectile = createProjectile(currentPlayer.mobile, turn, nextPower, item);
   const turnDelay = calculateShotDelay(currentPlayer.mobile, currentPlayer.mobile.weapon, turnElapsed) + getBattleItemDelay(item);
   const shouldConsumeCharge = shouldConsumeSpecialCharge(currentPlayer.mobile.weapon, currentPlayer.mobile.specialCharges, turnCount);
+  currentPlayer.mobile.lastShotAngle = currentPlayer.mobile.angle;
+  currentPlayer.mobile.lastShotTechnique = null;
 
   if (shouldConsumeCharge) {
     currentPlayer.mobile.specialCharges -= 1;

@@ -4,6 +4,10 @@ export type Vec2 = { x: number; y: number };
 
 export type WeatherKind = "wind" | "force" | "tornado" | "moon" | "eclipse";
 
+export type ShotMode = "slice" | "drag";
+
+export type ShotTechnique = "buttshot" | "backshot";
+
 export type WeatherState =
   | { kind: "wind" }
   | { kind: "force"; beamX: number; powerScale: number }

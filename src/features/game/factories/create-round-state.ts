@@ -3,6 +3,7 @@ import { worldHeight, worldWidth } from "@/features/game/constants/world";
 import { createBattleItemInventories } from "@/features/game/engine/battle-items";
 import { createInitialTurnDelays } from "@/features/game/engine/delay";
 import { normalizeSeed } from "@/features/game/engine/random";
+import { defaultShotMode } from "@/features/game/engine/shot-techniques";
 import { createTerrain } from "@/features/game/engine/terrain";
 import { getWeatherDetail, getWeatherLabel, rollWeather } from "@/features/game/engine/weather";
 import { getWindLabel, rollWind } from "@/features/game/engine/wind";
@@ -35,6 +36,7 @@ export function createStartedMatchState(config: MatchConfig): StartedMatchState 
     scene: "playing",
     phase: "move",
     turn: 1,
+    shotMode: defaultShotMode,
     wind: windRoll.wind,
     weather: weatherRoll.weather,
     players,
@@ -49,6 +51,7 @@ export function createStartedMatchState(config: MatchConfig): StartedMatchState 
     suddenDeathActive: false,
     power: 0,
     charging: false,
+    chargeAscending: true,
     turnCount: 1,
     turnElapsed: 0,
     turnDelays: createInitialTurnDelays(),
@@ -87,6 +90,7 @@ export function createNextRoundState(
     scene: "playing",
     phase: "move",
     turn: starter,
+    shotMode: defaultShotMode,
     wind: windRoll.wind,
     weather: weatherRoll.weather,
     players,
@@ -98,6 +102,7 @@ export function createNextRoundState(
     suddenDeathActive: false,
     power: 0,
     charging: false,
+    chargeAscending: true,
     turnCount: 1,
     turnElapsed: 0,
     turnDelays: createInitialTurnDelays(),

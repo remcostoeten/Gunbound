@@ -7,11 +7,12 @@ import { createCameraRig, getCameraFrame, stepCameraRig } from "@/features/game/
 import { createVisualEffectsState, stepVisualEffectsState } from "@/features/game/engine/effects";
 import { createMapDecor } from "@/features/game/engine/map-decor";
 import { createProjectileRenderStyle, getProjectileImpactStyle, getProjectileTrailStyle } from "@/features/game/engine/projectile-presentation";
+import { getShotTechniqueLabel } from "@/features/game/engine/shot-techniques";
 import { clamp } from "@/features/game/engine/terrain";
 import { getSkyPalette, getTerrainPalette } from "@/features/game/engine/terrain-theme";
 import { applyWeatherToFlightState } from "@/features/game/engine/weather";
 import { getMobileSpriteFrame, getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
-import { getLaunchRadians, getMuzzlePosition } from "@/features/game/engine/physics";
+import { getLaunchRadians, getMuzzlePosition, windForceCoefficient } from "@/features/game/engine/physics";
 import { getMobileRiderMount, getMobileRiderSpriteSource } from "@/features/game/engine/rider-sprites";
 import { createWeaponProfile } from "@/features/game/engine/weapons";
 import { useGameLoop } from "@/features/game/hooks/use-game-loop";
@@ -37,7 +38,7 @@ import type {
   WindLeaf
 } from "@/features/game/types/effects";
 import type { CameraFrame, MapDecorPlan, MapDecorPrimitive } from "@/features/game/types/presentation";
-import type { BonusType, MobileType, PlayerAccent, TerrainTheme, Vec2, WeatherState, WeaponType } from "@/features/game/types/shared";
+import type { BonusType, MobileType, PlayerAccent, PlayerId, TerrainTheme, Vec2, WeatherState, WeaponType } from "@/features/game/types/shared";
 import type { InputState } from "@/features/game/types/state";
 
 type SpriteCache = {
@@ -143,6 +144,9 @@ export function GameCanvas(): React.JSX.Element {
   });
   const explosionSpriteCacheRef = useRef<ExplosionSpriteCache>(createExplosionSpriteCache());
   const bonusIconCacheRef = useRef<BonusIconCache>(createBonusIconCache());
+  const liveShotRef = useRef<GhostShot & { owner: PlayerId } | null>(null);
+  const lastShotRef = useRef<[GhostShot | null, GhostShot | null]>([null, null]);
+  const ghostRoundRef = useRef<number>(0);
 
   useInput();
   useGameLoop(drawFrame);
@@ -171,6 +175,7 @@ export function GameCanvas(): React.JSX.Element {
     const delta = advanceVisualClock();
 
     const state = useGameStore.getState();
+    captureGhostShot(state, liveShotRef, lastShotRef, ghostRoundRef);
     visualEffectsRef.current = stepVisualEffectsState(visualEffectsRef.current, {
       projectile: state.projectile,
       players: state.players,
@@ -218,6 +223,10 @@ export function GameCanvas(): React.JSX.Element {
     drawBonusBoxes(context, state.bonusBoxes, bonusIconCacheRef.current);
 
     if (state.scene === "playing" && state.projectile === null && state.terrain !== null) {
+      const ghost = lastShotRef.current[state.turn - 1];
+      if (ghost !== null) {
+        drawGhostShot(context, ghost);
+      }
       drawAimGuide(context, state.players[state.turn - 1], state.wind, state.weather, state.power, state.charging, state.terrain);
     }
 
@@ -302,12 +311,23 @@ function drawBackground(context: CanvasRenderingContext2D, theme: TerrainTheme, 
   context.fillStyle = gradient;
   context.fillRect(0, 0, worldWidth, worldHeight);
 
+  drawSkyGlow(context, theme);
+  if (theme === "midnight") {
+    drawStars(context, palette.starColor, visualTime);
+  }
   drawSun(context, theme);
-  drawCloud(context, 175 + Math.sin(visualTime * 0.16) * 12, 135, 1.18, palette.cloudAlpha);
-  drawCloud(context, 418 + Math.sin(visualTime * 0.14 + 1.3) * 10, 110, 0.9, palette.cloudAlpha * 0.84);
-  drawCloud(context, 985 + Math.sin(visualTime * 0.11 + 2.2) * 14, 100, 1.04, palette.cloudAlpha * 0.9);
-  drawCloud(context, 1120 + Math.sin(visualTime * 0.19 + 0.7) * 8, 172, 0.82, palette.cloudAlpha * 0.72);
+  // Distant cloud layer: smaller, fainter and slower for parallax depth.
+  drawCloud(context, palette, 260 + Math.sin(visualTime * 0.07 + 0.4) * 20, 64, 0.62, palette.cloudAlpha * 0.4);
+  drawCloud(context, palette, 620 + Math.sin(visualTime * 0.06 + 2.7) * 24, 52, 0.7, palette.cloudAlpha * 0.36);
+  drawCloud(context, palette, 996 + Math.sin(visualTime * 0.08 + 1.1) * 18, 72, 0.56, palette.cloudAlpha * 0.42);
+  // Near cloud layer.
+  drawCloud(context, palette, 138 + Math.sin(visualTime * 0.16) * 12, 140, 1.22, palette.cloudAlpha);
+  drawCloud(context, palette, 402 + Math.sin(visualTime * 0.14 + 1.3) * 10, 116, 0.96, palette.cloudAlpha * 0.84);
+  drawCloud(context, palette, 870 + Math.sin(visualTime * 0.11 + 2.2) * 14, 108, 1.08, palette.cloudAlpha * 0.9);
+  drawCloud(context, palette, 1116 + Math.sin(visualTime * 0.19 + 0.7) * 8, 174, 0.86, palette.cloudAlpha * 0.72);
   drawBackMountains(context, theme);
+  drawMidMountains(context, theme);
+  drawHorizonMist(context, palette);
   if (mapDecor !== null) {
     drawMapDecorPrimitives(context, mapDecor.backgroundLandmarks, visualTime);
   }
@@ -320,10 +340,22 @@ function drawTerrain(context: CanvasRenderingContext2D, terrain: TerrainState): 
   }
 
   const skyPalette = getSkyPalette(terrain.theme);
+  context.strokeStyle = "rgba(67, 39, 23, 0.28)";
+  context.lineWidth = 6;
+  context.beginPath();
+  let x = 0;
+  while (x < terrain.heights.length) {
+    const y = terrain.heights[x] + 3;
+    if (x === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+    x += 8;
+  }
+  context.stroke();
+
   context.strokeStyle = skyPalette.terrainStroke;
   context.lineWidth = 3;
   context.beginPath();
-  let x = 0;
+  x = 0;
   while (x < terrain.heights.length) {
     const y = terrain.heights[x];
     if (x === 0) context.moveTo(x, y);
@@ -439,10 +471,16 @@ function drawGrass(context: CanvasRenderingContext2D, terrain: TerrainState, vis
   for (let i = 0; i < grass.length; i++) {
     const g = grass[i];
     const sway = Math.sin(visualTime * 2.4 + g.sway) * 3 + wind.x * 4;
-    context.strokeStyle = "rgba(" + String(palette.grassMid[0]) + ", " + String(palette.grassMid[1]) + ", " + String(palette.grassMid[2]) + ", 0.7)";
-    context.lineWidth = 1.5;
+    context.strokeStyle = "rgba(" + String(palette.grassShadow[0]) + ", " + String(palette.grassShadow[1]) + ", " + String(palette.grassShadow[2]) + ", 0.55)";
+    context.lineWidth = 2.2;
     context.beginPath();
     context.moveTo(g.x, g.y);
+    context.quadraticCurveTo(g.x + sway * 0.4, g.y - g.height * 0.55, g.x + sway * 0.92, g.y - g.height * 0.96);
+    context.stroke();
+    context.strokeStyle = "rgba(" + String(palette.grassAccent[0]) + ", " + String(palette.grassAccent[1]) + ", " + String(palette.grassAccent[2]) + ", 0.62)";
+    context.lineWidth = 1.1;
+    context.beginPath();
+    context.moveTo(g.x, g.y - 1);
     context.quadraticCurveTo(g.x + sway * 0.5, g.y - g.height * 0.8, g.x + sway, g.y - g.height);
     context.stroke();
   }
@@ -591,6 +629,33 @@ function drawProjectile(context: CanvasRenderingContext2D, projectile: Projectil
   context.beginPath();
   context.ellipse(style.radius * 0.18, -style.radius * 0.1, style.radius * 0.42, style.radius * 0.28, 0, 0, Math.PI * 2);
   context.fill();
+  context.restore();
+
+  if (projectile.technique !== null) {
+    drawProjectileTechniqueBadge(context, projectile);
+  }
+}
+
+function drawProjectileTechniqueBadge(context: CanvasRenderingContext2D, projectile: ProjectileState): void {
+  const fullLabel = getShotTechniqueLabel(projectile.technique);
+  const label = fullLabel === "Butt Shot" ? "BUTT" : "BACK";
+  const width = label === "BUTT" ? 40 : 42;
+  const height = 16;
+  const x = clamp(projectile.position.x - width * 0.5, 8, worldWidth - width - 8);
+  const y = clamp(projectile.position.y - 28, 8, worldHeight - height - 8);
+
+  context.save();
+  context.fillStyle = "rgba(14, 24, 36, 0.92)";
+  roundRect(context, x, y, width, height, 6);
+  context.fill();
+  context.strokeStyle = projectile.technique === "buttshot" ? "rgba(255, 211, 97, 0.9)" : "rgba(126, 204, 255, 0.92)";
+  context.lineWidth = 1.25;
+  context.stroke();
+  context.font = '700 7px "Press Start 2P"';
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillStyle = "#fff8dc";
+  context.fillText(label, x + width * 0.5, y + height * 0.55);
   context.restore();
 }
 
@@ -1165,6 +1230,91 @@ function drawDamagePopups(context: CanvasRenderingContext2D, damagePopups: Damag
   }
 }
 
+type GhostShot = {
+  points: Vec2[];
+  mobileType: MobileType;
+  weapon: WeaponType;
+};
+
+// Records the live shot's flight path each frame and freezes it on impact, per
+// player, so the active player can see the faint ghost arc and landing mark of
+// their own previous shot — the classic Gunbound "adjust off the last one" loop
+// without ever showing a live solution line.
+function captureGhostShot(
+  state: ReturnType<typeof useGameStore.getState>,
+  liveShot: React.MutableRefObject<(GhostShot & { owner: PlayerId }) | null>,
+  lastShot: React.MutableRefObject<[GhostShot | null, GhostShot | null]>,
+  ghostRound: React.MutableRefObject<number>
+): void {
+  if (state.round !== ghostRound.current) {
+    ghostRound.current = state.round;
+    lastShot.current = [null, null];
+    liveShot.current = null;
+  }
+
+  const projectile = state.projectile;
+  if (projectile !== null) {
+    if (liveShot.current === null || liveShot.current.owner !== projectile.owner) {
+      liveShot.current = { owner: projectile.owner, points: [], mobileType: projectile.mobileType, weapon: projectile.weapon };
+    }
+    const points = liveShot.current.points;
+    const previous = points[points.length - 1];
+    if (previous === undefined || Math.hypot(projectile.position.x - previous.x, projectile.position.y - previous.y) > 5) {
+      points.push({ x: projectile.position.x, y: projectile.position.y });
+      if (points.length > 240) {
+        points.shift();
+      }
+    }
+    return;
+  }
+
+  if (liveShot.current !== null) {
+    if (liveShot.current.points.length > 1) {
+      lastShot.current[liveShot.current.owner - 1] = {
+        points: liveShot.current.points,
+        mobileType: liveShot.current.mobileType,
+        weapon: liveShot.current.weapon
+      };
+    }
+    liveShot.current = null;
+  }
+}
+
+function drawGhostShot(context: CanvasRenderingContext2D, ghost: GhostShot): void {
+  const points = ghost.points;
+  if (points.length < 2) {
+    return;
+  }
+
+  context.save();
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.setLineDash([3, 7]);
+  context.lineWidth = 1.5;
+  context.strokeStyle = "rgba(255, 255, 255, 0.18)";
+  context.beginPath();
+  context.moveTo(points[0].x, points[0].y);
+  let index = 1;
+  while (index < points.length) {
+    context.lineTo(points[index].x, points[index].y);
+    index += 1;
+  }
+  context.stroke();
+  context.setLineDash([]);
+
+  const impact = points[points.length - 1];
+  context.strokeStyle = "rgba(255, 220, 130, 0.42)";
+  context.lineWidth = 1.5;
+  context.beginPath();
+  context.arc(impact.x, impact.y, 6, 0, Math.PI * 2);
+  context.moveTo(impact.x - 9, impact.y);
+  context.lineTo(impact.x + 9, impact.y);
+  context.moveTo(impact.x, impact.y - 9);
+  context.lineTo(impact.x, impact.y + 9);
+  context.stroke();
+  context.restore();
+}
+
 function drawAimGuide(
   context: CanvasRenderingContext2D,
   player: Player,
@@ -1197,7 +1347,7 @@ function drawAimGuide(
   while (step < 28) {
     const previous = { x, y };
     velocity = {
-      x: velocity.x + wind.x * 580 * profile.windScale * 0.08,
+      x: velocity.x + wind.x * windForceCoefficient * profile.windScale * 0.08,
       y: velocity.y + (530 * profile.gravityScale + wind.y * 120) * 0.08
     };
     let position = {
@@ -1406,6 +1556,12 @@ function drawSun(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
     context.beginPath();
     context.arc(170, 120, 72, 0, Math.PI * 2);
     context.fill();
+    context.fillStyle = "rgba(208, 222, 255, 0.48)";
+    context.beginPath();
+    context.arc(146, 102, 8, 0, Math.PI * 2);
+    context.arc(182, 138, 11, 0, Math.PI * 2);
+    context.arc(193, 100, 5, 0, Math.PI * 2);
+    context.fill();
     return;
   }
 
@@ -1417,10 +1573,33 @@ function drawSun(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
   context.beginPath();
   context.arc(170, 120, 92, 0, Math.PI * 2);
   context.fill();
+
+  context.save();
+  context.translate(170, 120);
+  context.strokeStyle = theme === "sunset" ? "rgba(255, 193, 130, 0.18)" : "rgba(255, 240, 174, 0.16)";
+  context.lineWidth = theme === "sunset" ? 18 : 14;
+  for (let i = 0; i < 8; i += 1) {
+    context.rotate(Math.PI / 4);
+    context.beginPath();
+    context.moveTo(34, 0);
+    context.lineTo(108, 0);
+    context.stroke();
+  }
+  context.restore();
 }
 
-function drawCloud(context: CanvasRenderingContext2D, x: number, y: number, scale: number, opacity: number): void {
-  context.fillStyle = "rgba(255, 255, 255, " + String(opacity) + ")";
+function drawCloud(
+  context: CanvasRenderingContext2D,
+  palette: ReturnType<typeof getSkyPalette>,
+  x: number,
+  y: number,
+  scale: number,
+  opacity: number
+): void {
+  context.fillStyle = palette.cloudShade;
+  drawCloudBubble(context, x + 8 * scale, y + 12 * scale, 50 * scale, 18 * scale);
+  drawCloudBubble(context, x + 70 * scale, y + 15 * scale, 66 * scale, 20 * scale);
+  context.fillStyle = withOpacity(palette.cloudColor, opacity);
   drawCloudBubble(context, x, y, 46 * scale, 26 * scale);
   drawCloudBubble(context, x + 50 * scale, y + 2 * scale, 58 * scale, 30 * scale);
   drawCloudBubble(context, x + 98 * scale, y - 8 * scale, 44 * scale, 24 * scale);
@@ -1434,40 +1613,124 @@ function drawCloudBubble(context: CanvasRenderingContext2D, x: number, y: number
 }
 
 function drawBackMountains(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
-  context.fillStyle = getSkyPalette(theme).backMountains;
-  context.beginPath();
-  context.moveTo(0, 465);
-  context.lineTo(140, 355);
-  context.lineTo(250, 435);
-  context.lineTo(385, 310);
-  context.lineTo(535, 428);
-  context.lineTo(690, 332);
-  context.lineTo(885, 452);
-  context.lineTo(1010, 346);
-  context.lineTo(1160, 432);
-  context.lineTo(1280, 370);
-  context.lineTo(1280, 720);
-  context.lineTo(0, 720);
-  context.closePath();
-  context.fill();
+  const palette = getSkyPalette(theme);
+  const crests =
+    theme === "midnight"
+      ? [444, 374, 408, 328, 412, 320, 430, 340, 418, 356]
+      : theme === "sunset"
+        ? [474, 386, 440, 320, 436, 336, 454, 350, 428, 390]
+        : [460, 355, 435, 310, 428, 332, 452, 346, 432, 370];
+  fillHillBand(context, crests, palette.backMountains, 0.06);
+}
+
+function drawMidMountains(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
+  const palette = getSkyPalette(theme);
+  const crests =
+    theme === "midnight"
+      ? [504, 434, 472, 400, 490, 410, 500, 432, 520]
+      : theme === "sunset"
+        ? [518, 454, 510, 430, 520, 444, 530, 458, 534]
+        : [498, 432, 486, 402, 500, 418, 504, 438, 516];
+  fillHillBand(context, crests, palette.midMountains, 0.09);
 }
 
 function drawFrontMountains(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
-  context.fillStyle = getSkyPalette(theme).frontMountains;
+  const palette = getSkyPalette(theme);
+  fillHillBand(context, [520, 438, 504, 418, 526, 432, 520, 458, 536], palette.frontMountains, 0.12);
+}
+
+// Draws one parallax hill band from evenly spaced crest heights, rounding the
+// silhouette into soft Gunbound-style rolls and adding a faint sun-side crest
+// highlight so the layers read as receding atmospheric depth.
+function fillHillBand(
+  context: CanvasRenderingContext2D,
+  crestHeights: number[],
+  fillColor: string,
+  highlightStrength: number
+): void {
+  const crests = crestHeights.map((y, index) => ({
+    x: (worldWidth * index) / (crestHeights.length - 1),
+    y
+  }));
+
   context.beginPath();
-  context.moveTo(0, 520);
-  context.lineTo(95, 438);
-  context.lineTo(220, 504);
-  context.lineTo(365, 418);
-  context.lineTo(548, 526);
-  context.lineTo(735, 432);
-  context.lineTo(930, 520);
-  context.lineTo(1055, 458);
-  context.lineTo(1280, 536);
-  context.lineTo(1280, 720);
-  context.lineTo(0, 720);
+  traceSmoothRidge(context, crests);
+  context.lineTo(worldWidth, worldHeight);
+  context.lineTo(0, worldHeight);
   context.closePath();
+  context.fillStyle = fillColor;
   context.fill();
+
+  context.save();
+  context.beginPath();
+  traceSmoothRidge(context, crests);
+  context.lineWidth = 2.5;
+  context.strokeStyle = "rgba(255, 255, 255, " + String(highlightStrength) + ")";
+  context.stroke();
+  context.restore();
+}
+
+function traceSmoothRidge(context: CanvasRenderingContext2D, crests: Vec2[]): void {
+  context.moveTo(crests[0].x, crests[0].y);
+  let index = 0;
+  while (index < crests.length - 1) {
+    const current = crests[index];
+    const next = crests[index + 1];
+    context.quadraticCurveTo(current.x, current.y, (current.x + next.x) / 2, (current.y + next.y) / 2);
+    index += 1;
+  }
+  const last = crests[crests.length - 1];
+  context.lineTo(last.x, last.y);
+}
+
+function drawSkyGlow(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
+  const palette = getSkyPalette(theme);
+  const glow = context.createLinearGradient(0, 0, 0, worldHeight);
+  glow.addColorStop(0.2, "rgba(255, 255, 255, 0)");
+  glow.addColorStop(0.66, palette.horizonGlowSoft);
+  glow.addColorStop(1, palette.horizonGlow);
+  context.fillStyle = glow;
+  context.fillRect(0, 0, worldWidth, worldHeight);
+  context.fillStyle = palette.haze;
+  context.fillRect(0, worldHeight * 0.58, worldWidth, worldHeight * 0.24);
+}
+
+function drawHorizonMist(context: CanvasRenderingContext2D, palette: ReturnType<typeof getSkyPalette>): void {
+  const mist = context.createLinearGradient(0, 420, 0, 620);
+  mist.addColorStop(0, "rgba(255, 255, 255, 0)");
+  mist.addColorStop(0.35, palette.haze);
+  mist.addColorStop(1, "rgba(255, 255, 255, 0)");
+  context.fillStyle = mist;
+  context.fillRect(0, 400, worldWidth, 220);
+}
+
+function drawStars(context: CanvasRenderingContext2D, color: string, visualTime: number): void {
+  const stars = [
+    { x: 82, y: 68, size: 1.6, speed: 0.9 },
+    { x: 214, y: 142, size: 2.2, speed: 1.1 },
+    { x: 366, y: 88, size: 1.4, speed: 1.4 },
+    { x: 520, y: 164, size: 1.8, speed: 0.7 },
+    { x: 708, y: 72, size: 2, speed: 1.2 },
+    { x: 884, y: 138, size: 1.5, speed: 0.85 },
+    { x: 1016, y: 80, size: 2.1, speed: 1.35 },
+    { x: 1184, y: 132, size: 1.7, speed: 0.95 }
+  ];
+
+  for (let i = 0; i < stars.length; i += 1) {
+    const star = stars[i];
+    const alpha = 0.45 + (Math.sin(visualTime * star.speed + i * 1.7) + 1) * 0.22;
+    context.fillStyle = withOpacity(color, alpha);
+    context.fillRect(star.x, star.y, star.size, star.size);
+  }
+}
+
+function withOpacity(color: string, opacity: number): string {
+  if (!color.startsWith("rgba(")) {
+    return color;
+  }
+
+  const channels = color.slice(5, -1).split(",").map((part) => part.trim());
+  return "rgba(" + channels[0] + ", " + channels[1] + ", " + channels[2] + ", " + String(opacity) + ")";
 }
 
 function drawParachute(context: CanvasRenderingContext2D, x: number, y: number, color: string): void {

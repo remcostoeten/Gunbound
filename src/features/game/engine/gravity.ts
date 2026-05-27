@@ -115,6 +115,8 @@ function cloneMobile(mobile: Player["mobile"]): Player["mobile"] {
     moveRange: mobile.moveRange,
     shotDelay: mobile.shotDelay,
     specialCharges: mobile.specialCharges,
+    lastShotAngle: mobile.lastShotAngle,
+    lastShotTechnique: mobile.lastShotTechnique,
     doubleDamageTurns: mobile.doubleDamageTurns,
     verticalVelocity: mobile.verticalVelocity
   };

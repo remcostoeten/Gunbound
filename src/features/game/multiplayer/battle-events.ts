@@ -4,6 +4,7 @@ import type { BattleItemType, WeaponType } from "@/features/game/types/shared";
 
 export const BATTLE_EVENT_KIND = {
   MOVE: "battle_move",
+  FLIP_TECH: "battle_flip_tech",
   SWITCH_WEAPON: "battle_switch_weapon",
   SWITCH_ITEM: "battle_switch_item",
   FIRE: "battle_fire",
@@ -23,6 +24,12 @@ export type BattleSwitchWeaponPayload = {
   v: 1;
   turn: 1 | 2;
   weapon: WeaponType;
+};
+
+export type BattleFlipTechPayload = {
+  v: 1;
+  turn: 1 | 2;
+  direction: -1 | 1;
 };
 
 export type BattleSwitchItemPayload = {
@@ -48,6 +55,7 @@ export type BattleSurrenderPayload = {
 
 export type BattleEventPayload =
   | BattleMovePayload
+  | BattleFlipTechPayload
   | BattleSwitchWeaponPayload
   | BattleSwitchItemPayload
   | BattleFirePayload
@@ -63,6 +71,12 @@ export function parseBattleEventPayload(
     if (value.v !== 1) return undefined;
 
     if (kind === BATTLE_EVENT_KIND.MOVE) {
+      if (!isTurn(value.turn)) return undefined;
+      if (value.direction !== -1 && value.direction !== 1) return undefined;
+      return { v: 1, turn: value.turn, direction: value.direction };
+    }
+
+    if (kind === BATTLE_EVENT_KIND.FLIP_TECH) {
       if (!isTurn(value.turn)) return undefined;
       if (value.direction !== -1 && value.direction !== 1) return undefined;
       return { v: 1, turn: value.turn, direction: value.direction };

@@ -10,6 +10,10 @@ export function selectTurn(state: GameStoreState) {
   return state.turn;
 }
 
+export function selectShotMode(state: GameStoreState) {
+  return state.shotMode;
+}
+
 export function selectWind(state: GameStoreState) {
   return state.wind;
 }

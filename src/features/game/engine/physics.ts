@@ -1,5 +1,6 @@
 import { applyWeatherToFlightState } from "@/features/game/engine/weather";
 import { tracePlayerCollision, traceTerrainCollision } from "@/features/game/engine/collision";
+import { detectBackshot } from "@/features/game/engine/shot-techniques";
 import { clamp, getTerrainNormal } from "@/features/game/engine/terrain";
 import type {
   CombatHit,
@@ -15,6 +16,13 @@ export type ProjectileStep = {
   explosion: ExplosionState | null;
   bonusExplosion: ExplosionState | null;
 };
+
+// Horizontal force applied by wind per unit of wind magnitude. Kept well below
+// gravity (~530) so the wind bends a shot's arc — costing you range you make up
+// with angle and power — without ever overpowering it. At the wind cap this is
+// roughly a third of gravity, which guarantees every target stays reachable.
+// Exported so the on-canvas aim guide previews the exact same drift.
+export const windForceCoefficient = 200;
 
 export function getLaunchRadians(mobile: Mobile): number {
   const degrees = mobile.facing === 1 ? mobile.angle : 180 - mobile.angle;
@@ -59,7 +67,7 @@ export function stepProjectile(
 ): ProjectileStep {
   const previousPosition = projectile.position;
   let velocity = {
-    x: projectile.velocity.x + wind.x * 580 * projectile.windScale * dt,
+    x: projectile.velocity.x + wind.x * windForceCoefficient * projectile.windScale * dt,
     y: projectile.velocity.y + (530 * projectile.gravityScale + wind.y * 120) * dt
   };
   let nextPosition = {
@@ -85,7 +93,8 @@ export function stepProjectile(
     damage: weatherFlight.damage,
     blastRadius: weatherFlight.blastRadius,
     forceBoosted: weatherFlight.forceBoosted,
-    tornadoTriggered: weatherFlight.tornadoTriggered
+    tornadoTriggered: weatherFlight.tornadoTriggered,
+    technique: detectBackshot(projectile.technique, projectile.rearArc, projectile.launchDirection, velocity.x, projectile.life + dt)
   };
 
   const directHit = tracePlayerCollision(players, projectile.owner, previousPosition, nextPosition, projectile.radius);
@@ -168,7 +177,10 @@ export function stepProjectile(
             gravityScale: projectile.gravityScale,
             item: projectile.item,
             forceBoosted: weatherFlight.forceBoosted,
-            tornadoTriggered: weatherFlight.tornadoTriggered
+            tornadoTriggered: weatherFlight.tornadoTriggered,
+            technique: effectiveProjectile.technique,
+            launchDirection: projectile.launchDirection,
+            rearArc: projectile.rearArc
           },
           bonusExplosion: bounceExplosion,
           explosion: null
@@ -232,7 +244,10 @@ function advanceProjectile(
     gravityScale: projectile.gravityScale,
     item: projectile.item,
     forceBoosted,
-    tornadoTriggered
+    tornadoTriggered,
+    technique: detectBackshot(projectile.technique, projectile.rearArc, projectile.launchDirection, velocity.x, projectile.life + dt),
+    launchDirection: projectile.launchDirection,
+    rearArc: projectile.rearArc
   };
 }
 
@@ -354,6 +369,8 @@ function cloneMobile(mobile: Mobile): Mobile {
     moveRange: mobile.moveRange,
     shotDelay: mobile.shotDelay,
     specialCharges: mobile.specialCharges,
+    lastShotAngle: mobile.lastShotAngle,
+    lastShotTechnique: mobile.lastShotTechnique,
     doubleDamageTurns: mobile.doubleDamageTurns,
     verticalVelocity: mobile.verticalVelocity
   };

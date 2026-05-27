@@ -370,45 +370,82 @@ export function paintTerrainPixel(data: Uint8ClampedArray, terrain: TerrainState
   const palette = getTerrainPalette(terrain.theme);
   const aboveEmpty = y === 0 || terrain.mask[(y - 1) * terrain.width + x] === 0;
   const belowEmpty = y === terrain.height - 1 || terrain.mask[(y + 1) * terrain.width + x] === 0;
-  const sideEdge = isTerrainEdge(terrain, x, y);
+  const leftEmpty = x === 0 || terrain.mask[y * terrain.width + (x - 1)] === 0;
+  const rightEmpty = x === terrain.width - 1 || terrain.mask[y * terrain.width + (x + 1)] === 0;
+  const sideEdge = leftEmpty || rightEmpty;
   const surface = terrain.heights[x];
-  const topBand = Math.max(0, y - surface);
-  const dirtBand = topBand / Math.max(1, terrain.height - surface);
-  const speckle = (x * 13 + y * 7) % 29;
+  const depth = Math.max(0, y - surface);
+  const depthRatio = depth / Math.max(1, terrain.height - surface);
+  const slope = getTerrainSlope(terrain, x);
+  const sunlight = clamp(1.02 - slope * 0.02, 0.74, 1.2);
+  const ambient = clamp(0.95 - depthRatio * 0.22, 0.68, 1);
+  const noiseA = Math.sin((x + terrain.seed * 0.11) * 0.075 + y * 0.015);
+  const noiseB = Math.cos((y + terrain.seed * 0.07) * 0.11 - x * 0.018);
+  const seamNoise = Math.sin(x * 0.09 + y * 0.043 + terrain.seed * 0.0027);
+  const mineralNoise = Math.sin(x * 0.17 + y * 0.31 + terrain.seed * 0.004);
+  const pebbleNoise = (x * 17 + y * 31 + terrain.seed * 7) % 53;
 
-  if (aboveEmpty || topBand <= 4) {
-    if (topBand <= 1) {
-      setPixel(data, pixel, palette.grassTop[0], palette.grassTop[1], palette.grassTop[2], 255);
+  if (aboveEmpty || depth <= 5) {
+    if (depth <= 1) {
+      const grassLip = noiseA > 0.45 ? palette.grassAccent : palette.grassTop;
+      setShadedPixel(data, pixel, grassLip, clamp(sunlight + 0.08, 0.82, 1.28));
       return;
     }
 
-    if (topBand <= 3) {
-      setPixel(data, pixel, palette.grassMid[0], palette.grassMid[1], palette.grassMid[2], 255);
+    if (depth <= 3) {
+      const grassMid = noiseB > 0.32 ? palette.grassMid : palette.grassShadow;
+      setShadedPixel(data, pixel, grassMid, clamp(sunlight * 0.98, 0.74, 1.18));
       return;
     }
+
+    if (noiseA + noiseB > 1.05) {
+      setShadedPixel(data, pixel, palette.dirtAccent, clamp(ambient * 1.03, 0.76, 1.08));
+      return;
+    }
+
+    setShadedPixel(data, pixel, palette.dirtTop, ambient);
+    return;
   }
 
   if (belowEmpty && !aboveEmpty) {
-    setPixel(data, pixel, palette.dirtDeep[0], palette.dirtDeep[1], palette.dirtDeep[2], 255);
+    setShadedPixel(data, pixel, palette.dirtDeep, 0.72);
     return;
   }
 
   if (sideEdge) {
-    setPixel(data, pixel, palette.edge[0], palette.edge[1], palette.edge[2], 255);
+    const edgeShade = leftEmpty ? 0.84 : 1.06;
+    setShadedPixel(data, pixel, palette.edge, clamp(edgeShade * ambient, 0.68, 1.08));
     return;
   }
 
-  if (speckle < 4) {
-    setPixel(data, pixel, palette.dirtTop[0], palette.dirtTop[1], palette.dirtTop[2], 255);
+  if (mineralNoise > 0.93 && depth > 14) {
+    setShadedPixel(data, pixel, palette.rock, clamp(ambient * 1.06, 0.7, 1.1));
     return;
   }
 
-  if (dirtBand > 0.55) {
-    setPixel(data, pixel, palette.dirtDeep[0], palette.dirtDeep[1], palette.dirtDeep[2], 255);
+  if (pebbleNoise < 2 && depth > 8) {
+    setShadedPixel(data, pixel, palette.dirtAccent, clamp(ambient * 1.05, 0.72, 1.12));
     return;
   }
 
-  setPixel(data, pixel, palette.dirtMid[0], palette.dirtMid[1], palette.dirtMid[2], 255);
+  if (seamNoise > 0.7 && depth > 10) {
+    setShadedPixel(data, pixel, palette.rock, clamp(ambient * 0.92, 0.66, 1));
+    return;
+  }
+
+  if (depthRatio < 0.18) {
+    const topSoil = noiseA > 0.18 ? palette.dirtTop : palette.dirtAccent;
+    setShadedPixel(data, pixel, topSoil, clamp(ambient * sunlight, 0.7, 1.15));
+    return;
+  }
+
+  if (depthRatio < 0.52) {
+    const midSoil = noiseB > 0.4 ? palette.dirtAccent : palette.dirtMid;
+    setShadedPixel(data, pixel, midSoil, clamp(ambient * (0.94 + noiseA * 0.06), 0.66, 1.08));
+    return;
+  }
+
+  setShadedPixel(data, pixel, palette.dirtDeep, clamp(ambient * (0.9 + noiseB * 0.05), 0.6, 0.96));
 }
 
 export function setPixel(data: Uint8ClampedArray, pixel: number, red: number, green: number, blue: number, alpha: number): void {
@@ -432,6 +469,32 @@ export function isTerrainEdge(terrain: TerrainState, x: number, y: number): bool
   }
 
   return false;
+}
+
+function getTerrainSlope(terrain: TerrainState, x: number): number {
+  const left = terrain.heights[Math.max(0, x - 1)];
+  const right = terrain.heights[Math.min(terrain.width - 1, x + 1)];
+  return right - left;
+}
+
+function setShadedPixel(
+  data: Uint8ClampedArray,
+  pixel: number,
+  color: [number, number, number],
+  shade: number
+): void {
+  setPixel(
+    data,
+    pixel,
+    clampChannel(color[0] * shade),
+    clampChannel(color[1] * shade),
+    clampChannel(color[2] * shade),
+    255
+  );
+}
+
+function clampChannel(value: number): number {
+  return Math.max(0, Math.min(255, Math.round(value)));
 }
 
 export function isTerrainSolid(terrain: TerrainState, x: number, y: number): boolean {

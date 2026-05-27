@@ -1,7 +1,7 @@
 "use client";
 
 import { getWeatherDetail, getWeatherGlyph, getWeatherLabel } from "@/features/game/engine/weather";
-import { getWindDirectionLabel, getWindLabel } from "@/features/game/engine/wind";
+import { getWindDirectionLabel, getWindLabel, getWindRelation, getWindRelationLabel, maxWindMagnitude, type WindRelation } from "@/features/game/engine/wind";
 import { useGameState } from "@/features/game/hooks/use-game-state";
 import {
   selectPlayers,
@@ -20,6 +20,7 @@ export function Hud(): React.JSX.Element {
   const wind = useGameState(selectWind);
   const weather = useGameState(selectWeather);
   const currentPlayer = players[turn - 1];
+  const windRelation = getWindRelation(wind, currentPlayer.mobile.facing);
 
   return (
     <div className="hud">
@@ -52,6 +53,9 @@ export function Hud(): React.JSX.Element {
           <span className="wind-value">
             <span className="wind-glyph">{getWindDirectionLabel(wind)}</span>
             <span>{getWindLabel(wind)}</span>
+          </span>
+          <span className="wind-relation" style={{ color: getWindRelationColor(windRelation) }}>
+            {getWindRelationArrow(wind.x, windRelation)} {getWindRelationLabel(windRelation)}
           </span>
           <div className="wind-meter">
             <div className="wind-meter-center" />
@@ -115,9 +119,29 @@ function getHpClassName(hp: number, maxHp: number): string {
 }
 
 function getWindMeterLeft(horizontalWind: number): string {
-  const normalized = Math.max(-0.75, Math.min(0.75, horizontalWind));
-  const percentage = ((normalized + 0.75) / 1.5) * 100;
+  const normalized = Math.max(-maxWindMagnitude, Math.min(maxWindMagnitude, horizontalWind));
+  const percentage = ((normalized + maxWindMagnitude) / (maxWindMagnitude * 2)) * 100;
   return String(percentage) + "%";
+}
+
+function getWindRelationArrow(horizontalWind: number, relation: WindRelation): string {
+  if (relation === "calm") {
+    return "•";
+  }
+
+  return horizontalWind > 0 ? "→" : "←";
+}
+
+function getWindRelationColor(relation: WindRelation): string {
+  if (relation === "tailwind") {
+    return "#8ef0a0";
+  }
+
+  if (relation === "headwind") {
+    return "#ffb347";
+  }
+
+  return "rgba(255, 255, 255, 0.6)";
 }
 
 function formatDelay(value: number): string {

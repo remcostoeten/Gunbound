@@ -144,6 +144,7 @@ export function advanceRoundTurn(
   let damagePopups: DamagePopup[] = [];
 
   nextPlayers[nextTurn - 1].mobile.weapon = "primary";
+  facePlayersTowardsEachOther(nextPlayers);
 
   if (suddenDeathState.started) {
     history = appendMatchEventEntries(history, [
@@ -347,9 +348,16 @@ function cloneMobile(mobile: Mobile): Mobile {
     moveRange: mobile.moveRange,
     shotDelay: mobile.shotDelay,
     specialCharges: mobile.specialCharges,
+    lastShotAngle: mobile.lastShotAngle,
+    lastShotTechnique: mobile.lastShotTechnique,
     doubleDamageTurns: mobile.doubleDamageTurns,
     verticalVelocity: mobile.verticalVelocity
   };
+}
+
+function facePlayersTowardsEachOther(players: [Player, Player]): void {
+  players[0].mobile.facing = players[0].mobile.position.x <= players[1].mobile.position.x ? 1 : -1;
+  players[1].mobile.facing = players[1].mobile.position.x <= players[0].mobile.position.x ? 1 : -1;
 }
 
 function createDamagePopup(player: Player, value: number): DamagePopup {

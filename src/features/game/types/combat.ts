@@ -1,5 +1,5 @@
 import type { Player } from "@/features/game/types/entities";
-import type { BattleItemType, MobileType, PlayerId, Vec2, WeaponType } from "@/features/game/types/shared";
+import type { BattleItemType, MobileType, PlayerId, ShotTechnique, Vec2, WeaponType } from "@/features/game/types/shared";
 
 
 export type WeaponProfileDefinition = {
@@ -46,6 +46,9 @@ export type ProjectileState = {
   item: BattleItemType | null;
   forceBoosted: boolean;
   tornadoTriggered: boolean;
+  technique: ShotTechnique | null;
+  launchDirection: -1 | 1;
+  rearArc: boolean;
 };
 
 export type ExplosionState = {

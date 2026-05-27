@@ -240,8 +240,11 @@
   position: absolute;
   top: 50%;
   left: 50%;
-  width: max(100vw, calc(100vh * 16 / 9));
-  height: max(100vh, calc(100vw * 9 / 16));
+  /* Contain (letterbox) rather than cover (crop): the camera already frames
+     both mobiles inside the 16:9 world view, so the whole frame must stay
+     visible at every window size/aspect instead of overflowing off-screen. */
+  width: min(100vw, calc(100vh * 16 / 9));
+  height: min(100vh, calc(100vw * 9 / 16));
   display: block;
   transform: translate(-50%, -50%);
   cursor: var(--gb-cursor-reticle);
@@ -298,6 +301,10 @@
   flex-direction: column;
   align-items: flex-start;
   justify-content: flex-end;
+}
+
+.battle-chrome-main--dock-right {
+  align-items: flex-end;
 }
 
 .command-panel {
@@ -596,9 +603,13 @@
 }
 
 .game-shell .screen--result {
-  align-items: center;
+  /* safe center keeps the card centered but falls back to top-aligned when it
+     is taller than the window, and overflow-y lets it scroll instead of being
+     clipped on small browsers. */
+  align-items: safe center;
   justify-content: center;
-  overflow: hidden;
+  overflow-y: auto;
+  padding-block: clamp(16px, 5vh, 48px);
 }
 
 .lobby-bg-particles,
@@ -1385,9 +1396,14 @@
 }
 
 .lobby--practice {
-  gap: 10px;
+  gap: 12px;
   width: min(960px, 100%);
-  padding-top: 6px;
+  /* The lobby grid is stretched to full screen height by its flex parent, and
+     grid's default align-content: stretch was inflating the toolbar and panel
+     rows to fill it (the giant empty toolbar). Pack the rows to their content
+     and center the cluster so it reads as a finished, balanced card layout. */
+  align-content: safe center;
+  padding-block: 12px;
 }
 
 .practice-toolbar {
@@ -1989,8 +2005,7 @@
 }
 
 .result-stats {
-  margin: 0 -4px;
-  padding: 12px;
+  padding: 14px 16px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.03);
@@ -1998,33 +2013,41 @@
 
 .result-stats-table {
   display: grid;
-  gap: 2px;
+  gap: 3px;
 }
 
 .result-stats-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
   align-items: center;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+.result-stats-row:not(.result-stats-header):nth-child(even) {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .result-stats-header {
-  padding-bottom: 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  margin-bottom: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 4px;
+  border-radius: 0;
 }
 
 .result-stats-cell {
   display: block;
-  font-size: 0.72rem;
-  line-height: 1.6;
-  text-align: center;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .result-stats-label {
   color: #c7d9ea;
   text-align: left;
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   letter-spacing: 0.03em;
 }
 
@@ -2618,6 +2641,15 @@
 .wind-glyph {
   font-size: 0.86rem;
   color: #fff6d1;
+}
+
+.wind-relation {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .wind-meter {
@@ -3344,6 +3376,226 @@
   }
 }
 
+@media (max-width: 1180px), (max-height: 760px) {
+  .battle-chrome {
+    gap: 6px;
+  }
+
+  .battle-chrome-top {
+    padding: 6px 8px 0;
+    gap: 4px;
+  }
+
+  .battle-chrome-foot {
+    padding: 0 8px 8px;
+    gap: 6px;
+  }
+
+  .battle-chrome .hud-top {
+    grid-template-columns: minmax(0, 1fr) 112px minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .hud-card,
+  .aim-card {
+    padding: 6px;
+    border-radius: 10px;
+  }
+
+  .hud-player-identity {
+    gap: 4px;
+    margin-bottom: 3px;
+    font-size: 0.56rem;
+  }
+
+  .hud-meta {
+    gap: 6px;
+    font-size: 0.58rem;
+  }
+
+  .hud-meta.secondary {
+    font-size: 0.48rem;
+  }
+
+  .hp-bar {
+    width: 100%;
+    height: 8px;
+  }
+
+  .wind-card {
+    width: 112px;
+  }
+
+  .wind-meter {
+    width: 72px;
+    height: 7px;
+    margin-top: 4px;
+  }
+
+  .delay-readout {
+    margin-top: 4px;
+    gap: 3px;
+    font-size: 0.42rem;
+  }
+
+  .weather-readout {
+    margin-top: 4px;
+    gap: 4px;
+    padding: 4px 5px;
+  }
+
+  .weather-chip {
+    min-width: 24px;
+    min-height: 24px;
+    font-size: 0.46rem;
+  }
+
+  .weather-copy b {
+    font-size: 0.5rem;
+  }
+
+  .weather-copy small {
+    font-size: 0.44rem;
+  }
+
+  .command-panel {
+    max-width: min(430px, calc(100vw - 96px));
+    max-height: min(252px, 28vh);
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .command-panel .status-line {
+    min-height: 20px;
+    max-height: 32px;
+    overflow: hidden;
+    padding: 4px 6px;
+    font-size: 0.46rem;
+    line-height: 1.25;
+  }
+
+  .aim-card {
+    gap: 5px;
+  }
+
+  .aim-card-header {
+    gap: 6px;
+    padding-bottom: 4px;
+  }
+
+  .aim-card-body {
+    grid-template-columns: minmax(96px, 112px) minmax(0, 1fr);
+    gap: 4px 6px;
+  }
+
+  .aim-kicker {
+    font-size: 0.42rem;
+  }
+
+  .aim-headline {
+    font-size: 0.5rem;
+    line-height: 1.2;
+  }
+
+  .aim-card-phase {
+    min-width: 46px;
+    padding: 3px 5px;
+  }
+
+  .aim-phase-label {
+    font-size: 0.44rem;
+  }
+
+  .aim-phase-timer {
+    font-size: 0.6rem;
+  }
+
+  .aim-status-grid {
+    gap: 3px;
+  }
+
+  .aim-segment {
+    min-height: 30px;
+    padding: 4px;
+  }
+
+  .aim-value,
+  .aim-meter-value {
+    font-size: 0.52rem;
+  }
+
+  .aim-angle-detail {
+    margin-top: 2px;
+    font-size: 0.44rem;
+  }
+
+  .aim-weapon-row {
+    gap: 3px;
+  }
+
+  .aim-shot-slot-card {
+    min-height: 30px;
+    grid-template-columns: auto 18px minmax(0, 1fr);
+    gap: 4px;
+    padding: 4px 5px;
+  }
+
+  .aim-shot-slot-card .aim-shot-slot {
+    min-width: 22px;
+    font-size: 0.42rem;
+  }
+
+  .aim-shot-slot-card .aim-shot-icon-frame,
+  .aim-shot-slot-card .aim-shot-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .aim-shot-name {
+    font-size: 0.52rem;
+  }
+
+  .aim-shot-detail {
+    font-size: 0.46rem;
+  }
+
+  .aim-command-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .aim-command {
+    min-height: 28px;
+    gap: 4px;
+    padding: 4px 5px;
+  }
+
+  .aim-command-key {
+    min-width: 30px;
+    padding: 2px 4px;
+    font-size: 0.44rem;
+  }
+
+  .aim-command-action {
+    font-size: 0.5rem;
+  }
+
+  .battle-chrome .history-panel {
+    width: min(200px, 22vw);
+    max-height: min(104px, 14vh);
+    padding: 6px 8px;
+    gap: 4px;
+  }
+
+  .battle-chrome .history-panel.is-collapsed {
+    width: auto;
+    padding: 0;
+  }
+
+  .battle-chrome .history-list {
+    max-height: min(58px, 8vh);
+  }
+}
+
 @media (max-width: 860px) {
   .battle-chrome-top {
     padding: 8px 12px 0;
@@ -3358,6 +3610,10 @@
 
   .battle-chrome-main {
     order: 1;
+  }
+
+  .battle-chrome-main--dock-right {
+    align-items: stretch;
   }
 
   .command-panel {
@@ -3485,6 +3741,10 @@
 
   .battle-chrome-main {
     justify-content: end;
+  }
+
+  .battle-chrome-main--dock-right {
+    align-items: stretch;
   }
 
   .battle-chrome .hud-top {

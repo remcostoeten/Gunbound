@@ -23,16 +23,22 @@ export function createPlayer(
   };
 }
 
+// Distance each mobile spawns from its edge. The resulting gap (worldWidth -
+// 2 * spawnInset = 860) sits below every mobile's calm-air maximum range, so
+// even the shortest-ranged heavies (turtle ~902px) can reach turn one without
+// having to close distance first.
+const spawnInset = 210;
+
 export function createPlaceholderPlayers(setup: MatchConfig): [Player, Player] {
   return [
-    createPlayer(1, setup.playerOneName, setup.playerOneTitle, setup.playerOneAccent, createMobile(setup.playerOneMobile, "p1-mobile", 1, 160), 0),
-    createPlayer(2, setup.playerTwoName, setup.playerTwoTitle, setup.playerTwoAccent, createMobile(setup.playerTwoMobile, "p2-mobile", 2, worldWidth - 160), 0)
+    createPlayer(1, setup.playerOneName, setup.playerOneTitle, setup.playerOneAccent, createMobile(setup.playerOneMobile, "p1-mobile", 1, spawnInset), 0),
+    createPlayer(2, setup.playerTwoName, setup.playerTwoTitle, setup.playerTwoAccent, createMobile(setup.playerTwoMobile, "p2-mobile", 2, worldWidth - spawnInset), 0)
   ];
 }
 
 export function createPlayers(config: MatchConfig, terrain: TerrainState): [Player, Player] {
-  const playerOneMobile = createMobile(config.playerOneMobile, "p1-mobile", 1, 164);
-  const playerTwoMobile = createMobile(config.playerTwoMobile, "p2-mobile", 2, worldWidth - 164);
+  const playerOneMobile = createMobile(config.playerOneMobile, "p1-mobile", 1, spawnInset);
+  const playerTwoMobile = createMobile(config.playerTwoMobile, "p2-mobile", 2, worldWidth - spawnInset);
 
   playerOneMobile.position.y = getSurfaceY(terrain, playerOneMobile.position.x);
   playerTwoMobile.position.y = getSurfaceY(terrain, playerTwoMobile.position.x);

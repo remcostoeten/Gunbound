@@ -2,6 +2,7 @@
 
 import { getMobileAngleProfile, isTrueAngle } from "@/features/game/engine/aiming";
 import { createTurnGuide } from "@/features/game/engine/action-guide";
+import { canTriggerButtShot, getShotModeLabel, getShotTechniqueLabel } from "@/features/game/engine/shot-techniques";
 import { getWeaponIconPath } from "@/features/game/constants/weapon-icons";
 import { useGameState } from "@/features/game/hooks/use-game-state";
 import { dispatchBattleInputCommand } from "@/features/game/multiplayer/battle-command-bus";
@@ -13,6 +14,7 @@ import {
   selectPhaseTimer,
   selectPlayers,
   selectPower,
+  selectShotMode,
   selectSelectedBattleItems,
   selectTurn,
   selectTurnCount,
@@ -25,6 +27,7 @@ export function AimIndicator(): React.JSX.Element {
   const players = useGameState(selectPlayers);
   const power = useGameState(selectPower);
   const charging = useGameState(selectCharging);
+  const shotMode = useGameState(selectShotMode);
   const phase = useGameState(selectPhase);
   const phaseTimer = useGameState(selectPhaseTimer);
   const turnCount = useGameState(selectTurnCount);
@@ -36,6 +39,8 @@ export function AimIndicator(): React.JSX.Element {
   const turnGuide = createTurnGuide(player, phase, charging, phaseTimer, power, turnCount, turnMoveRemaining, battleItemInventories[turn - 1], selectedBattleItems[turn - 1], weather);
   const angleProfile = getMobileAngleProfile(player.mobile.type);
   const trueAngleActive = isTrueAngle(player.mobile.type, player.mobile.angle);
+  const lastShotAngle = player.mobile.lastShotAngle === null ? "--" : Math.round(player.mobile.lastShotAngle) + "°";
+  const lastShotTechnique = getShotTechniqueLabel(player.mobile.lastShotTechnique);
 
   return (
     <div className={"aim-card tone-" + turnGuide.tone}>
@@ -72,12 +77,14 @@ export function AimIndicator(): React.JSX.Element {
             <span className="aim-meter-value">{String(turnGuide.powerPercent).padStart(2, "0")}%</span>
           </div>
           <div className="aim-segment">
-            <span className="aim-label">Mobile</span>
-            <span className="aim-value">{capitalize(player.mobile.type)}</span>
+            <span className="aim-label">Last Angle</span>
+            <span className="aim-value">{lastShotAngle}</span>
+            <span className="aim-angle-detail">{lastShotTechnique}</span>
           </div>
           <div className="aim-segment">
-            <span className="aim-label">Boost</span>
-            <span className="aim-value">{getBoostLabel(player.mobile.doubleDamageTurns, player.mobile.specialCharges)}</span>
+            <span className="aim-label">Shot Mode</span>
+            <span className="aim-value">{getShotModeLabel(shotMode)}</span>
+            <span className="aim-angle-detail">{charging ? "Release then tap back" : "Space hold and release"}</span>
           </div>
         </div>
 
@@ -181,12 +188,16 @@ export function AimIndicator(): React.JSX.Element {
 
 function handleMoveLeftStart(event: React.PointerEvent<HTMLButtonElement>): void {
   event.preventDefault();
+  if (tryFlipTechnique(-1)) return;
+  if (isMoveLockedDuringFire()) return;
   if (dispatchBattleInputCommand({ kind: "move", direction: -1 })) return;
   useGameStore.getState().setMoveKey(-1, true);
 }
 
 function handleMoveLeftEnd(event: React.PointerEvent<HTMLButtonElement>): void {
   event.preventDefault();
+  if (tryFlipTechnique(-1)) return;
+  if (isMoveLockedDuringFire()) return;
   if (dispatchBattleInputCommand({ kind: "move", direction: -1 })) return;
   useGameStore.getState().setMoveKey(-1, false);
 }
@@ -194,6 +205,8 @@ function handleMoveLeftEnd(event: React.PointerEvent<HTMLButtonElement>): void {
 function handleMoveLeftKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): void {
   if (!isActivationKey(event) || event.repeat) return;
   event.preventDefault();
+  if (tryFlipTechnique(-1)) return;
+  if (isMoveLockedDuringFire()) return;
   if (dispatchBattleInputCommand({ kind: "move", direction: -1 })) return;
   useGameStore.getState().setMoveKey(-1, true);
 }
@@ -201,18 +214,24 @@ function handleMoveLeftKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): v
 function handleMoveLeftKeyUp(event: React.KeyboardEvent<HTMLButtonElement>): void {
   if (!isActivationKey(event)) return;
   event.preventDefault();
+  if (tryFlipTechnique(-1)) return;
+  if (isMoveLockedDuringFire()) return;
   if (dispatchBattleInputCommand({ kind: "move", direction: -1 })) return;
   useGameStore.getState().setMoveKey(-1, false);
 }
 
 function handleMoveRightStart(event: React.PointerEvent<HTMLButtonElement>): void {
   event.preventDefault();
+  if (tryFlipTechnique(1)) return;
+  if (isMoveLockedDuringFire()) return;
   if (dispatchBattleInputCommand({ kind: "move", direction: 1 })) return;
   useGameStore.getState().setMoveKey(1, true);
 }
 
 function handleMoveRightEnd(event: React.PointerEvent<HTMLButtonElement>): void {
   event.preventDefault();
+  if (tryFlipTechnique(1)) return;
+  if (isMoveLockedDuringFire()) return;
   if (dispatchBattleInputCommand({ kind: "move", direction: 1 })) return;
   useGameStore.getState().setMoveKey(1, false);
 }
@@ -220,6 +239,8 @@ function handleMoveRightEnd(event: React.PointerEvent<HTMLButtonElement>): void 
 function handleMoveRightKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): void {
   if (!isActivationKey(event) || event.repeat) return;
   event.preventDefault();
+  if (tryFlipTechnique(1)) return;
+  if (isMoveLockedDuringFire()) return;
   if (dispatchBattleInputCommand({ kind: "move", direction: 1 })) return;
   useGameStore.getState().setMoveKey(1, true);
 }
@@ -227,6 +248,8 @@ function handleMoveRightKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): 
 function handleMoveRightKeyUp(event: React.KeyboardEvent<HTMLButtonElement>): void {
   if (!isActivationKey(event)) return;
   event.preventDefault();
+  if (tryFlipTechnique(1)) return;
+  if (isMoveLockedDuringFire()) return;
   if (dispatchBattleInputCommand({ kind: "move", direction: 1 })) return;
   useGameStore.getState().setMoveKey(1, false);
 }
@@ -350,6 +373,25 @@ function renderCommand(command: ReturnType<typeof createTurnGuide>["commands"][n
   );
 }
 
+function tryFlipTechnique(direction: -1 | 1): boolean {
+  const store = useGameStore.getState();
+  if (!canTriggerButtShot(store.pendingButtShot, direction)) {
+    return false;
+  }
+
+  if (dispatchBattleInputCommand({ kind: "flip-tech", direction })) {
+    return true;
+  }
+
+  store.applyBattleFlipTech(direction);
+  return true;
+}
+
+function isMoveLockedDuringFire(): boolean {
+  const store = useGameStore.getState();
+  return store.phase === "fire" || store.projectile !== null;
+}
+
 function getWeaponSlotClassName(selected: boolean, available: boolean): string {
   if (selected) {
     return "aim-shot-slot-card selected";
@@ -360,20 +402,4 @@ function getWeaponSlotClassName(selected: boolean, available: boolean): string {
   }
 
   return "aim-shot-slot-card";
-}
-
-function getBoostLabel(doubleDamageTurns: number, specialCharges: number): string {
-  if (doubleDamageTurns > 0) {
-    return "Double";
-  }
-
-  if (specialCharges > 0) {
-    return "Charge +" + String(specialCharges);
-  }
-
-  return "Normal";
-}
-
-function capitalize(value: string): string {
-  return value.slice(0, 1).toUpperCase() + value.slice(1);
 }

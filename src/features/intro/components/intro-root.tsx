@@ -25,7 +25,7 @@ export function IntroRoot({
   replayKey = 0,
 }: Props) {
   const [exitMode, setExitMode] = useState<IntroExitMode>("pull");
-  const [introArmed] = useState(true);
+  const [introArmed, setIntroArmed] = useState(false);
   const musicRef = useRef<ReturnType<typeof playIntroMusic> | null>(null);
   const fit = useFitToTarget(autoFit, targetWidth, targetHeight);
   const dustVariants = useDustVariants(replayKey);
@@ -39,13 +39,21 @@ export function IntroRoot({
   const pulling = exiting && exitMode === "pull";
 
   useEffect(() => {
-    musicRef.current?.stop();
-    musicRef.current = playIntroMusic();
     return () => {
       musicRef.current?.stop();
       musicRef.current = null;
     };
-  }, [replayKey]);
+  }, []);
+
+  function handleStartIntro(): void {
+    if (introArmed) {
+      return;
+    }
+
+    musicRef.current?.stop();
+    musicRef.current = playIntroMusic();
+    setIntroArmed(true);
+  }
 
   return (
     <div
@@ -67,6 +75,15 @@ export function IntroRoot({
           dustVariants={dustVariants}
         />
       </div>
+      {!introArmed ? (
+        <button
+          type="button"
+          className="intro-start-button"
+          onClick={handleStartIntro}
+        >
+          Start
+        </button>
+      ) : null}
     </div>
   );
 }

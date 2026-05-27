@@ -143,7 +143,7 @@ function createTurnGuidePhaseStep(label: string, state: TurnGuidePhaseStep["stat
 
 function getTurnGuideHeadline(phase: GamePhase, charging: boolean): string {
   if (charging) {
-    return "Hold power, then release";
+    return "Release at the right power, then tap back";
   }
 
   if (phase === "move") {
@@ -167,7 +167,7 @@ function getTurnGuideHeadline(phase: GamePhase, charging: boolean): string {
 
 function getTurnGuideDetail(player: Player, phase: GamePhase, charging: boolean): string {
   if (charging) {
-    return "Space builds power for " + getWeaponDisplayName(player.mobile.type, player.mobile.weapon) + ".";
+    return "Power sweeps up and back down — release Space to lock it for " + getWeaponDisplayName(player.mobile.type, player.mobile.weapon) + ".";
   }
 
   if (phase === "move") {
@@ -271,7 +271,7 @@ function getWeaponDetailLabel(player: Player, phase: GamePhase, charging: boolea
 
 function getFireDetailLabel(phase: GamePhase, charging: boolean): string {
   if (charging) {
-    return "Fire now";
+    return "Release";
   }
 
   if (phase === "resolve" || phase === "end") {
@@ -279,7 +279,7 @@ function getFireDetailLabel(phase: GamePhase, charging: boolean): string {
   }
 
   if (phase === "fire") {
-    return "Tracking";
+    return "Tap back";
   }
 
   return "Hold";

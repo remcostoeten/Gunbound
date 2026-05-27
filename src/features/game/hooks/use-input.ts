@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { canTriggerButtShot } from "@/features/game/engine/shot-techniques";
 import { useGameStore } from "@/features/game/store/game-store";
 import { dispatchBattleInputCommand } from "@/features/game/multiplayer/battle-command-bus";
 
@@ -36,6 +37,12 @@ function bindInput(): CleanupHandler {
     if (event.code === "KeyA") {
       event.preventDefault();
       if (event.repeat) return;
+      if (canTriggerButtShot(store.pendingButtShot, -1)) {
+        if (dispatchBattleInputCommand({ kind: "flip-tech", direction: -1 })) return;
+        store.applyBattleFlipTech(-1);
+        return;
+      }
+      if (store.phase === "fire" || store.projectile !== null) return;
       if (dispatchBattleInputCommand({ kind: "move", direction: -1 })) return;
       store.setMoveKey(-1, true);
       return;
@@ -44,6 +51,12 @@ function bindInput(): CleanupHandler {
     if (event.code === "KeyD") {
       event.preventDefault();
       if (event.repeat) return;
+      if (canTriggerButtShot(store.pendingButtShot, 1)) {
+        if (dispatchBattleInputCommand({ kind: "flip-tech", direction: 1 })) return;
+        store.applyBattleFlipTech(1);
+        return;
+      }
+      if (store.phase === "fire" || store.projectile !== null) return;
       if (dispatchBattleInputCommand({ kind: "move", direction: 1 })) return;
       store.setMoveKey(1, true);
       return;
@@ -92,6 +105,7 @@ function bindInput(): CleanupHandler {
 
     if (event.code === "KeyA") {
       event.preventDefault();
+      if (store.phase === "fire" || store.projectile !== null) return;
       if (dispatchBattleInputCommand({ kind: "move", direction: -1 })) return;
       store.setMoveKey(-1, false);
       return;
@@ -99,6 +113,7 @@ function bindInput(): CleanupHandler {
 
     if (event.code === "KeyD") {
       event.preventDefault();
+      if (store.phase === "fire" || store.projectile !== null) return;
       if (dispatchBattleInputCommand({ kind: "move", direction: 1 })) return;
       store.setMoveKey(1, false);
       return;

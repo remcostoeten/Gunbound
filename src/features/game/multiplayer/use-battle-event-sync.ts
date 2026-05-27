@@ -18,6 +18,7 @@ import {
   BATTLE_EVENT_KIND,
   parseBattleEventPayload,
   type BattleFirePayload,
+  type BattleFlipTechPayload,
   type BattleMovePayload,
   type BattleSurrenderPayload,
   type BattleSwitchItemPayload,
@@ -200,8 +201,10 @@ export function useBattleEventSync(roomSession: RoomSession): UseBattleEventSync
         return !canControl;
       }
       if (!canControl) return true;
-      if (pendingCommand.current) return true;
-      pendingCommand.current = true;
+      if (command.kind !== "flip-tech" && pendingCommand.current) return true;
+      if (command.kind !== "flip-tech") {
+        pendingCommand.current = true;
+      }
       void recordCommand(
         command,
         roomSession,
@@ -234,7 +237,7 @@ async function recordCommand(
 
   const store = useGameStore.getState();
   const currentPlayer = store.players[store.turn - 1];
-  const tick = BigInt(roomSession.roundEvents.length + 1);
+  const tick = BigInt(roomSession.roundEvents.length + optimisticTicks.current.size + 1);
   const tickKey = tick.toString();
 
   if (command.kind === "move") {
@@ -247,6 +250,23 @@ async function recordCommand(
     optimisticTicks.current.add(tickKey);
     try {
       await recordRoundEvent(connection, activeRound.id, tick, BATTLE_EVENT_KIND.MOVE, payload);
+    } catch (err) {
+      optimisticTicks.current.delete(tickKey);
+      throw err;
+    }
+    return;
+  }
+
+  if (command.kind === "flip-tech") {
+    const payload: BattleFlipTechPayload = {
+      v: 1,
+      turn: store.turn,
+      direction: command.direction,
+    };
+    store.applyBattleFlipTech(command.direction);
+    optimisticTicks.current.add(tickKey);
+    try {
+      await recordRoundEvent(connection, activeRound.id, tick, BATTLE_EVENT_KIND.FLIP_TECH, payload);
     } catch (err) {
       optimisticTicks.current.delete(tickKey);
       throw err;
@@ -325,7 +345,7 @@ async function recordRoundEvent(
   roundId: bigint,
   tick: bigint,
   kind: string,
-  payload: BattleMovePayload | BattleSwitchWeaponPayload | BattleSwitchItemPayload | BattleFirePayload | BattleSurrenderPayload,
+  payload: BattleMovePayload | BattleFlipTechPayload | BattleSwitchWeaponPayload | BattleSwitchItemPayload | BattleFirePayload | BattleSurrenderPayload,
 ): Promise<void> {
   await connection.reducers.recordRoundEvent({
     roundId,
@@ -342,6 +362,11 @@ function applyBattlePayload(kind: string, payload: ReturnType<typeof parseBattle
 
   if (kind === BATTLE_EVENT_KIND.MOVE && "direction" in payload) {
     store.applyBattleMove(payload.direction);
+    return true;
+  }
+
+  if (kind === BATTLE_EVENT_KIND.FLIP_TECH && "direction" in payload) {
+    store.applyBattleFlipTech(payload.direction);
     return true;
   }
 

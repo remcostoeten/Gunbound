@@ -1,4 +1,4 @@
-import type { BonusType, MapType, MobileType, PlayerAccent, PlayerId, PlayerTitle, TerrainTheme, Vec2, WeaponType } from "@/features/game/types/shared";
+import type { BonusType, MapType, MobileType, PlayerAccent, PlayerId, PlayerTitle, ShotTechnique, TerrainTheme, Vec2, WeaponType } from "@/features/game/types/shared";
 
 export type TerrainState = {
   width: number;
@@ -25,6 +25,8 @@ export type Mobile = {
   moveRange: number;
   shotDelay: number;
   specialCharges: number;
+  lastShotAngle: number | null;
+  lastShotTechnique: ShotTechnique | null;
   doubleDamageTurns: number;
   verticalVelocity: number;
 };
