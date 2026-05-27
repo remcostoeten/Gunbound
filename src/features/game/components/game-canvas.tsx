@@ -6,6 +6,7 @@ import { createCameraRig, getCameraFrame, stepCameraRig } from "@/features/game/
 import { createVisualEffectsState, stepVisualEffectsState } from "@/features/game/engine/effects";
 import { createMapDecor } from "@/features/game/engine/map-decor";
 import { createProjectileRenderStyle, getProjectileImpactStyle, getProjectileTrailStyle } from "@/features/game/engine/projectile-presentation";
+import { clamp } from "@/features/game/engine/terrain";
 import { getSkyPalette, getTerrainPalette } from "@/features/game/engine/terrain-theme";
 import { getMobileSpriteFrame, getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
 import { getLaunchRadians, getMuzzlePosition } from "@/features/game/engine/physics";
@@ -512,6 +513,9 @@ function drawMobile(context: CanvasRenderingContext2D, player: Player, isTurn: b
   drawMobileShadow(context, player);
   drawMobileSprite(context, player, spriteCache, visualTime, moving);
   drawHpTickMarks(context, player);
+  if (isTurn) {
+    drawAngleBadge(context, player, accent);
+  }
   drawPennant(context, player, accent);
   context.restore();
 }
@@ -519,6 +523,46 @@ function drawMobile(context: CanvasRenderingContext2D, player: Player, isTurn: b
 function getTurretAngle(player: Player): number {
   const degrees = player.mobile.facing === 1 ? player.mobile.angle : 180 - player.mobile.angle;
   return (degrees * Math.PI) / 180;
+}
+
+function drawAngleBadge(context: CanvasRenderingContext2D, player: Player, accent: string): void {
+  const launchRadians = getLaunchRadians(player.mobile);
+  const muzzle = getMuzzlePosition(player.mobile, launchRadians);
+  const directionX = Math.cos(launchRadians);
+  const directionY = Math.sin(launchRadians);
+  const isRearArc = player.mobile.angle > 90;
+  const label = Math.round(player.mobile.angle) + " DEG";
+  const modeLabel = isRearArc ? "REAR" : "FRONT";
+  const width = 68;
+  const height = 22;
+  const anchorX = clamp(muzzle.x + directionX * 24, width * 0.5 + 10, worldWidth - width * 0.5 - 10);
+  const anchorY = clamp(muzzle.y - directionY * 18 - 22, 28, worldHeight - 48);
+  const cardX = anchorX - width * 0.5;
+  const cardY = anchorY - height * 0.5;
+
+  context.strokeStyle = colorWithAlpha(accent, 0.8);
+  context.lineWidth = 2;
+  context.beginPath();
+  context.moveTo(muzzle.x, muzzle.y);
+  context.lineTo(anchorX, anchorY);
+  context.stroke();
+
+  context.fillStyle = "rgba(9, 20, 36, 0.88)";
+  roundRect(context, cardX, cardY, width, height, 7);
+  context.fill();
+  context.strokeStyle = colorWithAlpha(accent, 0.78);
+  context.lineWidth = 1.5;
+  context.stroke();
+
+  context.font = '700 8px "Press Start 2P"';
+  context.textAlign = "left";
+  context.textBaseline = "middle";
+  context.fillStyle = "#fff7de";
+  context.fillText(label, cardX + 7, anchorY + 0.5);
+
+  context.textAlign = "right";
+  context.fillStyle = colorWithAlpha(accent, 0.95);
+  context.fillText(modeLabel, cardX + width - 6, anchorY + 0.5);
 }
 
 function drawProjectile(context: CanvasRenderingContext2D, projectile: ProjectileState): void {

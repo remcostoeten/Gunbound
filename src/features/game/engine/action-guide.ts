@@ -172,7 +172,7 @@ function getTurnGuideDetail(player: Player, phase: GamePhase, charging: boolean)
   }
 
   if (phase === "aim") {
-    return "Use the arrow keys, then hold Space when the arc feels right.";
+    return "Use the arrow keys to swing through front or rear arcs, then hold Space when the arc feels right.";
   }
 
   if (phase === "fire") {

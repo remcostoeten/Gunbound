@@ -2,7 +2,15 @@
 
 import { create } from "zustand";
 import type { StateCreator } from "zustand";
-import { defaultRoundLimit, defaultSuddenDeathTurn, defaultTargetScore, defaultTurnDurationMode, getPhaseDuration } from "@/features/game/constants/gameplay";
+import {
+  defaultRoundLimit,
+  defaultSuddenDeathTurn,
+  defaultTargetScore,
+  defaultTurnDurationMode,
+  getPhaseDuration,
+  maxAimAngle,
+  minAimAngle
+} from "@/features/game/constants/gameplay";
 import {
   type BattleItemInventory,
   consumeBattleItem,
@@ -850,7 +858,7 @@ function fireCurrentShot(
 
   const players = clonePlayers(state.players);
   const currentPlayer = players[state.turn - 1];
-  currentPlayer.mobile.angle = clamp(input.angle, 16, 84);
+  currentPlayer.mobile.angle = clamp(input.angle, minAimAngle, maxAimAngle);
   currentPlayer.mobile.weapon = input.weapon;
 
   const power = clamp(input.power, 0.08, 1);
@@ -1022,7 +1030,7 @@ function applyAimInput(players: [Player, Player], turn: 1 | 2, input: InputState
   }
 
   if (delta !== 0) {
-    mobile.angle = clamp(mobile.angle + delta, 16, 84);
+    mobile.angle = clamp(mobile.angle + delta, minAimAngle, maxAimAngle);
   }
 
   return nextPlayers;
