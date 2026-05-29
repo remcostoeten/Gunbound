@@ -64,7 +64,7 @@ export function GunboundSpacetimeProvider({
 </SpacetimeAuthProvider>
 ```
 
-After login, `bumpSession()` remounts the provider so the recovered token is picked up immediately.
+After login, `bumpSession()` increments `sessionKey`, which is incorporated into `createConnectionUri(...)` and included in the `useMemo(..., [connectionRetry, onIdentity, sessionKey])` dependency array. This rebuilds `connectionBuilder`, causing `SpacetimeDBProvider` to recreate and reconnect its connection with the new session query param so the recovered token is picked up immediately.
 
 ## useSpacetimeDB
 

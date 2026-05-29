@@ -50,13 +50,13 @@ export const Player = table(
 
 ### Credential
 
-Public table of password-encrypted session tokens for cross-device login.
+Server-only table of password-encrypted session tokens for cross-device login.
 
 ```typescript
 export const Credential = table(
   {
     name: 'credential',
-    public: true,
+    public: false,
     indexes: [{ accessor: 'credential_identity', algorithm: 'btree', columns: ['identity'] }]
   },
   {
@@ -69,7 +69,7 @@ export const Credential = table(
 );
 ```
 
-`encryptedToken` is a JSON bundle: `{ v, iter, salt, iv, ct }` (see [Authentication](/docs/spacetimedb/auth)).
+`encryptedToken` is a JSON bundle: `{ v, iter, salt, iv, ct }` (see [Authentication](/docs/spacetimedb/auth)). Access is restricted to server-only methods to prevent clients from harvesting ciphertext.
 
 ### Room
 
@@ -90,7 +90,7 @@ export const Room = table(
     id: t.u64().primaryKey().autoInc(),
     code: t.string(),
     hostIdentity: t.identity(),
-    status: t.string(), // waiting | starting | in_match | ended
+    status: t.string(), // waiting | in_match | ended
     seed: t.u64(),
     mapType: t.string(),
     targetScore: t.u32(),

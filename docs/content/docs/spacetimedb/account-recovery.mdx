@@ -88,7 +88,7 @@ const builder = DbConnection.builder()
   .onConnect(onConnect);
 ```
 
-The server's `onClientConnected` hook upserts a `player` row:
+The server's `onClientConnected` hook checks for an existing player with `ctx.db.player.identity.find(ctx.sender)` and only inserts a new player via `insertPlayer('', ...)` when none exists:
 
 ```typescript
 // server/spacetimedb/src/index.ts
