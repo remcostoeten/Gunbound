@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { playUiSfx } from "@/lib/music-bus";
 
 type Props = {
   onClose: () => void;
@@ -11,6 +12,16 @@ export function LobbyRoomSearchModal({ onClose, onJoin }: Props) {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(function playOpenCue(): void {
+    playUiSfx("open");
+  }, []);
+
+  useEffect(function playErrorCue(): void {
+    if (error !== null) {
+      playUiSfx("error");
+    }
+  }, [error]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

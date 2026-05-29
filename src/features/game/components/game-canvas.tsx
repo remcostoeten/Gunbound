@@ -91,6 +91,18 @@ const explosionSpriteSpecs: Record<ExplosionSpriteSheet, ExplosionSpriteSpec> = 
     width: 1921,
     height: 124
   },
+  "dragon-fire": {
+    path: "/explodes/generated/dragon-fire.svg",
+    frames: 16,
+    width: 2048,
+    height: 128
+  },
+  "frog-bubble": {
+    path: "/explodes/generated/frog-bubble.svg",
+    frames: 16,
+    width: 2048,
+    height: 128
+  },
   gum: {
     path: "/explodes/gum1.png",
     frames: 14,
@@ -109,10 +121,46 @@ const explosionSpriteSpecs: Record<ExplosionSpriteSheet, ExplosionSpriteSpec> = 
     width: 1253,
     height: 122
   },
+  "knight-blade": {
+    path: "/explodes/generated/knight-blade.svg",
+    frames: 16,
+    width: 2048,
+    height: 128
+  },
+  "mage-rune": {
+    path: "/explodes/generated/mage-rune.svg",
+    frames: 16,
+    width: 2048,
+    height: 128
+  },
   nak: {
     path: "/explodes/nak.png",
     frames: 9,
     width: 1094,
+    height: 128
+  },
+  "sate-sonar": {
+    path: "/explodes/generated/sate-sonar.svg",
+    frames: 16,
+    width: 2048,
+    height: 128
+  },
+  "snow-frost": {
+    path: "/explodes/generated/snow-frost.svg",
+    frames: 16,
+    width: 2048,
+    height: 128
+  },
+  "trico-horn": {
+    path: "/explodes/generated/trico-horn.svg",
+    frames: 16,
+    width: 2048,
+    height: 128
+  },
+  "turtle-shell": {
+    path: "/explodes/generated/turtle-shell.svg",
+    frames: 16,
+    width: 2048,
     height: 128
   }
 };
@@ -791,10 +839,18 @@ function createExplosionSpriteCache(): ExplosionSpriteCache {
     "aduka-thor": null,
     "armor-primary": null,
     "armor-secondary": null,
+    "dragon-fire": null,
+    "frog-bubble": null,
     gum: null,
     "jd-secondary": null,
     "jd-lightning": null,
-    nak: null
+    "knight-blade": null,
+    "mage-rune": null,
+    nak: null,
+    "sate-sonar": null,
+    "snow-frost": null,
+    "trico-horn": null,
+    "turtle-shell": null
   };
 }
 
@@ -1175,40 +1231,302 @@ function colorWithAlpha(color: string, alpha: number): string {
 function drawExplosionSprites(context: CanvasRenderingContext2D, sprites: ExplosionSpriteEffect[], spriteCache: ExplosionSpriteCache): void {
   let index = 0;
   while (index < sprites.length) {
-    drawExplosionSprite(context, sprites[index], spriteCache);
+    drawExplosionSpriteSheetFrame(context, sprites[index], spriteCache);
+    drawProceduralExplosion(context, sprites[index]);
     index += 1;
   }
 }
 
-function drawExplosionSprite(context: CanvasRenderingContext2D, sprite: ExplosionSpriteEffect, spriteCache: ExplosionSpriteCache): void {
+function drawExplosionSpriteSheetFrame(context: CanvasRenderingContext2D, sprite: ExplosionSpriteEffect, spriteCache: ExplosionSpriteCache): void {
   const image = spriteCache[sprite.sheet];
-  if (image === null || !image.complete || image.naturalWidth === 0) {
+  if (image === null || !image.complete || image.naturalWidth === 0 || image.naturalHeight === 0) {
     return;
   }
 
   const spec = explosionSpriteSpecs[sprite.sheet];
   const frameWidth = spec.width / spec.frames;
-  const progress = Math.max(0, Math.min(0.999, sprite.timer / sprite.duration));
-  const frame = Math.min(spec.frames - 1, Math.floor(progress * spec.frames));
-  const alpha = progress < 0.82 ? 1 : 1 - (progress - 0.82) / 0.18;
-  const destinationWidth = frameWidth * sprite.scale;
-  const destinationHeight = spec.height * sprite.scale;
+  const frameHeight = spec.height;
+  const frame = Math.min(spec.frames - 1, Math.floor((sprite.timer / sprite.duration) * spec.frames));
+  const size = Math.max(72, sprite.radius * 2.4 * sprite.scale);
+  const alpha = Math.max(0, 1 - Math.max(0, sprite.timer / sprite.duration - 0.7) / 0.3);
 
   context.save();
-  context.globalAlpha = Math.max(0, Math.min(1, alpha));
-  context.globalCompositeOperation = "screen";
+  context.globalAlpha = alpha * 0.88;
+  context.globalCompositeOperation = "lighter";
   context.drawImage(
     image,
     frame * frameWidth,
     0,
     frameWidth,
-    spec.height,
-    sprite.point.x - destinationWidth * 0.5,
-    sprite.point.y - destinationHeight * 0.72,
-    destinationWidth,
-    destinationHeight
+    frameHeight,
+    sprite.point.x - size / 2,
+    sprite.point.y - size / 2,
+    size,
+    size
   );
   context.restore();
+}
+
+function explosionNoise(seed: number, index: number): number {
+  const value = Math.sin(seed * 12.9898 + index * 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function drawProceduralExplosion(context: CanvasRenderingContext2D, sprite: ExplosionSpriteEffect): void {
+  const progress = clamp(sprite.timer / sprite.duration, 0, 1);
+  const fade = progress < 0.65 ? 1 : Math.max(0, 1 - (progress - 0.65) / 0.35);
+  if (fade <= 0) {
+    return;
+  }
+
+  const x = sprite.point.x;
+  const y = sprite.point.y;
+  const style = sprite.style;
+  const reach = sprite.radius * 1.45;
+  const seed = Math.abs(x * 0.37 + y * 0.71 + sprite.radius);
+
+  context.save();
+  context.globalCompositeOperation = "lighter";
+
+  const coreFade = Math.max(0, 1 - progress / 0.55);
+  if (coreFade > 0) {
+    const coreRadius = reach * (0.18 + progress * 0.5);
+    const coreGradient = context.createRadialGradient(x, y, 0, x, y, coreRadius);
+    coreGradient.addColorStop(0, colorWithAlpha("#ffffff", coreFade));
+    coreGradient.addColorStop(0.4, colorWithAlpha(style.core, coreFade * 0.9));
+    coreGradient.addColorStop(1, colorWithAlpha(style.ring, 0));
+    context.fillStyle = coreGradient;
+    context.beginPath();
+    context.arc(x, y, coreRadius, 0, Math.PI * 2);
+    context.fill();
+  }
+
+  const ringRadius = reach * (0.3 + progress * 1.0);
+  context.strokeStyle = colorWithAlpha(style.ring, fade * 0.8 * (1 - progress * 0.4));
+  context.lineWidth = Math.max(1, (sprite.hasDamage ? 5 : 3) * (1 - progress) + 1);
+  context.beginPath();
+  context.arc(x, y, ringRadius, 0, Math.PI * 2);
+  context.stroke();
+
+  drawExplosionMotif(context, sprite, progress, fade, reach, seed);
+  context.restore();
+
+  if (progress > 0.25) {
+    const smokeFade = Math.min(1, (progress - 0.25) / 0.35) * (1 - progress) * 1.4;
+    if (smokeFade > 0) {
+      const smokeY = y - progress * 8;
+      const smokeRadius = reach * (0.5 + progress * 0.7);
+      const smokeGradient = context.createRadialGradient(x, smokeY, 0, x, smokeY, smokeRadius);
+      smokeGradient.addColorStop(0, colorWithAlpha(style.smoke, smokeFade * 0.4));
+      smokeGradient.addColorStop(0.7, colorWithAlpha(style.smoke, smokeFade * 0.22));
+      smokeGradient.addColorStop(1, colorWithAlpha(style.smoke, 0));
+      context.fillStyle = smokeGradient;
+      context.beginPath();
+      context.arc(x, smokeY, smokeRadius, 0, Math.PI * 2);
+      context.fill();
+    }
+  }
+}
+
+function drawExplosionSpokes(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  count: number,
+  innerRadius: number,
+  outerRadius: number,
+  halfWidth: number,
+  color: string,
+  rotation: number
+): void {
+  context.fillStyle = color;
+  let index = 0;
+  while (index < count) {
+    const angle = rotation + (index / count) * Math.PI * 2;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const perpX = -sin * halfWidth;
+    const perpY = cos * halfWidth;
+    context.beginPath();
+    context.moveTo(x + cos * innerRadius + perpX, y + sin * innerRadius + perpY);
+    context.lineTo(x + cos * outerRadius, y + sin * outerRadius);
+    context.lineTo(x + cos * innerRadius - perpX, y + sin * innerRadius - perpY);
+    context.closePath();
+    context.fill();
+    index += 1;
+  }
+}
+
+function drawExplosionParticles(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  seed: number,
+  count: number,
+  reach: number,
+  progress: number,
+  fade: number,
+  color: string,
+  baseSize: number,
+  rise: number
+): void {
+  let index = 0;
+  while (index < count) {
+    const angle = explosionNoise(seed, index) * Math.PI * 2;
+    const distance = reach * (0.2 + progress) * (0.5 + explosionNoise(seed, index + 50) * 0.7);
+    const px = x + Math.cos(angle) * distance;
+    const py = y + Math.sin(angle) * distance - rise * progress * reach * 0.4;
+    const size = baseSize * (1 - progress * 0.6) * (0.6 + explosionNoise(seed, index + 99) * 0.8);
+    if (size > 0.4) {
+      context.fillStyle = colorWithAlpha(color, fade);
+      context.beginPath();
+      context.arc(px, py, size, 0, Math.PI * 2);
+      context.fill();
+    }
+    index += 1;
+  }
+}
+
+function drawExplosionBolt(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  seed: number,
+  angle: number,
+  length: number,
+  sway: number,
+  color: string,
+  width: number
+): void {
+  const segments = 5;
+  context.strokeStyle = color;
+  context.lineWidth = width;
+  context.beginPath();
+  context.moveTo(x, y);
+  let step = 1;
+  while (step <= segments) {
+    const t = step / segments;
+    const radial = length * t;
+    const offset = (explosionNoise(seed, step) - 0.5) * sway * (1 - t);
+    const px = x + Math.cos(angle) * radial + Math.cos(angle + Math.PI / 2) * offset;
+    const py = y + Math.sin(angle) * radial + Math.sin(angle + Math.PI / 2) * offset;
+    context.lineTo(px, py);
+    step += 1;
+  }
+  context.stroke();
+}
+
+function drawExplosionMotif(
+  context: CanvasRenderingContext2D,
+  sprite: ExplosionSpriteEffect,
+  progress: number,
+  fade: number,
+  reach: number,
+  seed: number
+): void {
+  const x = sprite.point.x;
+  const y = sprite.point.y;
+  const style = sprite.style;
+
+  if (style.motif === "fire") {
+    drawExplosionSpokes(context, x, y, 7, reach * 0.1, reach * (0.5 + progress * 0.6), reach * 0.12 * (1 - progress), colorWithAlpha(style.ring, fade * 0.7), -Math.PI / 2 + (explosionNoise(seed, 1) - 0.5) * 0.6);
+    drawExplosionParticles(context, x, y, seed, 12, reach, progress, fade * 0.9, style.spark, reach * 0.075, 1.2);
+    return;
+  }
+
+  if (style.motif === "frost") {
+    drawExplosionSpokes(context, x, y, 8, reach * 0.16, reach * (0.55 + progress * 0.8), reach * 0.07 * (1 - progress), colorWithAlpha(style.core, fade * 0.85), progress * 0.4);
+    drawExplosionSpokes(context, x, y, 8, reach * 0.12, reach * (0.4 + progress * 0.55), reach * 0.05 * (1 - progress), colorWithAlpha(style.ring, fade * 0.7), Math.PI / 8 + progress * 0.4);
+    drawExplosionParticles(context, x, y, seed, 8, reach, progress, fade * 0.8, style.spark, reach * 0.05, 0.2);
+    return;
+  }
+
+  if (style.motif === "shell") {
+    drawExplosionParticles(context, x, y, seed, 11, reach, progress, fade, style.debris, reach * 0.11, 0.4);
+    drawExplosionSpokes(context, x, y, 5, reach * 0.12, reach * (0.4 + progress * 0.5), reach * 0.06 * (1 - progress), colorWithAlpha(style.ring, fade * 0.6), seed);
+    return;
+  }
+
+  if (style.motif === "horn") {
+    drawExplosionSpokes(context, x, y, 11, reach * 0.22, reach * (0.6 + progress * 0.7), reach * 0.1 * (1 - progress), colorWithAlpha(style.ring, fade * 0.85), progress * 0.5);
+    drawExplosionSpokes(context, x, y, 11, reach * 0.16, reach * (0.45 + progress * 0.55), reach * 0.06 * (1 - progress), colorWithAlpha(style.spark, fade * 0.7), Math.PI / 11 + progress * 0.5);
+    return;
+  }
+
+  if (style.motif === "spark") {
+    const bolts = 6;
+    let index = 0;
+    while (index < bolts) {
+      const angle = (index / bolts) * Math.PI * 2 + explosionNoise(seed, index) * 0.5;
+      drawExplosionBolt(context, x, y, seed + index, angle, reach * (0.7 + progress * 0.8), reach * 0.4, colorWithAlpha(index % 2 === 0 ? style.core : style.spark, fade * 0.9), Math.max(1, 2.5 * (1 - progress)));
+      index += 1;
+    }
+    return;
+  }
+
+  if (style.motif === "rune") {
+    context.strokeStyle = colorWithAlpha(style.spark, fade * 0.7);
+    context.lineWidth = Math.max(1, 2 * (1 - progress));
+    context.beginPath();
+    context.arc(x, y, reach * (0.4 + progress * 0.4), 0, Math.PI * 2);
+    context.stroke();
+    drawExplosionSpokes(context, x, y, 6, reach * 0.3, reach * (0.5 + progress * 0.45), reach * 0.04, colorWithAlpha(style.core, fade * 0.8), -progress * 0.8);
+    drawExplosionParticles(context, x, y, seed, 7, reach, progress, fade * 0.7, style.spark, reach * 0.05, 0.6);
+    return;
+  }
+
+  if (style.motif === "dust") {
+    drawExplosionParticles(context, x, y, seed, 14, reach, progress, fade, style.debris, reach * 0.1, 0.25);
+    drawExplosionParticles(context, x, y, seed + 7, 10, reach, progress, fade * 0.6, style.smoke, reach * 0.13, 0.15);
+    return;
+  }
+
+  if (style.motif === "bubble") {
+    context.lineWidth = Math.max(1, 2 * (1 - progress));
+    let index = 0;
+    while (index < 9) {
+      const angle = explosionNoise(seed, index) * Math.PI * 2;
+      const distance = reach * (0.2 + progress) * (0.4 + explosionNoise(seed, index + 30) * 0.8);
+      const bubbleRadius = reach * 0.12 * (0.5 + explosionNoise(seed, index + 60) * 0.9) * (1 - progress * 0.4);
+      if (bubbleRadius > 0.6) {
+        context.strokeStyle = colorWithAlpha(index % 2 === 0 ? style.ring : style.spark, fade * 0.75);
+        context.beginPath();
+        context.arc(x + Math.cos(angle) * distance, y + Math.sin(angle) * distance - progress * reach * 0.2, bubbleRadius, 0, Math.PI * 2);
+        context.stroke();
+      }
+      index += 1;
+    }
+    return;
+  }
+
+  if (style.motif === "sonar") {
+    let index = 0;
+    while (index < 3) {
+      const ringProgress = clamp(progress * 1.4 - index * 0.22, 0, 1);
+      if (ringProgress > 0 && ringProgress < 1) {
+        context.strokeStyle = colorWithAlpha(index % 2 === 0 ? style.ring : style.core, fade * (1 - ringProgress) * 0.9);
+        context.lineWidth = Math.max(1, 3 * (1 - ringProgress));
+        context.beginPath();
+        context.arc(x, y, reach * (0.2 + ringProgress * 1.1), 0, Math.PI * 2);
+        context.stroke();
+      }
+      index += 1;
+    }
+    return;
+  }
+
+  // blade
+  context.lineWidth = Math.max(1, 3 * (1 - progress));
+  let index = 0;
+  while (index < 3) {
+    const base = seed + index * 1.7 - progress * 0.6;
+    const arcRadius = reach * (0.4 + progress * 0.7);
+    context.strokeStyle = colorWithAlpha(index % 2 === 0 ? style.core : style.spark, fade * 0.8);
+    context.beginPath();
+    context.arc(x, y, arcRadius, base, base + Math.PI * 0.5);
+    context.stroke();
+    index += 1;
+  }
 }
 
 function drawDamagePopups(context: CanvasRenderingContext2D, damagePopups: DamagePopup[]): void {

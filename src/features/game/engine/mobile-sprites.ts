@@ -233,6 +233,7 @@ function getMobileSpriteDefaultFacing(type: MobileType): 1 | -1 {
     type === "dragon" ||
     type === "snow" ||
     type === "aduko" ||
+    type === "mage" ||
     type === "nak" ||
     type === "turtle" ||
     type === "frog" ||

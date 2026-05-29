@@ -10,6 +10,7 @@ import type {
 } from "@/features/game/types/effects";
 import type { ProjectileState } from "@/features/game/types/combat";
 import type { Player } from "@/features/game/types/entities";
+import { getExplosionStyle } from "@/features/game/engine/mobile-attacks";
 import type { GamePhase, GameScene, Vec2 } from "@/features/game/types/shared";
 
 const particleStep = 1 / 60;
@@ -115,7 +116,7 @@ function syncProjectileEffects(
           timer: 0.25,
           duration: 0.25
         },
-        fireShake: 0.3,
+        fireShake: projectile.weapon === "ss" ? 0.5 : 0.3,
         trail: []
       };
 
@@ -265,18 +266,25 @@ function createExplosionSpriteEffect(explosion: ExplosionVisual, hasDamage: bool
     timer: 0,
     duration: 0.62,
     sheet: selectExplosionSpriteSheet(explosion, hasDamage),
-    scale: getExplosionSpriteScale(explosion.radius)
+    scale: getExplosionSpriteScale(explosion.radius),
+    style: getExplosionStyle(explosion.mobileType),
+    hasDamage
   };
 }
 
 function selectExplosionSpriteSheet(explosion: ExplosionVisual, hasDamage: boolean): ExplosionSpriteSheet {
   const seed = Math.abs(Math.floor(explosion.point.x * 7 + explosion.point.y * 11 + explosion.radius * 13));
+  if (explosion.mobileType === "dragon") return "dragon-fire";
+  if (explosion.mobileType === "snow") return "snow-frost";
+  if (explosion.mobileType === "mage") return "mage-rune";
+  if (explosion.mobileType === "turtle") return "turtle-shell";
+  if (explosion.mobileType === "frog") return "frog-bubble";
+  if (explosion.mobileType === "sate") return "sate-sonar";
+  if (explosion.mobileType === "knight") return "knight-blade";
+  if (explosion.mobileType === "trico") return "trico-horn";
+
   if (explosion.mobileType === "aduko") {
     return explosion.radius >= 56 ? "aduka-thor" : "jd-lightning";
-  }
-
-  if (explosion.mobileType === "trico" && hasDamage) {
-    return seed % 2 === 0 ? "gum" : "nak";
   }
 
   if (hasDamage && explosion.radius >= 78) {

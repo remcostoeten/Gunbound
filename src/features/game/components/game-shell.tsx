@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { getMapPresentation, mapPresentationOptions, parseMapType } from "@/features/game/constants/map-presentation";
 import { getMobilePresentation, mobilePresentationOptions } from "@/features/game/constants/mobile-presentation";
 import { getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
-import { DEFAULT_MOBILE, parseMobileType } from "@/features/game/mobiles/mobile-factory";
+import { DEFAULT_MOBILE, getRandomMobileType, parseMobileType } from "@/features/game/mobiles/mobile-factory";
 import { AimIndicator } from "@/features/game/components/aim-indicator";
 import { BattleChrome } from "@/features/game/components/battle-chrome";
 import { GameCanvas } from "@/features/game/components/game-canvas";
@@ -51,10 +51,12 @@ const BATTLE_TRACKS = [
     { id: "battle-02", src: "/audio/battle/02-Dual fight.mp3" },
     { id: "battle-03", src: "/audio/battle/03-Spirit's dance.mp3" },
     { id: "battle-04", src: "/audio/battle/04-Space odyssey.mp3" },
-    { id: "battle-05", src: "/audio/battle/05-Waiting room.mp3" },
     { id: "battle-06", src: "/audio/battle/06-Machin factory.mp3" },
-    { id: "battle-07", src: "/audio/battle/07-Chatting room.mp3" },
     { id: "battle-08", src: "/audio/battle/08-Reggae party.mp3" },
+];
+const SPECIAL_BATTLE_TRACKS = [
+    { id: "battle-result", src: "/audio/battle/09-Result screen.mp3" },
+    { id: "battle-sudden-death", src: "/audio/battle/10-Sudden death.mp3" },
 ];
 
 const TITLE_OPTIONS: PlayerTitle[] = ["Captain", "Raider", "Engineer", "Oracle"];
@@ -75,6 +77,9 @@ const TURN_DURATION_OPTIONS: Array<{ value: TurnDurationMode; label: string; des
 ];
 const MATCH_START_DELAY_MS = 180;
 const LOBBY_ENTRY_DELAY_MS = 2200;
+const PRACTICE_BOT_MOBILE_POOL: MobileType[] = mobilePresentationOptions
+    .map((option) => option.value)
+    .filter((type) => type !== "armor" && type !== "knight");
 
 function isDocumentFullscreen(): boolean {
     return typeof document !== "undefined" && document.fullscreenElement !== null;
@@ -95,6 +100,7 @@ export function GameShell({ spacetimeRoomId, soloPractice = false, soloPlayerNam
     const message = useGameState(selectMessage);
     const setup = useGameState(selectSetup);
     const turn = useGameState(selectTurn);
+    const suddenDeathActive = useGameState((state) => state.suddenDeathActive);
     const startMatch = useGameStore(selectStartMatch);
     const restartMatch = useGameStore(selectRestartMatch);
     const returnToSetup = useGameStore(selectReturnToSetup);
@@ -118,6 +124,7 @@ export function GameShell({ spacetimeRoomId, soloPractice = false, soloPlayerNam
     });
     const matchStartTimeoutRef = useRef<number | null>(null);
     const lobbyEntryTimeoutRef = useRef<number | null>(null);
+    const battleTrackIdRef = useRef<string | null>(null);
     const hasShownLobbyEntryRef = useRef(false);
     const initializedLocalSessionRef = useRef(false);
     const startedSpacetimeRoomRef = useRef<string | null>(null);
@@ -126,21 +133,33 @@ export function GameShell({ spacetimeRoomId, soloPractice = false, soloPlayerNam
 
     useEffect(function manageBattleBgm(): void {
         BATTLE_TRACKS.forEach((t) => registerTrack(t.id, t.src, 0.45));
+        SPECIAL_BATTLE_TRACKS.forEach((t) => registerTrack(t.id, t.src, 0.45));
         registerTrack("lobby", LOBBY_BGM_SRC, 0.45);
     }, []);
 
     useEffect(function syncBattleBgm(): void {
         if (scene === "playing") {
-            const pick = BATTLE_TRACKS[Math.floor(Math.random() * BATTLE_TRACKS.length)];
-            playTrack(pick.id);
+            if (suddenDeathActive) {
+                playTrack("battle-sudden-death");
+                return;
+            }
+
+            if (battleTrackIdRef.current === null) {
+                const pick = BATTLE_TRACKS[Math.floor(Math.random() * BATTLE_TRACKS.length)];
+                battleTrackIdRef.current = pick.id;
+            }
+
+            playTrack(battleTrackIdRef.current);
             return;
         }
         if (scene === "start") {
+            battleTrackIdRef.current = null;
             playTrack("lobby");
             return;
         }
-        stopAll();
-    }, [scene]);
+        battleTrackIdRef.current = null;
+        playTrack("battle-result");
+    }, [scene, suddenDeathActive]);
 
     useEffect(function resetPendingMatchStart(): void {
         if (scene !== "start") {
@@ -290,6 +309,7 @@ export function GameShell({ spacetimeRoomId, soloPractice = false, soloPlayerNam
             ...current,
             playerOneName: accountName || current.playerOneName.trim() || "Player 1",
             playerTwoName: "Practice Bot",
+            playerTwoMobile: getRandomPracticeBotMobile(current.playerOneMobile),
             playerTwoTitle: "Oracle",
             playerTwoAccent: "coral",
             seedText: current.seedText.trim() || "solo-practice",
@@ -777,9 +797,13 @@ function renderStartScreen(
     }
 
     function handlePlayerOneMobileChange(event: React.ChangeEvent<HTMLSelectElement>): void {
+        const playerOneMobile = event.target.value as MobileType;
         setFormState({
             ...formState,
-            playerOneMobile: event.target.value as MobileType,
+            playerOneMobile,
+            playerTwoMobile: vsBotMode
+                ? getRandomPracticeBotMobile(playerOneMobile)
+                : formState.playerTwoMobile,
         });
     }
 
@@ -1258,6 +1282,15 @@ function getLobbySpriteStyle(
 
 function capitalizeLabel(value: string): string {
     return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
+function getRandomPracticeBotMobile(playerMobile: MobileType): MobileType {
+    const candidates = PRACTICE_BOT_MOBILE_POOL.filter((type) => type !== playerMobile);
+    if (candidates.length === 0) {
+        return getRandomMobileType();
+    }
+
+    return candidates[Math.floor(Math.random() * candidates.length)] ?? getRandomMobileType();
 }
 
 function createMatchConfigFromRoom(

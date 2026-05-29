@@ -5,6 +5,7 @@ import { createAudioEventTracker, deriveAudioEvents } from "@/features/game/engi
 import { useGameStore } from "@/features/game/store/game-store";
 import type { AudioCue, AudioEventTracker } from "@/features/game/engine/audio-events";
 import type { GameState } from "@/features/game/types/state";
+import type { WeatherKind } from "@/features/game/types/shared";
 import { getAudioVolume, subscribeAudioSettings } from "@/lib/audio-settings";
 
 type AudioPool = {
@@ -156,6 +157,9 @@ function playSfx(pool: AudioPool, name: string): void {
 function getSfxVolume(name: string): number {
   if (name === "super-shot") return 0.3;
   if (name === "match-intro") return 0.22;
+  if (name === "win") return 0.34;
+  if (name === "lose") return 0.3;
+  if (name === "critical-hit") return 0.3;
   return 0.25;
 }
 
@@ -176,15 +180,13 @@ function syncAudioState(
 
   routeSceneState(pool, state.scene, prevSceneRef, lobbyMatchStartCueAtRef, windAmbientNodeRef, context, gain);
 
-  if (state.scene !== "playing") {
-    prevSceneRef.current = state.scene;
-    return;
-  }
-
-  updateWindAmbient(state.wind.x, windAmbientNodeRef);
   const derived = deriveAudioEvents(state, trackerRef.current);
   trackerRef.current = derived.tracker;
   routeAudioCues(pool, context, gain, windAmbientNodeRef, derived.cues);
+
+  if (state.scene === "playing") {
+    updateWindAmbient(state.wind.x, windAmbientNodeRef);
+  }
 
   prevSceneRef.current = state.scene;
 }
@@ -205,10 +207,6 @@ function routeSceneState(
     startWindAmbient(context, gain, windAmbientNodeRef);
   }
 
-  if (scene === "end" && prevSceneRef.current !== "end") {
-    playSfx(pool, "adios");
-    stopWindAmbient(windAmbientNodeRef);
-  }
 }
 
 function routeAudioCues(
@@ -226,6 +224,29 @@ function routeAudioCues(
     }
     if (cue.kind === "scene-ended") {
       stopWindAmbient(windAmbientNodeRef);
+      playResultFanfare(context, gain);
+      playSfx(pool, cue.winner === null ? "lose" : "win");
+    }
+    if (cue.kind === "phase-timeout") {
+      playTimeoutCue(context, gain);
+      playSfx(pool, "sorry-m");
+    }
+    if (cue.kind === "weather-change") {
+      playWeatherCue(context, gain, cue.weather);
+      if (cue.weather === "moon") {
+        playSfx(pool, "level-up");
+      }
+      if (cue.weather === "eclipse") {
+        playSfx(pool, "omg-f");
+      }
+    }
+    if (cue.kind === "bonus-spawn") {
+      playBonusDrop(context, gain);
+      playSfx(pool, "gold");
+    }
+    if (cue.kind === "sudden-death-start") {
+      playSuddenDeathStinger(context, gain);
+      playSfx(pool, "unbelievable");
     }
     if (cue.kind === "wind-intensity-up") {
       playWindGust(context, gain, cue.bucket);
@@ -262,16 +283,29 @@ function routeAudioCues(
     if (cue.kind === "history-move") {
       playMovementTread(context, gain);
     }
+    if (cue.kind === "history-shot-tech") {
+      playShotTechniqueSpark(context, gain);
+      playSfx(pool, "nice-shot-m");
+    }
     if (cue.kind === "history-hit") {
       playImpactAlarm(context, gain);
-      playSfx(pool, "dios-mio");
+      if (cue.damage !== null && cue.damage >= 45) {
+        playCriticalHit(context, gain);
+        playSfx(pool, "critical-hit");
+        playSfx(pool, cue.damage >= 60 ? "critical-oh-yes" : "critical-yes");
+      } else {
+        playSfx(pool, "dios-mio");
+      }
     }
     if (cue.kind === "history-bonus") {
       playSupplyPickup(context, gain);
       playSfx(pool, "muy-bien");
     }
+    if (cue.kind === "history-sudden-death") {
+      playSuddenDeathTick(context, gain);
+    }
     if (cue.kind === "history-round-end") {
-      playSfx(pool, "adios");
+      playSfx(pool, "win");
     }
     index += 1;
   }
@@ -434,6 +468,72 @@ function playWindGust(context: AudioContext, gain: GainNode, intensity: number):
 function playLowHealthAlarm(context: AudioContext, gain: GainNode, isCurrentTurn: boolean): void {
   playTone(context, gain, isCurrentTurn ? 340 : 300, 0.09, "square", 0.06, 0);
   playTone(context, gain, isCurrentTurn ? 270 : 240, 0.1, "square", 0.05, 0.11);
+}
+
+function playResultFanfare(context: AudioContext, gain: GainNode): void {
+  playTone(context, gain, 523, 0.12, "triangle", 0.08, 0);
+  playTone(context, gain, 659, 0.12, "triangle", 0.08, 0.1);
+  playTone(context, gain, 784, 0.22, "triangle", 0.1, 0.2);
+}
+
+function playTimeoutCue(context: AudioContext, gain: GainNode): void {
+  playTone(context, gain, 220, 0.1, "square", 0.06, 0);
+  playTone(context, gain, 165, 0.14, "square", 0.05, 0.12);
+  playNoiseBurst(context, gain, 0.05, 0.025);
+}
+
+function playWeatherCue(context: AudioContext, gain: GainNode, weather: WeatherKind): void {
+  if (weather === "force") {
+    playOscillatorSweep(context, gain, 420, 880, 0.18, "sawtooth", 0.08);
+    playTone(context, gain, 1320, 0.08, "triangle", 0.05, 0.12);
+    return;
+  }
+
+  if (weather === "tornado") {
+    playWindGust(context, gain, 3);
+    playOscillatorSweep(context, gain, 760, 300, 0.28, "triangle", 0.07);
+    return;
+  }
+
+  if (weather === "moon") {
+    playTone(context, gain, 440, 0.16, "sine", 0.06, 0);
+    playTone(context, gain, 660, 0.18, "sine", 0.07, 0.08);
+    playTone(context, gain, 880, 0.2, "sine", 0.06, 0.16);
+    return;
+  }
+
+  if (weather === "eclipse") {
+    playOscillatorSweep(context, gain, 300, 90, 0.32, "sawtooth", 0.09);
+    playNoiseBurst(context, gain, 0.12, 0.04);
+  }
+}
+
+function playBonusDrop(context: AudioContext, gain: GainNode): void {
+  playOscillatorSweep(context, gain, 980, 520, 0.16, "triangle", 0.06);
+  playTone(context, gain, 1180, 0.07, "square", 0.04, 0.12);
+}
+
+function playSuddenDeathStinger(context: AudioContext, gain: GainNode): void {
+  playOscillatorSweep(context, gain, 180, 70, 0.42, "sawtooth", 0.12);
+  playTone(context, gain, 92, 0.35, "triangle", 0.08, 0.08);
+  playNoiseBurst(context, gain, 0.22, 0.08);
+}
+
+function playSuddenDeathTick(context: AudioContext, gain: GainNode): void {
+  playTone(context, gain, 130, 0.08, "sawtooth", 0.06, 0);
+  playNoiseBurst(context, gain, 0.06, 0.035);
+}
+
+function playShotTechniqueSpark(context: AudioContext, gain: GainNode): void {
+  playTone(context, gain, 1200, 0.05, "sine", 0.05, 0);
+  playTone(context, gain, 1800, 0.07, "sine", 0.04, 0.04);
+  playNoiseBurst(context, gain, 0.035, 0.03);
+}
+
+function playCriticalHit(context: AudioContext, gain: GainNode): void {
+  playOscillatorSweep(context, gain, 120, 55, 0.22, "sawtooth", 0.12);
+  playTone(context, gain, 880, 0.08, "square", 0.08, 0);
+  playNoiseBurst(context, gain, 0.14, 0.08);
 }
 
 function playTone(

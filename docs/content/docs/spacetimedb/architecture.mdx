@@ -3,314 +3,217 @@ title: Architecture & Design
 description: Schema design, tables, and data organization
 ---
 
+Source of truth: `server/spacetimedb/src/schema.ts` and `server/spacetimedb/src/index.ts`.
+
 ## Tables
 
 ### Player
-Represents a logged-in player and their persistent identity.
+
+Persistent identity and profile stats. Created on first `onClientConnected`; never deleted.
 
 ```typescript
-// server/spacetimedb/src/schema.ts
 export const Player = table(
-  { name: 'player', indexes: [{ name: 'player_name', algorithm: 'btree', columns: ['name'] }] },
+  {
+    name: 'player',
+    public: true,
+    indexes: [
+      { accessor: 'player_is_online', algorithm: 'btree', columns: ['isOnline'] },
+      { accessor: 'player_level', algorithm: 'btree', columns: ['level'] }
+    ]
+  },
   {
     identity: t.identity().primaryKey(),
     name: t.string(),
-    mobileType: t.string().optional(),
-    score: t.u64(),
-    xp: t.u64(),
     createdAt: t.timestamp(),
     updatedAt: t.timestamp(),
+    displayNameSetAt: t.timestamp().optional(),
+    isOnline: t.bool(),
+    lastSeen: t.timestamp(),
+    xp: t.u64(),
+    level: t.u32(),
+    loginStreak: t.u32(),
+    longestStreak: t.u32(),
+    lastLoginDay: t.u64(),
+    totalWins: t.u32(),
+    totalLosses: t.u32(),
+    totalRoundsPlayed: t.u32(),
+    isAdmin: t.bool().optional(),
+    country: t.string().optional()
   }
 );
 ```
 
-**Key points:**
-- `identity` (PK) is the SpacetimeDB-assigned credential. Each client gets a unique identity on first connection.
-- `name` is set during registration and is used to display player names in UI.
-- `mobileType` tracks the selected combat unit (e.g., "armor", "mage", "frog").
-- `score` and `xp` are player stats, persisted and accumulated across sessions.
+- `name` starts empty; set via `setPlayerProfile` / registration.
+- `level` is derived from XP on the server (`computeLevel`).
+- `isOnline` / `lastSeen` track lobby presence (`setLobbyPresence`, connect/disconnect hooks).
+- Mobile selection lives on `room_member`, not on `player`.
 
 ### Credential
-Public table storing encrypted session tokens for cross-device login.
+
+Public table of password-encrypted session tokens for cross-device login.
 
 ```typescript
 export const Credential = table(
-  { 
-    name: 'credential', 
+  {
+    name: 'credential',
     public: true,
-    indexes: [{ name: 'credential_identity', algorithm: 'btree', columns: ['identity'] }]
+    indexes: [{ accessor: 'credential_identity', algorithm: 'btree', columns: ['identity'] }]
   },
   {
     username: t.string().primaryKey(),
     identity: t.identity(),
     encryptedToken: t.string(),
     createdAt: t.timestamp(),
-    updatedAt: t.timestamp(),
+    updatedAt: t.timestamp()
   }
 );
 ```
 
-**Key points:**
-- `public: true` means any client (logged in or not) can read all rows.
-- `encryptedToken` is a JSON bundle: `{ v: 1, iter: 150000, salt: "username", iv: "base64", ct: "base64" }`
-- Salt is the username; password is known only to user.
-- This table is the trust anchor for account recovery.
+`encryptedToken` is a JSON bundle: `{ v, iter, salt, iv, ct }` (see [Authentication](/docs/spacetimedb/auth)).
 
 ### Room
-Represents a matchmaking lobby or active game session.
+
+Two-player lobby / match container.
 
 ```typescript
 export const Room = table(
-  { 
+  {
     name: 'room',
-    indexes: [{ name: 'room_status', algorithm: 'btree', columns: ['status'] }]
+    public: true,
+    indexes: [
+      { accessor: 'room_code', algorithm: 'btree', columns: ['code'] },
+      { accessor: 'room_host_identity', algorithm: 'btree', columns: ['hostIdentity'] },
+      { accessor: 'room_status', algorithm: 'btree', columns: ['status'] }
+    ]
   },
   {
     id: t.u64().primaryKey().autoInc(),
-    hostIdentity: t.identity(),
     code: t.string(),
-    status: t.string(), // "waiting", "in_round", "ended"
-    memberCount: t.u32(),
-    capacity: t.u32(),
+    hostIdentity: t.identity(),
+    status: t.string(), // waiting | starting | in_match | ended
     seed: t.u64(),
-    createdAt: t.timestamp(),
-    updatedAt: t.timestamp(),
+    mapType: t.string(),
+    targetScore: t.u32(),
+    roundLimit: t.u32(),
+    turnDurationMode: t.string().optional(),
+    createdAt: t.timestamp()
   }
 );
 ```
 
-**Key points:**
-- `hostIdentity` is the player who created the room. Host can start the round.
-- `code` is a player-friendly room code (e.g., "A3F5K") for joining.
-- `status` drives the lobby UI state machine (show "waiting for players" vs. "in round").
-- `seed` is RNG state for deterministic turn simulation.
+- **Capacity is 2** (`ROOM_MAX_MEMBERS` on the server). Member count is derived client-side from `room_member` rows.
+- `mapType`: `rolling`, `canyon`, `crater`, `ridge`.
+- `turnDurationMode`: `timed` or `infinite`.
+- Codes are reusable after a room reaches `ended`.
 
 ### RoomMember
-Join table linking players to rooms.
+
+Join table while a player occupies a room.
 
 ```typescript
 export const RoomMember = table(
-  { 
+  {
     name: 'room_member',
+    public: true,
     indexes: [
-      { name: 'room_member_room_id', algorithm: 'btree', columns: ['roomId'] },
-      { name: 'room_member_identity', algorithm: 'btree', columns: ['identity'] }
+      { accessor: 'room_member_room_id', algorithm: 'btree', columns: ['roomId'] },
+      { accessor: 'room_member_identity', algorithm: 'btree', columns: ['identity'] }
     ]
   },
   {
     id: t.u64().primaryKey().autoInc(),
     roomId: t.u64(),
     identity: t.identity(),
-    mobileType: t.string(),
+    slotIndex: t.u32(),
+    teamIndex: t.u32().optional(),
+    mobileType: t.string(), // empty string until selected
     isReady: t.bool(),
-    joinedAt: t.timestamp(),
+    joinedAt: t.timestamp()
   }
 );
 ```
 
-**Key points:**
-- Each row represents one player in a room.
-- `isReady` is toggled by the player to signal readiness before round start.
-- `mobileType` is copied from Player on join (required for `start_round` to work).
+### Round & RoundEvent
 
-### AppSetting
-Runtime feature flags controlled by reducers.
+Deterministic match state. A `round` row is created by `startRound`; `round_event` rows are appended by `recordRoundEvent` for replay sync.
 
 ```typescript
-export const AppSetting = table(
-  { name: 'app_setting', public: true },
-  {
-    key: t.string().primaryKey(),
-    value: t.string(),
-    updatedBy: t.identity().optional(),
-    updatedAt: t.timestamp(),
-  }
-);
+export const Round = table(/* roomId, seed, status, startedAt, endedAt, winnerIdentity */);
+
+export const RoundEvent = table(/* roundId, tick, actorIdentity, kind, payload, createdAt */);
 ```
 
-**Key points:**
-- Settings are public so clients can subscribe to runtime flags.
-- Sensitive writes go through reducers, never direct client mutation.
-- `empty_data_enabled` replaces the old `NEXT_PUBLIC_EMPTY_DATA` build-time flag.
-- Values are strings so the table can hold multiple setting types without schema churn.
-
-### Admin Players
-`Player.isAdmin` marks identities allowed to call admin reducers.
-
-Bootstrap admin grants are based on credential usernames, not mutable display names. The
-server grants admin to users registered as `remco` or `remcostoeten`.
-
-```typescript
-const BOOTSTRAP_ADMIN_USERNAMES = new Set(['remco', 'remcostoeten']);
-```
-
-Admin-only reducers call `assertAdmin(ctx)` before mutating shared settings:
-
-```typescript
-export const set_empty_data_enabled = spacetimedb.reducer(
-  { enabled: t.bool() },
-  (ctx, { enabled }) => {
-    assertAdmin(ctx);
-    upsertEmptyDataSetting(ctx, enabled);
-  }
-);
-```
-
-Clients read the current setting with a normal subscription and admins call
-`setEmptyDataEnabled` through the generated reducer binding.
-
-### ChatMessage
-Persistent chat messages within a room.
-
-```typescript
-export const ChatMessage = table(
-  { 
-    name: 'chat_message',
-    indexes: [{ name: 'chat_message_room_id', algorithm: 'btree', columns: ['roomId'] }]
-  },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    roomId: t.u64(),
-    identity: t.identity(),
-    message: t.string(),
-    createdAt: t.timestamp(),
-  }
-);
-```
-
-**Key points:**
-- Messages are append-only; no editing or deletion.
-- Indexed by `roomId` for efficient per-room queries.
+Event kinds include `battle_move`, `battle_switch_weapon`, `battle_switch_item`, `battle_fire`, `battle_surrender`. Payload is opaque JSON validated server-side.
 
 ### RoundStat
-Game statistics recorded after each round ends.
+
+Per-player stats for one round (keyed by `roundId`, not `roomId`).
 
 ```typescript
-export const RoundStat = table(
-  { 
-    name: 'round_stat',
-    indexes: [{ name: 'round_stat_room_id', algorithm: 'btree', columns: ['roomId'] }]
-  },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    roomId: t.u64(),
-    identity: t.identity(),
-    mobileType: t.string(),
-    damageDealt: t.u32(),
-    damageTaken: t.u32(),
-    kills: t.u32(),
-    deaths: t.u32(),
-    recordedAt: t.timestamp(),
-  }
+{
+  roundId: t.u64(),
+  playerIdentity: t.identity(),
+  damageDealt: t.u32(),
+  shotsFired: t.u32(),
+  directHits: t.u32(),
+  xpAwarded: t.u32()
+}
+```
+
+### ChatMessage & LobbyChatMessage
+
+- `chat_message` — in-room chat (`senderIdentity`, max 200 chars).
+- `lobby_chat_message` — channel-scoped lobby chat (`channel` 1–8).
+
+### Social tables
+
+- `friend_request` — pending/accepted/declined requests.
+- `friendship` — directed buddy edges (`ownerIdentity` → `buddyIdentity`).
+- `room_invite` — invite to join a room.
+
+These tables are public for codegen but filtered per subscriber:
+
+```typescript
+export const friendshipOwnerVisibility = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM friendship WHERE ownerIdentity = :sender'
 );
+// Similar filters for friend_request and room_invite
 ```
 
-**Key points:**
-- Created when a player submits round statistics (after battle ends).
-- Tracks per-mobile performance metrics.
+### WaitingPlayer
 
-## Design Patterns
+Matchmaking queue. `joinQueue` pairs the caller with another waiting player and creates a room for both.
 
-### Identity as Foreign Key
-SpacetimeDB identities are used as foreign keys throughout the schema:
+### AppSetting
 
-```typescript
-hostIdentity: t.identity(),      // Player who owns this room
-identity: t.identity(),           // Player in room/chat/stat
-```
+Public key/value runtime flags (`key` PK, `value` string). Writes go through admin reducers when needed.
 
-To resolve an identity to a player name, query the `player` table:
+## Admin players
 
-```typescript
-const player = players.find(p => p.identity.toHexString() === identity.toHexString());
-const name = player?.name ?? 'Unknown';
-```
+`Player.isAdmin` gates privileged reducers. Bootstrap admin is granted to credential usernames `remco` and `remcostoeten` (case-insensitive), checked via credential rows rather than display names.
 
-### Status-Driven State Machines
-Room status transitions are explicit:
+## Design patterns
+
+### Identity as foreign key
+
+Use `.toHexString()` when comparing identities in TypeScript or reducer logic.
+
+### Room status machine
 
 ```
-"waiting" → "in_round" → "ended"
+waiting → in_match → waiting (next round) → ended (last member left)
 ```
 
-The client observes the room's `status` field and reacts:
-- `status === "in_round"` → transition to battle screen
-- `status === "ended"` → return to lobby
-
-### Encrypted Trust Anchor
-The `credential` table is the single source of truth for account recovery. Because it's public:
-1. User can read their own encrypted token from any device
-2. User decrypts locally using password (only they know)
-3. Server never sees plaintext password or unencrypted token
-4. Server validates identity via SpacetimeDB's native auth (token signature)
+Client constant: `ROOM_STATUS` in `src/features/game/spacetime/room-status.ts`.
 
 ### Auto-increment IDs
-Room IDs, message IDs, etc. use auto-increment u64:
 
-```typescript
-id: t.u64().primaryKey().autoInc(),
-```
+Insert with `id: 0n`; the server assigns the real ID on the returned row.
 
-When inserting, provide `0n` as placeholder:
+### Valid mobile types
 
-```typescript
-ctx.db.room.insert({
-  id: 0n,  // Placeholder; server auto-generates
-  hostIdentity: ctx.sender,
-  code: 'ABC12',
-  // ...
-});
-
-// Return the inserted row to get the actual ID:
-const inserted = ctx.db.room.insert({ id: 0n, ... });
-const actualId = inserted.id;
-```
+Server set: `armor`, `knight`, `dragon`, `snow`, `trico`, `aduko`, `mage`, `nak`, `turtle`, `frog`, `sate`.
 
 ## Indexes
 
-Strategic indexes enable fast queries:
-
-| Table | Index | Purpose |
-|-------|-------|---------|
-| `player` | `name` | Look up player by username |
-| `credential` | `identity` | Verify identity has registered credentials |
-| `room` | `status` | Find active rooms by state |
-| `room_member` | `room_id` | List members in a room |
-| `room_member` | `identity` | Find rooms a player is in |
-| `chat_message` | `room_id` | Fetch chat history for room |
-| `round_stat` | `room_id` | Load round statistics for room |
-
-**Index naming convention**: `{table}_{column}` to avoid conflicts across the module.
-
-## Subscription Model
-
-The client uses a single high-level subscription:
-
-```typescript
-conn.subscriptionBuilder().subscribeToAllTables();
-```
-
-This subscribes to all public tables. The broad subscription cannot be canceled after it is initiated, so prefer query-specific `useTable(tables.table.where(...))` subscriptions for large or narrow views. The server then pushes real-time updates as:
-1. Reducer calls mutate tables
-2. Server broadcasts changes to all connected clients
-3. Client's `useTable()` hooks re-render with new data
-
-No manual query building needed for basic use cases.
-
-## Null Safety
-
-Optional fields use `.optional()`:
-
-```typescript
-mobileType: t.string().optional(),  // Can be null
-```
-
-In TypeScript, the field type is `string | null`.
-
-Check before use:
-
-```typescript
-if (player.mobileType) {
-  // Use player.mobileType (string)
-}
-```
+Index `accessor` names follow `{table}_{column}` (e.g. `room_member_room_id`). Use `.filter(value)` in reducers instead of full-table `.iter()` when possible.

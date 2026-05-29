@@ -1,5 +1,6 @@
 import type { WeaponProfile, WeaponProfileDefinition, WeaponProfileMap } from "@/features/game/types/combat";
 import type { MobileType, WeaponType } from "@/features/game/types/shared";
+import { getSsAttack } from "@/features/game/engine/mobile-attacks";
 
 const weaponProfileDefinitions: WeaponProfileMap = {
   armor: {
@@ -345,7 +346,7 @@ function createSsWeaponProfileDefinition(mobileType: MobileType): WeaponProfileD
   const secondary = weaponProfileDefinitions[mobileType].secondary;
 
   return {
-    name: secondary.name + " SS",
+    name: getSsAttack(mobileType).name,
     baseSpeed: Math.round(secondary.baseSpeed * 0.94),
     speedScale: Math.round(secondary.speedScale * 0.94),
     baseDamage: Math.round(secondary.baseDamage * 1.26),

@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useTable } from "spacetimedb/react";
 import { tables } from "@/features/game/spacetime";
+import { playUiSfx } from "@/lib/music-bus";
 import type { Player } from "@/features/game/spacetime/module_bindings/types";
 
 const TOP_N = 50;
@@ -26,6 +27,10 @@ function winRate(p: Player): number {
 
 export function LobbyLeaderboardModal({ selfIdentityHex, onClose }: Props) {
   const [players] = useTable(tables.player);
+
+  useEffect(function playOpenCue(): void {
+    playUiSfx("open");
+  }, []);
 
   const ranked = useMemo<Player[]>(() => {
     return [...players]

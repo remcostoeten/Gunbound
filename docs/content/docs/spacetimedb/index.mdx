@@ -3,19 +3,19 @@ title: SpacetimeDB Overview
 description: Real-time multiplayer database for Gunbound
 ---
 
-SpacetimeDB powers Gunbound's real-time multiplayer backend. It handles player identity, room management, game state, and live subscription updates.
+SpacetimeDB powers Gunbound's real-time multiplayer backend: player identity, lobby rooms, matchmaking, friends, chat, and deterministic round replay.
 
 ## Key Concepts
 
-**Identity-based Architecture**: Every player has a permanent `Identity` in SpacetimeDB — a cryptographic credential that persists across sessions and devices.
+**Identity-based architecture** — Every player has a permanent SpacetimeDB `Identity`. Rows link to it across sessions and devices.
 
-**Live Subscriptions**: The client subscribes to database tables and receives real-time updates whenever data changes. No polling required.
+**Live subscriptions** — React hooks subscribe to tables (or filtered queries) and re-render when rows change. No polling.
 
-**Server-side Reducers**: All state mutations happen through deterministic reducer functions on the server. Think of them as transactional stored procedures.
+**Server-side reducers** — All mutations go through deterministic reducer functions on the server module.
 
-**Token-based Persistence**: After login, the SpacetimeDB session token is stored encrypted in localStorage using a password-derived key. This allows cross-device account recovery without email.
+**Token-based persistence** — After login, the session token is stored in `localStorage` and encrypted in the public `credential` table for cross-device recovery.
 
-## Architecture Diagram
+## Architecture
 
 ```
 ┌─────────────────┐
@@ -26,62 +26,80 @@ SpacetimeDB powers Gunbound's real-time multiplayer backend. It handles player i
          │
          ├─────────────────────────────────────┐
          │                                     │
-    ┌────▼──────┐                 ┌───────────▼─────┐
-    │ Subscriptions│                │ Reducer Calls   │
-    │ (read)      │                │ (write)         │
-    └────┬────────┘                └────────┬────────┘
-         │                                  │
-         └──────────────┬───────────────────┘
+    ┌────▼──────────┐              ┌──────────▼────────┐
+    │ useTable()     │              │ conn.reducers.*   │
+    │ (read)         │              │ (write)           │
+    └────┬───────────┘              └──────────┬────────┘
+         │                                     │
+         └──────────────┬──────────────────────┘
                         │
                   ┌─────▼──────────┐
                   │ SpacetimeDB    │
                   │ Server Module  │
-                  ├─────────────────┤
-                  │ Tables:         │
-                  │ - player        │
-                  │ - room          │
-                  │ - room_member   │
-                  │ - credential    │
-                  │ - chat_message  │
-                  │ - round_stat    │
-                  │                 │
-                  │ Reducers:       │
-                  │ - register_cred │
-                  │ - create_room   │
-                  │ - join_room     │
-                  │ - send_chat     │
-                  │ - start_round   │
-                  └─────────────────┘
+                  │ server/spacetimedb/
+                  └────────────────┘
 ```
 
-## Workflow
+## Tables (current)
 
-### 1. First Time Sign Up
-- User enters username + password
-- Client derives encryption key from password (PBKDF2, 150k iterations)
-- Current SpacetimeDB token encrypted with key
-- Encrypted bundle stored in `credential` table (public, anyone can read)
-- Client's localStorage updated with original token
+| Table | Purpose |
+| --- | --- |
+| `player` | Profile, XP, level, presence, admin flag |
+| `credential` | Encrypted session tokens for login |
+| `room` | Lobby / match container (2-player rooms) |
+| `room_member` | Who is in a room, mobile pick, ready state |
+| `round` | One played match inside a room |
+| `round_event` | Append-only battle event stream for replay |
+| `round_stat` | Per-player stats submitted after a round |
+| `chat_message` | In-room chat |
+| `lobby_chat_message` | Public lobby channel chat |
+| `friend_request` / `friendship` | Buddy list |
+| `room_invite` | Room invitations |
+| `waiting_player` | Matchmaking queue |
+| `app_setting` | Runtime feature flags (public) |
 
-### 2. Login
-- User enters username + password on new device
-- Client reads encrypted bundle from `credential` table
-- Derives same encryption key from password
-- Decrypts to recover original SpacetimeDB token
-- localStorage updated, page reloads with recovered identity
+Social tables use **client visibility filters** so each subscriber only receives rows where they are a party (requester, recipient, or owner).
 
-### 3. Real-time Game State
-- Client subscribes to `room`, `room_member`, `chat_message`, `round_stat`
-- Reducer calls mutate tables on server
-- Server broadcasts changes to all subscribed clients
-- UI updates automatically as data arrives
+## Reducer groups
+
+| Area | Reducers |
+| --- | --- |
+| Auth | `registerCredential`, `updateCredentialToken` |
+| Profile | `setPlayerProfile`, `setPlayerName`, `setPlayerCountry`, `setLobbyPresence` |
+| Rooms | `createRoom`, `updateRoomSettings`, `joinRoomByCode`, `leaveRoom`, `kickFromRoom` |
+| Match flow | `selectMobile`, `setReady`, `startRound`, `recordRoundEvent`, `submitRoundStats`, `endRound` |
+| Chat | `sendChat`, `sendLobbyChat` |
+| Social | `sendFriendRequest`, `respondFriendRequest`, `removeFriend`, `sendRoomInvite`, `respondRoomInvite` |
+| Matchmaking | `joinQueue`, `leaveQueue` |
+
+Reducer names are snake_case in the module and camelCase on the client (`create_room` → `createRoom`).
+
+## Typical flows
+
+### Sign up
+1. Client connects with a fresh token.
+2. `onClientConnected` creates a `player` row (empty name).
+3. User registers username + password; client encrypts the token and calls `registerCredential`.
+4. Token and username are stored in `localStorage`.
+
+### Login on another device
+1. Client reads the `credential` row for the username.
+2. Client decrypts the token locally with the password.
+3. Home screen bumps `spacetimeSessionKey` to remount the provider with the recovered token.
+
+### Play a match
+1. Create or join a room (`createRoom`, `joinRoomByCode`, or `joinQueue`).
+2. Pick mobile, toggle ready; host calls `startRound` with a seed.
+3. Battle actions call `recordRoundEvent`; stats call `submitRoundStats`; host calls `endRound`.
+
+Room status lifecycle: `waiting` → `in_match` → `waiting` (another round) or `ended`.
 
 ## Table of Contents
 
-- [Architecture & Design](/docs/spacetimedb/architecture) — Schema, tables, and design patterns
-- [Authentication & Security](/docs/spacetimedb/auth) — Token encryption, PBKDF2, AES-GCM
-- [Real-time Subscriptions](/docs/spacetimedb/subscriptions) — useTable hooks, filtered queries
+- [Architecture & Design](/docs/spacetimedb/architecture) — Schema and design patterns
+- [Authentication & Security](/docs/spacetimedb/auth) — Token encryption
+- [Real-time Subscriptions](/docs/spacetimedb/subscriptions) — `useTable` hooks
 - [Reducers & Mutations](/docs/spacetimedb/reducers) — Server-side state changes
-- [Client Integration](/docs/spacetimedb/client) — React hooks and provider setup
-- [Account Recovery](/docs/spacetimedb/account-recovery) — Cross-device login flow
-- [Caveats & Limitations](/docs/spacetimedb/caveats) — Known issues and constraints
+- [Client Integration](/docs/spacetimedb/client) — Provider and hooks
+- [Account Recovery](/docs/spacetimedb/account-recovery) — Cross-device login
+- [Caveats & Limitations](/docs/spacetimedb/caveats) — Known constraints

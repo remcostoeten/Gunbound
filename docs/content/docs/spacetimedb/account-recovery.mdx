@@ -88,28 +88,21 @@ const builder = DbConnection.builder()
   .onConnect(onConnect);
 ```
 
-The server's `clientConnected` lifecycle creates a player row:
+The server's `onClientConnected` hook upserts a `player` row:
 
 ```typescript
 // server/spacetimedb/src/index.ts
-spacetimedb.clientConnected((ctx) => {
-  // Create player row on first connection
+export const onClientConnected = spacetimedb.clientConnected((ctx) => {
   const existing = ctx.db.player.identity.find(ctx.sender);
-  if (!existing) {
-    ctx.db.player.insert({
-      identity: ctx.sender,
-      name: `Player_${ctx.sender.toHexString().slice(0, 8)}`,
-      mobileType: null,
-      score: 0n,
-      xp: 0n,
-      createdAt: ctx.timestamp,
-      updatedAt: ctx.timestamp,
-    });
+  if (existing) {
+    // Reconnect: update streak/XP, lastSeen, etc.
+    return;
   }
+  insertPlayer(ctx, ''); // name starts empty
 });
 ```
 
-At this point, the user has a valid SpacetimeDB identity but it's not yet persistent (token isn't saved).
+At this point the user has a SpacetimeDB identity. Persistence across devices requires registering a `credential` row.
 
 ### Step 2: User Signs Up
 
@@ -409,25 +402,21 @@ SpacetimeDB tokens are valid for the lifetime of the session. If a token expires
 
 ## Known Limitations
 
-1. **No email recovery**: If password is forgotten, account is lost (add email + OTP flow in future)
-2. **No password change**: Would require re-encrypting stored token (implement `update_credential_token` reducer)
-3. **No 2FA**: Authentication is single-factor (password only)
-4. **Username enumeration**: Attacker can read the public credential table to find registered usernames (acceptable for a game)
-5. **Brute-force risk**: No rate limiting on decryption attempts (server should limit login attempts per IP)
+1. **No email recovery** — forgotten password means a lost account
+2. **No password-change UI** — server has `updateCredentialToken`; client flow not built yet
+3. **No 2FA** — password only
+4. **Username enumeration** — public `credential` table lists usernames
+5. **No rate limiting** — client-side PBKDF2 slows brute-force but there is no server throttle
 
 ## Future Improvements
 
-### Email-based Recovery
-1. Add `email` field to `player` table
-2. On login failure, send password reset email
-3. Email link with OTP → generate new temporary password → decrypt token
+### Email-based recovery
+Add email + OTP reset flow on `player`.
 
-### Password Change
-1. Implement `update_credential_token` reducer
-2. User provides old password + new password
-3. Decrypt with old password to verify identity
-4. Re-encrypt token with new password
-5. Update credential row
+### Password change UI
+1. User provides old + new password
+2. Client decrypts token with old password, re-encrypts with new password
+3. Call `conn.reducers.updateCredentialToken({ username, encryptedToken })`
 
 ### 2FA
 1. Add TOTP secret to player table (encrypted)

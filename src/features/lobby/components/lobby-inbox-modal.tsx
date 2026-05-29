@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+import { playUiSfx } from "@/lib/music-bus";
 import type { IncomingFriendRequestView, IncomingRoomInviteView } from "../spacetime/use-lobby-friends";
 
 type Props = {
@@ -18,6 +20,10 @@ export function LobbyInboxModal({
   onRoomInviteResponse,
 }: Props) {
   const isEmpty = friendRequests.length === 0 && roomInvites.length === 0;
+
+  useEffect(function playOpenCue(): void {
+    playUiSfx(isEmpty ? "open" : "notify");
+  }, [isEmpty]);
 
   return (
     <div className="gb-modal-back" onClick={onClose}>

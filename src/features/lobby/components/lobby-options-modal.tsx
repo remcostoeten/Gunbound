@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getAudioVolume, setAudioVolume, subscribeAudioSettings, getUiClickEnabled, setUiClickEnabled } from "@/lib/audio-settings";
+import { playUiSfx } from "@/lib/music-bus";
 import {
   getBattleImmersive,
   getBrowserFullscreen,
@@ -27,6 +28,10 @@ export function LobbyOptionsModal({ onClose }: Props) {
   const [immersive, setImmersiveState] = useState(() => getBattleImmersive());
   const [fullscreen, setFullscreenState] = useState(() => isDocumentFullscreen());
   const [emptyStateAnimated, setEmptyStateAnimatedState] = useState(() => getLobbyEmptyStateAnimated());
+
+  useEffect(function playOpenCue(): void {
+    playUiSfx("open");
+  }, []);
 
   useEffect(() => {
     return subscribeAudioSettings(() => {

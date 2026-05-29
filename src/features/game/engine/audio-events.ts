@@ -1,15 +1,19 @@
 import type { GameState } from "@/features/game/types/state";
 import type { MatchEvent } from "@/features/game/types/events";
-import type { MobileType, PlayerId, WeaponType } from "@/features/game/types/shared";
+import type { GamePhase, MobileType, PlayerId, WeatherKind, WeaponType } from "@/features/game/types/shared";
 
 export type AudioEventTracker = {
   previousScene: GameState["scene"];
+  previousPhase: GamePhase;
   charging: boolean;
   projectileActive: boolean;
   turn: PlayerId | null;
   explosionTimer: number;
   historyLength: number;
   windBucket: number;
+  previousWeatherKind: WeatherKind;
+  previousBonusBoxIds: string[];
+  suddenDeathActive: boolean;
   lowHealthWarned: [boolean, boolean];
   previousBounces: number;
   previousWeapons: [WeaponType, WeaponType];
@@ -17,8 +21,12 @@ export type AudioEventTracker = {
 
 export type AudioCue =
   | { kind: "scene-playing-start" }
-  | { kind: "scene-ended" }
+  | { kind: "scene-ended"; winner: PlayerId | null }
   | { kind: "scene-returned-start" }
+  | { kind: "phase-timeout" }
+  | { kind: "weather-change"; weather: WeatherKind }
+  | { kind: "bonus-spawn" }
+  | { kind: "sudden-death-start" }
   | { kind: "wind-intensity-up"; bucket: number }
   | { kind: "low-health"; isCurrentTurn: boolean }
   | { kind: "shot-fire"; isSecondary: boolean; mobileType: MobileType; power: number }
@@ -30,8 +38,10 @@ export type AudioCue =
   | { kind: "charge-release"; power: number }
   | { kind: "weapon-switch" }
   | { kind: "history-move" }
-  | { kind: "history-hit" }
+  | { kind: "history-shot-tech" }
+  | { kind: "history-hit"; damage: number | null }
   | { kind: "history-bonus" }
+  | { kind: "history-sudden-death" }
   | { kind: "history-round-end" };
 
 export type DerivedAudioEvents = {
@@ -42,12 +52,16 @@ export type DerivedAudioEvents = {
 export function createAudioEventTracker(): AudioEventTracker {
   return {
     previousScene: "start",
+    previousPhase: "move",
     charging: false,
     projectileActive: false,
     turn: null,
     explosionTimer: 0,
     historyLength: 0,
     windBucket: 0,
+    previousWeatherKind: "wind",
+    previousBonusBoxIds: [],
+    suddenDeathActive: false,
     lowHealthWarned: [false, false],
     previousBounces: 0,
     previousWeapons: ["primary", "primary"]
@@ -58,12 +72,16 @@ export function deriveAudioEvents(state: GameState, tracker: AudioEventTracker):
   const cues: AudioCue[] = [];
   const nextTracker: AudioEventTracker = {
     previousScene: tracker.previousScene,
+    previousPhase: tracker.previousPhase,
     charging: tracker.charging,
     projectileActive: tracker.projectileActive,
     turn: tracker.turn,
     explosionTimer: tracker.explosionTimer,
     historyLength: tracker.historyLength,
     windBucket: tracker.windBucket,
+    previousWeatherKind: tracker.previousWeatherKind,
+    previousBonusBoxIds: tracker.previousBonusBoxIds.slice(),
+    suddenDeathActive: tracker.suddenDeathActive,
     lowHealthWarned: [...tracker.lowHealthWarned] as [boolean, boolean],
     previousBounces: tracker.previousBounces,
     previousWeapons: [...tracker.previousWeapons] as [WeaponType, WeaponType]
@@ -74,7 +92,7 @@ export function deriveAudioEvents(state: GameState, tracker: AudioEventTracker):
   }
 
   if (state.scene === "end" && tracker.previousScene !== "end") {
-    cues.push({ kind: "scene-ended" });
+    cues.push({ kind: "scene-ended", winner: state.winner });
   }
 
   if (state.scene === "start" && tracker.previousScene === "end") {
@@ -82,6 +100,10 @@ export function deriveAudioEvents(state: GameState, tracker: AudioEventTracker):
   }
 
   if (state.scene === "playing") {
+    appendPhaseCues(cues, state, tracker);
+    appendWeatherCue(cues, state, tracker, nextTracker);
+    appendBonusSpawnCue(cues, state, tracker, nextTracker);
+    appendSuddenDeathCue(cues, state, tracker, nextTracker);
     appendWindCue(cues, state, tracker, nextTracker);
     appendLowHealthCues(cues, state, tracker, nextTracker);
     appendProjectileCues(cues, state, tracker, nextTracker);
@@ -93,6 +115,7 @@ export function deriveAudioEvents(state: GameState, tracker: AudioEventTracker):
   }
 
   nextTracker.previousScene = state.scene;
+  nextTracker.previousPhase = state.phase;
   nextTracker.charging = state.charging;
   nextTracker.projectileActive = state.projectile !== null;
   nextTracker.turn = state.turn;
@@ -103,6 +126,54 @@ export function deriveAudioEvents(state: GameState, tracker: AudioEventTracker):
     tracker: nextTracker,
     cues
   };
+}
+
+function appendPhaseCues(cues: AudioCue[], state: GameState, tracker: AudioEventTracker): void {
+  if (
+    state.phase === "resolve" &&
+    tracker.previousPhase !== "resolve" &&
+    state.projectile === null &&
+    state.message.toLowerCase().includes("timed out")
+  ) {
+    cues.push({ kind: "phase-timeout" });
+  }
+}
+
+function appendWeatherCue(cues: AudioCue[], state: GameState, tracker: AudioEventTracker, nextTracker: AudioEventTracker): void {
+  const weather = state.weather.kind;
+  if (weather !== tracker.previousWeatherKind && weather !== "wind") {
+    cues.push({ kind: "weather-change", weather });
+  }
+  nextTracker.previousWeatherKind = weather;
+}
+
+function appendBonusSpawnCue(cues: AudioCue[], state: GameState, tracker: AudioEventTracker, nextTracker: AudioEventTracker): void {
+  const previousIds = new Set(tracker.previousBonusBoxIds);
+  const nextIds: string[] = [];
+  let spawned = false;
+  let index = 0;
+
+  while (index < state.bonusBoxes.length) {
+    const id = state.bonusBoxes[index].id;
+    nextIds.push(id);
+    if (!previousIds.has(id)) {
+      spawned = true;
+    }
+    index += 1;
+  }
+
+  if (spawned) {
+    cues.push({ kind: "bonus-spawn" });
+  }
+
+  nextTracker.previousBonusBoxIds = nextIds;
+}
+
+function appendSuddenDeathCue(cues: AudioCue[], state: GameState, tracker: AudioEventTracker, nextTracker: AudioEventTracker): void {
+  if (state.suddenDeathActive && !tracker.suddenDeathActive) {
+    cues.push({ kind: "sudden-death-start" });
+  }
+  nextTracker.suddenDeathActive = state.suddenDeathActive;
 }
 
 function appendWindCue(cues: AudioCue[], state: GameState, tracker: AudioEventTracker, nextTracker: AudioEventTracker): void {
@@ -216,15 +287,31 @@ function appendHistoryCues(cues: AudioCue[], history: MatchEvent[], historyLengt
     if (entry.kind === "move") {
       cues.push({ kind: "history-move" });
     }
+    if (entry.kind === "shot-tech") {
+      cues.push({ kind: "history-shot-tech" });
+    }
     if (entry.kind === "hit") {
-      cues.push({ kind: "history-hit" });
+      cues.push({ kind: "history-hit", damage: parseDamageAmount(entry.text) });
     }
     if (entry.kind === "bonus") {
       cues.push({ kind: "history-bonus" });
+    }
+    if (entry.kind === "sudden-death" && !entry.text.toLowerCase().includes("started")) {
+      cues.push({ kind: "history-sudden-death" });
     }
     if (entry.kind === "round-end") {
       cues.push({ kind: "history-round-end" });
     }
     index += 1;
   }
+}
+
+function parseDamageAmount(text: string): number | null {
+  const match = text.match(/\bfor\s+(\d+)\b/);
+  if (match === null) {
+    return null;
+  }
+
+  const amount = Number(match[1]);
+  return Number.isFinite(amount) ? amount : null;
 }

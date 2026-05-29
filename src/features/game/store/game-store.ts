@@ -36,6 +36,7 @@ import {
 import { carveCrater, clamp, getSurfaceY } from "@/features/game/engine/terrain";
 import { createDefaultWeather, isWeatherItemLocked } from "@/features/game/engine/weather";
 import { canSelectWeapon, getNextWeapon, getWeaponDisplayName, shouldConsumeSpecialCharge } from "@/features/game/engine/weapons";
+import { getSsAttack, type SsPattern } from "@/features/game/engine/mobile-attacks";
 import { appendHistory, appendMatchEventEntries, createMatchEvent as buildMatchEvent, resetHistoryEventCounter } from "@/features/game/factories/create-match-event";
 import { createPlaceholderPlayers } from "@/features/game/factories/create-player";
 import { createProjectile } from "@/features/game/factories/create-projectile";
@@ -387,7 +388,8 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
           if (resolvedTechnique !== null) {
             nextPlayers[state.turn - 1].mobile.lastShotTechnique = resolvedTechnique;
           }
-          const explosions = buildExplosionList(step.explosion);
+          const shotDirection: -1 | 1 = state.projectile?.launchDirection ?? nextProjectile?.launchDirection ?? 1;
+          const explosions = buildExplosionPattern(step.explosion, shotDirection);
           const explosionVisuals: ExplosionVisual[] = [];
 
           for (const explosion of explosions) {
@@ -1392,8 +1394,14 @@ function createMatchEvent(round: number, turn: 1 | 2, kind: MatchEvent["kind"], 
   });
 }
 
-function buildExplosionList(explosion: ExplosionState): ExplosionState[] {
-  if (explosion.mobileType === "mage" && explosion.weapon !== "primary") {
+type ExplosionOffset = { dx: number; dy: number; damageMul: number; radiusMul: number };
+
+function buildExplosionPattern(explosion: ExplosionState, direction: -1 | 1): ExplosionState[] {
+  if (explosion.weapon === "ss") {
+    return buildSsExplosions(explosion, direction);
+  }
+
+  if (explosion.mobileType === "mage" && explosion.weapon === "secondary") {
     return [
       { ...explosion, point: { x: explosion.point.x - 22, y: explosion.point.y }, damage: explosion.damage * 0.65, radius: explosion.radius * 0.8 },
       { ...explosion, point: { x: explosion.point.x + 22, y: explosion.point.y }, damage: explosion.damage * 0.65, radius: explosion.radius * 0.8 }
@@ -1401,6 +1409,121 @@ function buildExplosionList(explosion: ExplosionState): ExplosionState[] {
   }
 
   return [explosion];
+}
+
+function buildSsExplosions(explosion: ExplosionState, direction: -1 | 1): ExplosionState[] {
+  const attack = getSsAttack(explosion.mobileType);
+  return buildSsOffsets(attack.pattern, attack.count, attack.spread, direction).map(function applyOffset(offset) {
+    return {
+      ...explosion,
+      point: { x: explosion.point.x + offset.dx, y: explosion.point.y + offset.dy },
+      damage: explosion.damage * offset.damageMul,
+      radius: explosion.radius * offset.radiusMul
+    };
+  });
+}
+
+function buildSsOffsets(pattern: SsPattern, count: number, spread: number, direction: -1 | 1): ExplosionOffset[] {
+  if (pattern === "heavy-single") {
+    return [{ dx: 0, dy: 0, damageMul: 1, radiusMul: 1.35 }];
+  }
+
+  if (pattern === "cluster-rain") {
+    const offsets: ExplosionOffset[] = [{ dx: 0, dy: 0, damageMul: 0.8, radiusMul: 1 }];
+    const satellites = Math.max(1, count - 1);
+    let index = 0;
+    while (index < satellites) {
+      const t = satellites === 1 ? 0.5 : index / (satellites - 1);
+      const dx = (t - 0.5) * 2 * spread;
+      offsets.push({ dx, dy: -12 - Math.abs(dx) * 0.18, damageMul: 0.3, radiusMul: 0.62 });
+      index += 1;
+    }
+    return offsets;
+  }
+
+  if (pattern === "split-spread" || pattern === "dive-fan") {
+    const offsets: ExplosionOffset[] = [];
+    let index = 0;
+    while (index < count) {
+      const t = count === 1 ? 0.5 : index / (count - 1);
+      const dx = (t - 0.5) * 2 * spread;
+      const isCenter = Math.abs(dx) < 1;
+      const dy = pattern === "dive-fan" ? -Math.abs(dx) * 0.5 : 0;
+      offsets.push({
+        dx,
+        dy,
+        damageMul: isCenter ? 0.8 : 0.3,
+        radiusMul: isCenter ? (pattern === "dive-fan" ? 1 : 0.95) : 0.7
+      });
+      index += 1;
+    }
+    return offsets;
+  }
+
+  if (pattern === "ring-burst") {
+    const offsets: ExplosionOffset[] = [{ dx: 0, dy: 0, damageMul: 0.75, radiusMul: 0.9 }];
+    let index = 0;
+    while (index < count) {
+      const angle = (index / count) * Math.PI * 2;
+      offsets.push({ dx: Math.cos(angle) * spread, dy: Math.sin(angle) * spread * 0.6, damageMul: 0.2, radiusMul: 0.5 });
+      index += 1;
+    }
+    return offsets;
+  }
+
+  if (pattern === "burrow-line") {
+    const offsets: ExplosionOffset[] = [];
+    let index = 0;
+    while (index < count) {
+      const lead = index === 0;
+      offsets.push({
+        dx: direction * index * spread * 0.7,
+        dy: index * 7,
+        damageMul: lead ? 0.8 : Math.max(0.2, 0.5 - index * 0.1),
+        radiusMul: lead ? 1 : Math.max(0.5, 0.85 - index * 0.12)
+      });
+      index += 1;
+    }
+    return offsets;
+  }
+
+  if (pattern === "bounce-chain") {
+    const offsets: ExplosionOffset[] = [];
+    let index = 0;
+    while (index < count) {
+      const first = index === 0;
+      offsets.push({
+        dx: direction * index * spread * 0.8,
+        dy: -(index % 2) * 8,
+        damageMul: first ? 0.8 : 0.4,
+        radiusMul: first ? 1 : 0.7
+      });
+      index += 1;
+    }
+    return offsets;
+  }
+
+  if (pattern === "lightning-strike") {
+    const offsets: ExplosionOffset[] = [{ dx: 0, dy: 0, damageMul: 0.85, radiusMul: 1.05 }];
+    const branches = Math.max(1, count - 1);
+    let index = 0;
+    while (index < branches) {
+      const side = index % 2 === 0 ? -1 : 1;
+      const step = Math.floor(index / 2) + 1;
+      offsets.push({ dx: side * spread * step, dy: -spread * 0.5 * step, damageMul: 0.35, radiusMul: 0.55 });
+      index += 1;
+    }
+    return offsets;
+  }
+
+  const homingOffsets: ExplosionOffset[] = [];
+  let homingIndex = 0;
+  while (homingIndex < count) {
+    const t = count === 1 ? 0.5 : homingIndex / (count - 1);
+    homingOffsets.push({ dx: (t - 0.5) * 2 * spread, dy: 0, damageMul: 0.5, radiusMul: 0.8 });
+    homingIndex += 1;
+  }
+  return homingOffsets;
 }
 
 function createExplosionVisual(explosion: ExplosionState): ExplosionVisual {

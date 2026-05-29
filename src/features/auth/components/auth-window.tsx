@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { LogIn, ShieldCheck } from "lucide-react";
 import { useAuth } from "react-oidc-context";
-import { playTrack } from "@/lib/music-bus";
+import { playTrack, playUiSfx } from "@/lib/music-bus";
 import {
   writeStoredToken,
   writeStoredUsername,
@@ -42,6 +42,12 @@ export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
 
   const isRegister = mode === "register";
   const busy = state === "working";
+
+  useEffect(function playErrorCue(): void {
+    if (error !== null) {
+      playUiSfx("error");
+    }
+  }, [error]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
