@@ -5,68 +5,11 @@ description: useTable hooks, filtered queries, and reactive updates
 
 ## Overview
 
-Subscriptions are how the client receives real-time updates from SpacetimeDB. When the server mutates a table via a reducer, all subscribed clients are notified and re-render automatically.
+Gunbound uses the SpacetimeDB React SDK. **`useTable()` creates and manages subscriptions** — the app provider does not call `subscribeToAllTables()`.
 
-The client uses two mechanisms:
-1. **Broad subscription**: `subscribeToAllTables()` subscribes to all public tables
-2. **Query-specific subscription**: `useTable()` can subscribe to a table query, including filtered query builders such as `tables.room.where(...)`
+When a reducer mutates a table, subscribed hooks receive updated rows and components re-render.
 
-## Provider Setup
-
-The `GunboundSpacetimeProvider` sets up the connection and subscribes to all tables:
-
-```typescript
-// src/features/game/spacetime/connection.tsx
-export function GunboundSpacetimeProvider({ children }: { children: React.ReactNode }) {
-  const builder = useMemo(() => {
-    const token = readStoredToken();
-    return DbConnection.builder()
-      .withUri(SPACETIME_URI)
-      .withDatabaseName(SPACETIME_MODULE)
-      .withToken(token || undefined)
-      .onConnect(onConnect)
-      .onConnectError(onConnectError);
-  }, []);
-
-  return (
-    <SpacetimeDBProvider connectionBuilder={builder}>
-      {children}
-    </SpacetimeDBProvider>
-  );
-}
-```
-
-The provider wraps the entire app, ensuring the connection is available to all components.
-
-### Connection Lifecycle
-
-```typescript
-function onConnect(conn: DbConnection) {
-  // Subscribe to all public tables
-  conn.subscriptionBuilder().subscribeToAllTables();
-}
-
-function onConnectError(err: Error) {
-  console.error('Connection failed:', err);
-}
-```
-
-Once subscribed, all public table data flows to the client in real-time.
-`subscribeToAllTables()` is a broad convenience API; after it is initiated, that subscription cannot be canceled. Prefer query-specific subscriptions for large tables or narrow screens.
-
-## useTable Hook
-
-The `useTable` hook reads data from a subscribed table:
-
-```typescript
-const [rows, isReady] = useTable(tables.player);
-```
-
-Returns a tuple:
-- `rows`: Array of row objects from the table
-- `isReady`: Boolean indicating whether the subscription has applied. Treat `!isReady` as "initial data is not ready yet", not as a generic network loading state.
-
-### Basic Usage
+## Basic usage
 
 ```typescript
 import { useTable } from 'spacetimedb/react';
@@ -75,330 +18,82 @@ import { tables } from '@/features/game/spacetime';
 function PlayerList() {
   const [players, isReady] = useTable(tables.player);
 
-  if (!isReady) return <div>Loading players...</div>;
+  if (!isReady) return <div>Loading players…</div>;
 
   return (
     <ul>
-      {players.map(p => (
-        <li key={p.identity.toHexString()}>{p.name} — Score: {p.score}</li>
+      {players.map((p) => (
+        <li key={p.identity.toHexString()}>{p.name}</li>
       ))}
     </ul>
   );
 }
 ```
 
-### Filtered Queries
+`isReady` is **subscription applied** — initial snapshot received. It is not a general-purpose loading flag for reducer calls.
 
-`useTable` can subscribe directly to a filtered query builder:
+## Filtered queries
 
-```typescript
-const waitingRoomQuery = tables.room.where((r) => r.status.eq('waiting'));
-const [waitingRooms, roomsReady] = useTable(waitingRoomQuery);
-```
-
-For app-level derived views, it is still fine to filter and sort in JavaScript after reading a table:
+Subscribe to a subset server-side when the table is large or the view is narrow:
 
 ```typescript
-const [allRooms, roomsReady] = useTable(tables.room);
-
-// Filter to non-ended rooms
-const activeRooms = allRooms.filter(r => r.status !== 'ended');
-
-// Sort by creation time
-const sorted = activeRooms.sort((a, b) => {
-  const aTime = a.createdAt.microsSinceUnixEpoch;
-  const bTime = b.createdAt.microsSinceUnixEpoch;
-  if (bTime > aTime) return 1;
-  if (bTime < aTime) return -1;
-  return 0;
-});
+const waitingQuery = tables.room.where((r) => r.status.eq('waiting'));
+const [waitingRooms, ready] = useTable(waitingQuery);
 ```
 
-### Lookup by Identity
+For small tables or UI-specific shaping, filtering in JavaScript after `useTable(tables.room)` is also fine (see `useLobbyRooms`).
 
-Identity values require hex string comparison:
+## Identity lookups
 
 ```typescript
-const [players] = useTable(tables.player);
-
-function findPlayer(identity: Identity): Player | undefined {
-  return players.find(p => p.identity.toHexString() === identity.toHexString());
-}
+const me = players.find(
+  (p) => p.identity.toHexString() === connection.identity?.toHexString()
+);
 ```
 
-## Custom Hooks for Business Logic
+## Domain hooks
 
-Rather than scattering `useTable` calls throughout the UI, create domain-specific hooks:
+Prefer hooks in `src/features/lobby/spacetime/` over scattering `useTable` in UI:
 
 ### useLobbyRooms
 
-Lists rooms available to join:
+- Subscribes to `room`, `room_member`, `player`.
+- Filters out `ended` rooms, computes member counts, resolves host names.
+- Exposes `createRoom`, `joinRoomByCode`, `quickJoin`.
 
-```typescript
-// src/features/lobby/spacetime/use-lobby-rooms.ts
-export function useLobbyRooms(): {
-  rooms: LobbyRoomView[];
-  createRoom(code?: string): Promise<void>;
-  joinRoomByCode(code: string): Promise<void>;
-  quickJoin(): Promise<void>;
-  isReady: boolean;
-} {
-  const connection = useSpacetimeDB();
-  const [dbRooms, roomsReady] = useTable(tables.room);
-  const [players] = useTable(tables.player);
+### useRoomSession(roomId)
 
-  // Filter to non-ended rooms
-  const activeRooms = dbRooms.filter(r => r.status !== 'ended');
+- Joins `room_member`, `player`, `chat_message` for one room.
+- Exposes `sendChat`, `setReady`, `selectMobile`, `leave`.
 
-  // Transform to view model with resolved host names
-  const rooms: LobbyRoomView[] = activeRooms.map(room => {
-    const host = players.find(p => 
-      p.identity.toHexString() === room.hostIdentity.toHexString()
-    );
-    return {
-      id: room.id,
-      code: room.code,
-      status: room.status,
-      hostName: host?.name ?? 'Unknown',
-      memberCount: room.memberCount,
-      capacity: room.capacity,
-    };
-  });
+### useMatchmakingQueue
 
-  const createRoom = useCallback(async (code?: string) => {
-    const conn = connection.getConnection();
-    if (!conn) throw new Error('not connected');
+- Subscribes to `waiting_player`.
+- Calls `joinQueue` / `leaveQueue`.
 
-    const roomCode = code || generateRoomCode();
-    await conn.reducers.createRoom({ code: roomCode });
-  }, [connection]);
+## Social table visibility
 
-  const joinRoomByCode = useCallback(async (code: string) => {
-    const conn = connection.getConnection();
-    if (!conn) throw new Error('not connected');
+`friendship`, `friend_request`, and `room_invite` are filtered on the server so each client only receives rows they participate in. You still use normal `useTable(tables.friendship)` — the filter is applied server-side.
 
-    await conn.reducers.joinRoomByCode({ code });
-  }, [connection]);
+## Re-render model
 
-  const quickJoin = useCallback(async () => {
-    if (rooms.length === 0) throw new Error('no available rooms');
-    await joinRoomByCode(rooms[0].code);
-  }, [rooms, joinRoomByCode]);
+1. Reducer mutates a table on the server.
+2. SpacetimeDB pushes the delta to subscribed clients.
+3. `useTable` updates its row array.
+4. React re-renders consuming components.
 
-  return { rooms, createRoom, joinRoomByCode, quickJoin, isReady: roomsReady };
-}
-```
+## Performance
 
-**Benefits:**
-- Encapsulates data fetching and filtering logic
-- Returns domain objects (`LobbyRoomView`) instead of raw rows
-- Provides convenience methods (`createRoom`, `joinRoomByCode`)
-- Handles identity resolution for display
+- Memoize derived lists with `useMemo` when filtering or mapping large arrays.
+- Prefer indexed server filters in reducers over `.iter()` on big tables.
+- Multiple components can call `useTable` on the same table; the SDK deduplicates subscriptions.
 
-### useRoomSession
-
-Per-room subscription and actions:
-
-```typescript
-// src/features/lobby/spacetime/use-room-session.ts
-export function useRoomSession(roomId: bigint) {
-  const connection = useSpacetimeDB();
-  const [members, membersReady] = useTable(tables.roomMember);
-  const [players] = useTable(tables.player);
-  const [messages] = useTable(tables.chatMessage);
-
-  // Filter to current room
-  const roomMembers = members.filter(m => m.roomId === roomId);
-  const roomChat = messages.filter(m => m.roomId === roomId);
-
-  // Resolve member names
-  const memberViews = roomMembers.map(m => {
-    const player = players.find(p => 
-      p.identity.toHexString() === m.identity.toHexString()
-    );
-    return {
-      identity: m.identity,
-      name: player?.name ?? 'Unknown',
-      isReady: m.isReady,
-      mobileType: m.mobileType,
-    };
-  });
-
-  // Resolve chat sender names
-  const chatViews = roomChat.map(msg => {
-    const player = players.find(p => 
-      p.identity.toHexString() === msg.identity.toHexString()
-    );
-    return {
-      id: msg.id,
-      senderName: player?.name ?? 'Unknown',
-      message: msg.message,
-      createdAt: msg.createdAt,
-    };
-  });
-
-  const sendChat = useCallback(async (message: string) => {
-    const conn = connection.getConnection();
-    if (!conn) throw new Error('not connected');
-
-    await conn.reducers.sendChat({ roomId, message });
-  }, [connection, roomId]);
-
-  const setReady = useCallback(async (ready: boolean) => {
-    const conn = connection.getConnection();
-    if (!conn) throw new Error('not connected');
-
-    await conn.reducers.setReady({ roomId, ready });
-  }, [connection, roomId]);
-
-  const selectMobile = useCallback(async (mobileType: string) => {
-    const conn = connection.getConnection();
-    if (!conn) throw new Error('not connected');
-
-    await conn.reducers.selectMobile({ roomId, mobileType });
-  }, [connection, roomId]);
-
-  const leave = useCallback(async () => {
-    const conn = connection.getConnection();
-    if (!conn) throw new Error('not connected');
-
-    await conn.reducers.leaveRoom({ roomId });
-  }, [connection, roomId]);
-
-  return {
-    members: memberViews,
-    chat: chatViews,
-    sendChat,
-    setReady,
-    selectMobile,
-    leave,
-    isReady: membersReady,
-  };
-}
-```
-
-This hook joins three tables (`room_member`, `player`, `chat_message`) and surfaces them as a cohesive room state.
-
-## Reactor Pattern
-
-Hooks automatically re-render when subscribed data changes:
-
-```typescript
-function LobbyRoom({ roomId }: { roomId: bigint }) {
-  const { members } = useRoomSession(roomId);
-
-  // This re-renders automatically when members array changes
-  return (
-    <ul>
-      {members.map(m => (
-        <li key={m.identity.toHexString()}>
-          {m.name} — {m.isReady ? '✓ Ready' : '○ Not Ready'}
-        </li>
-      ))}
-    </ul>
-  );
-}
-```
-
-When a member joins the room:
-1. Server updates `room_member` table via `joinRoomByCode` reducer
-2. SpacetimeDB broadcasts change to all subscribed clients
-3. `useRoomSession`'s `roomMembers` array updates
-4. `useRoomSession`'s returned `members` re-computed
-5. Component re-renders with new member list
-
-## Performance Considerations
-
-### Avoid Filtering in Hooks
-
-Instead of:
-
-```typescript
-// ❌ SLOW — new array on every render
-const myRooms = rooms.filter(r => r.hostIdentity === myIdentity);
-```
-
-Use `useMemo`:
-
-```typescript
-// ✅ FAST — memoized until rooms/myIdentity change
-const myRooms = useMemo(() => 
-  rooms.filter(r => r.hostIdentity.toHexString() === myIdentity.toHexString()),
-  [rooms, myIdentity]
-);
-```
-
-### Avoid Object Literals in Dependencies
-
-```typescript
-// ❌ BAD — filter recreated every render
-function Room({ roomId }: { roomId: bigint }) {
-  const [stats] = useTable(tables.roundStat);
-  const roomStats = stats.filter(s => s.roomId === roomId);
-  // ...
-}
-
-// ✅ GOOD — dependencies are stable
-const roomStats = useMemo(() => 
-  stats.filter(s => s.roomId === roomId),
-  [stats, roomId]
-);
-```
-
-### Subscribe Only to What You Need
-
-If you only need active rooms (not ended), you can subscribe to a filtered query with `tables.room.where(...)`. If the table is small or the derived view is UI-specific, filtering after a broad table read can still be acceptable because:
-1. Filtering in JavaScript is fast
-2. The network overhead is minimal (binary encoding)
-3. The broad result can be reused by multiple nearby views
-
-For very large tables (thousands of rows), consider adding server-side views to reduce network bandwidth.
-
-## Subscription Lifecycle
-
-The subscription is established once when the provider mounts:
+## Debugging
 
 ```typescript
 useEffect(() => {
-  if (!connection) return;
-  
-  // Subscribe to all public tables once
-  connection.subscriptionBuilder().subscribeToAllTables();
-}, [connection]);
+  console.log('rooms', rooms);
+}, [rooms]);
 ```
 
-Subsequent component mounts don't re-subscribe; they reuse the existing subscription via the provider.
-The broad `subscribeToAllTables()` subscription cannot be canceled after initiation. Components that mount and unmount frequently should prefer `useTable(query, { enabled })` or explicit `subscriptionBuilder().subscribe([...])` calls whose handles can be managed.
-
-### Subscription Events
-
-Attach lifecycle callbacks to the same builder chain that starts the subscription:
-
-```typescript
-conn.subscriptionBuilder()
-  .onApplied(() => console.log('Room subscription ready'))
-  .onError((err) => console.error('Room subscription failed:', err))
-  .subscribe(["SELECT * FROM room WHERE status != 'ended'"]);
-```
-
-Calling `onApplied()` or `onError()` on a builder without a final `subscribe(...)` call only configures that builder; it does not start a subscription.
-
-## Debugging Subscriptions
-
-To debug what data the client is receiving:
-
-```typescript
-// Temporary debug hook
-function useDebugTable(table: any) {
-  const [rows, isReady] = useTable(table);
-  useEffect(() => {
-    console.log(`Table ${table.name}:`, rows);
-  }, [rows]);
-  return [rows, isReady];
-}
-
-// Usage:
-const [players] = useDebugTable(tables.player);
-```
-
-Check the browser's Network tab to see the subscription request and incoming updates.
+Check websocket traffic in DevTools and server logs with `bun run spacetime:logs`.

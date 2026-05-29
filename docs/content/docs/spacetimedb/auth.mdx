@@ -225,14 +225,16 @@ The `useCredentialAuth` hook orchestrates the flow:
 // src/features/auth/hooks/use-credential-auth.ts
 export function useCredentialAuth(): UseCredentialAuthResult {
   const connection = useSpacetimeDB();
-  const [credentialRows] = useTable(tables.credential);
+  const [credentialRows, credentialsReady] = useTable(tables.credential);
 
   const register = useCallback(
     async (username: string, password: string): Promise<RegisterResult> => {
       const validated = validateCredentials(username, password);
       const conn = connection.getConnection();
 
-      const currentToken = readStoredToken();
+      const currentToken = connection.token ?? readStoredToken();
+      if (!currentToken) throw new Error('no active session token to register');
+
       const encryptedToken = await encryptToken(
         currentToken,
         validated.password,
@@ -244,6 +246,7 @@ export function useCredentialAuth(): UseCredentialAuthResult {
         encryptedToken
       });
 
+      writeStoredUsername(validated.username);
       return { username: validated.username };
     },
     [connection]
@@ -252,7 +255,7 @@ export function useCredentialAuth(): UseCredentialAuthResult {
   const login = useCallback(
     async (username: string, password: string): Promise<LoginResult> => {
       const validated = validateCredentials(username, password);
-
+      if (!credentialsReady) throw new Error('account list is still loading');
       const row = credentialRows.find(r => r.username === validated.username);
       if (!row) throw new Error('no account with that username');
 
@@ -265,22 +268,24 @@ export function useCredentialAuth(): UseCredentialAuthResult {
       }
 
       writeStoredToken(token);
+      writeStoredUsername(validated.username);
       return { username: validated.username };
     },
     [credentialRows]
   );
 
-  return { state, register, login, isConnected };
+  return { state, register, login, isConnected, credentialsReady, connectionError: connection.connectionError };
 }
 
-function validateCredentials(username: string, password: string): {
-  if (!USERNAME_PATTERN.test(username.trim())) {
+function validateCredentials(username: string, password: string): { username: string; password: string } {
+  const trimmedUsername = username.trim();
+  if (!USERNAME_PATTERN.test(trimmedUsername)) {
     throw new Error('Username must be 3-20 characters: letters, digits, underscore');
   }
   if (password.length < PASSWORD_MIN_LENGTH) {
     throw new Error(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`);
   }
-  return { username: username.trim(), password };
+  return { username: trimmedUsername, password };
 }
 ```
 
@@ -338,10 +343,14 @@ if (typeof crypto === 'undefined' || !crypto.subtle) {
 
 WebCrypto is available in all modern browsers and provides hardware acceleration for cryptographic operations.
 
-## Future Improvements
+## Password change (server support)
 
-1. **Password change**: Implement `update_credential_token` reducer to allow users to change passwords
-2. **Email recovery**: Add email verification for account recovery (currently requires saving password)
-3. **2FA**: Add optional two-factor authentication
-4. **Rate limiting**: Server should rate-limit login attempts per IP/username to prevent brute-force
-5. **Secure credential display**: Show password requirements/strength indicator in UI
+The module includes `update_credential_token` — the caller re-encrypts their session token with a new password-derived key and updates their `credential` row. The client auth UI does not expose this yet; wire it up when adding a change-password screen.
+
+## Future improvements
+
+1. **Password change UI** — call `updateCredentialToken` from the client after local re-encryption
+2. **Email recovery** — OTP-based reset (currently requires saving the password)
+3. **2FA** — optional TOTP
+4. **Rate limiting** — per-IP throttle on login attempts
+5. **Password strength indicator** in the auth form

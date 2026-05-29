@@ -1,5 +1,6 @@
 type DisplaySettings = {
   battleImmersive: boolean;
+  browserFullscreen: boolean;
   lobbyEmptyStateAnimated: boolean;
   lobbyChatHeightPx: number;
 };
@@ -13,12 +14,14 @@ const LOBBY_CHAT_HEIGHT_DEFAULT = 180;
 
 const DEFAULT_SETTINGS: DisplaySettings = {
   battleImmersive: true,
+  browserFullscreen: false,
   lobbyEmptyStateAnimated: true,
   lobbyChatHeightPx: LOBBY_CHAT_HEIGHT_DEFAULT,
 };
 
 let settings: DisplaySettings = {
   battleImmersive: DEFAULT_SETTINGS.battleImmersive,
+  browserFullscreen: DEFAULT_SETTINGS.browserFullscreen,
   lobbyEmptyStateAnimated: DEFAULT_SETTINGS.lobbyEmptyStateAnimated,
   lobbyChatHeightPx: DEFAULT_SETTINGS.lobbyChatHeightPx,
 };
@@ -39,6 +42,43 @@ export function setBattleImmersive(value: boolean): void {
   settings = {
     ...settings,
     battleImmersive: value,
+  };
+  persistDisplaySettings();
+  notifyDisplaySettings();
+}
+
+export function getBrowserFullscreen(): boolean {
+  hydrateDisplaySettings();
+  return settings.browserFullscreen;
+}
+
+export async function setBrowserFullscreen(value: boolean): Promise<void> {
+  hydrateDisplaySettings();
+  const currentlyFullscreen =
+    typeof document !== "undefined" && document.fullscreenElement !== null;
+  if (settings.browserFullscreen === value && currentlyFullscreen === value) {
+    return;
+  }
+
+  let nextValue = value;
+
+  if (typeof window !== "undefined") {
+    try {
+      if (value) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        if (document.fullscreenElement !== null) {
+          await document.exitFullscreen();
+        }
+      }
+    } catch {
+    }
+    nextValue = document.fullscreenElement !== null;
+  }
+
+  settings = {
+    ...settings,
+    browserFullscreen: nextValue,
   };
   persistDisplaySettings();
   notifyDisplaySettings();
@@ -109,6 +149,7 @@ function hydrateDisplaySettings(): void {
     const parsed = JSON.parse(raw) as Partial<DisplaySettings>;
     settings = {
       battleImmersive: parsed.battleImmersive ?? DEFAULT_SETTINGS.battleImmersive,
+      browserFullscreen: parsed.browserFullscreen ?? DEFAULT_SETTINGS.browserFullscreen,
       lobbyEmptyStateAnimated: parsed.lobbyEmptyStateAnimated ?? DEFAULT_SETTINGS.lobbyEmptyStateAnimated,
       lobbyChatHeightPx: clampLobbyChatHeight(
         parsed.lobbyChatHeightPx ?? DEFAULT_SETTINGS.lobbyChatHeightPx,

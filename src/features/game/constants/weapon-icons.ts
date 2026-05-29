@@ -1,6 +1,6 @@
 import type { BonusType, MobileType, WeaponType } from "@/features/game/types/shared";
 
-const weaponIconPaths: Record<MobileType, Record<WeaponType, string>> = {
+const weaponIconPaths: Record<MobileType, Record<Exclude<WeaponType, "ss">, string>> = {
   armor: {
     primary: "/weapons/armor-cannon.png",
     secondary: "/weapons/armor-heavy-mortar.png"
@@ -54,6 +54,10 @@ const bonusIconPaths: Record<BonusType, string> = {
 };
 
 export function getWeaponIconPath(mobileType: MobileType, weaponType: WeaponType): string {
+  if (weaponType === "ss") {
+    return "/weapons/bonus-weapon.png";
+  }
+
   return weaponIconPaths[mobileType][weaponType];
 }
 

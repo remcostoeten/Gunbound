@@ -10,8 +10,16 @@ export function selectTurn(state: GameStoreState) {
   return state.turn;
 }
 
+export function selectShotMode(state: GameStoreState) {
+  return state.shotMode;
+}
+
 export function selectWind(state: GameStoreState) {
   return state.wind;
+}
+
+export function selectWeather(state: GameStoreState) {
+  return state.weather;
 }
 
 export function selectPhase(state: GameStoreState) {
@@ -28,6 +36,26 @@ export function selectPhaseDuration(state: GameStoreState) {
 
 export function selectTurnCount(state: GameStoreState) {
   return state.turnCount;
+}
+
+export function selectTurnMoveRemaining(state: GameStoreState) {
+  return state.turnMoveRemaining;
+}
+
+export function selectBattleItemInventories(state: GameStoreState) {
+  return state.battleItemInventories;
+}
+
+export function selectSelectedBattleItems(state: GameStoreState) {
+  return state.selectedBattleItems;
+}
+
+export function selectTurnDelays(state: GameStoreState) {
+  return state.turnDelays;
+}
+
+export function selectTurnElapsed(state: GameStoreState) {
+  return state.turnElapsed;
 }
 
 export function selectBonusBoxes(state: GameStoreState) {

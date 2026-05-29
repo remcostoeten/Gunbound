@@ -2,11 +2,26 @@ export type PlayerId = 1 | 2;
 
 export type Vec2 = { x: number; y: number };
 
+export type WeatherKind = "wind" | "force" | "tornado" | "moon" | "eclipse";
+
+export type ShotMode = "slice" | "drag";
+
+export type ShotTechnique = "buttshot" | "backshot";
+
+export type WeatherState =
+  | { kind: "wind" }
+  | { kind: "force"; beamX: number; powerScale: number }
+  | { kind: "tornado"; vortex: Vec2; radius: number; swirl: -1 | 1 }
+  | { kind: "moon"; heal: number }
+  | { kind: "eclipse" };
+
 export type GamePhase = "move" | "aim" | "fire" | "resolve" | "end";
 
 export type GameScene = "start" | "playing" | "end";
 
-export type WeaponType = "primary" | "secondary";
+export type WeaponType = "primary" | "secondary" | "ss";
+
+export type BattleItemType = "power" | "bunge";
 
 export type MobileType =
   | "armor"

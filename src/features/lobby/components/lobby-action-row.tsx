@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { setBrowserFullscreen } from "@/lib/display-settings";
 import { LOBBY_TOP_ICONS } from "../config/top-icons";
 import { TOOLBAR_HINTS, type ToolbarHint } from "../config/toolbar-hints";
 import { LobbyActionButton } from "./lobby-action-button";
@@ -10,14 +12,12 @@ type Props = {
   onWaiting: () => void;
   inQueue?: boolean;
   onQuickjoin: () => void;
+  onSoloPractice: () => void;
   onCreate: () => void;
   onFriend: () => void;
   inboxCount?: number;
   onSearch: () => void;
   onIconClick: (label: string) => void;
-  canToggleEmptyData?: boolean;
-  emptyDataEnabled?: boolean;
-  onToggleEmptyData?: () => void;
 };
 
 const TOP_ICON_HINTS: Record<string, ToolbarHint> = {
@@ -25,32 +25,38 @@ const TOP_ICON_HINTS: Record<string, ToolbarHint> = {
   Rankings: TOOLBAR_HINTS.rankings,
 };
 
+function isDocumentFullscreen(): boolean {
+  return typeof document !== "undefined" && document.fullscreenElement !== null;
+}
+
 export function LobbyActionRow({
   onBack,
   onWaiting,
   inQueue = false,
   onQuickjoin,
+  onSoloPractice,
   onCreate,
   onFriend,
   inboxCount = 0,
   onSearch,
   onIconClick,
-  canToggleEmptyData = false,
-  emptyDataEnabled = false,
-  onToggleEmptyData,
 }: Props) {
+  const [fullscreen, setFullscreenState] = useState(function initialFullscreen(): boolean {
+    return isDocumentFullscreen();
+  });
+
+  useEffect(function bindFullscreenChangeListener(): () => void {
+    function onFullscreenChange(): void {
+      setFullscreenState(isDocumentFullscreen());
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
   return (
     <LobbyTooltipProvider>
       <div className="gb-toolbar">
         <div className="gb-toolbar-group">
-          <LobbyTooltip hint={TOOLBAR_HINTS.back}>
-            <button type="button" onClick={onBack} className="gb-toolbar-item">
-              <span className="gb-toolbar-tile gb-toolbar-tile-back">
-                <span className="gb-toolbar-glyph">⇥</span>
-              </span>
-              <span className="gb-toolbar-label">Back</span>
-            </button>
-          </LobbyTooltip>
           <LobbyActionButton
             layout="toolbar"
             label={inQueue ? "Cancel" : "Waiting"}
@@ -70,6 +76,14 @@ export function LobbyActionRow({
           />
           <LobbyActionButton
             layout="toolbar"
+            label="Solo"
+            glyph="🎯"
+            tone="blue"
+            onClick={onSoloPractice}
+            hint={TOOLBAR_HINTS.soloPractice}
+          />
+          <LobbyActionButton
+            layout="toolbar"
             label="Create"
             glyph="🔧"
             tone="purple"
@@ -77,29 +91,9 @@ export function LobbyActionRow({
             onClick={onCreate}
             hint={TOOLBAR_HINTS.create}
           />
-          {canToggleEmptyData && (
-            <LobbyActionButton
-              layout="toolbar"
-              label={emptyDataEnabled ? "Empty data" : "Fixture data"}
-              glyph="🧪"
-              tone="blue"
-              onClick={onToggleEmptyData ?? (() => {})}
-              hint={emptyDataEnabled ? TOOLBAR_HINTS.emptyData : TOOLBAR_HINTS.fixtureData}
-            />
-          )}
         </div>
 
-        <LobbyTooltip hint={TOOLBAR_HINTS.mode} side="bottom">
-          <button type="button" className="gb-toolbar-mode">
-            <div className="gb-mode-chip">
-              <span>MODE</span>
-              <small>Mode</small>
-            </div>
-            <div className="gb-mode-label">SOLO</div>
-          </button>
-        </LobbyTooltip>
-
-        <div className="gb-toolbar-group gb-toolbar-group--end">
+        <div className="gb-toolbar-group gb-toolbar-group--center">
           {LOBBY_TOP_ICONS.map((icon) => {
             const hint = TOP_ICON_HINTS[icon.label];
             const button = (
@@ -141,6 +135,32 @@ export function LobbyActionRow({
             onClick={onSearch}
             hint={TOOLBAR_HINTS.roomSearch}
           />
+        </div>
+
+        <div className="gb-toolbar-group gb-toolbar-group--utility">
+          <LobbyTooltip hint={TOOLBAR_HINTS.back}>
+            <button type="button" onClick={onBack} className="gb-toolbar-item">
+              <span className="gb-toolbar-tile gb-toolbar-tile-back">
+                <span className="gb-toolbar-glyph">⇥</span>
+              </span>
+              <span className="gb-toolbar-label">Back</span>
+            </button>
+          </LobbyTooltip>
+          <LobbyTooltip hint={fullscreen ? TOOLBAR_HINTS.exitFullscreen : TOOLBAR_HINTS.fullscreen}>
+            <button
+              type="button"
+              className={`gb-toolbar-item${fullscreen ? " gb-toolbar-item--active" : ""}`}
+              aria-pressed={fullscreen}
+              onClick={function handleFullscreenToggle(): void {
+                setBrowserFullscreen(!fullscreen);
+              }}
+            >
+              <span className="gb-toolbar-tile gb-toolbar-tile-fullscreen">
+                <span className="gb-toolbar-glyph">{fullscreen ? "⤢" : "⛶"}</span>
+              </span>
+              <span className="gb-toolbar-label">{fullscreen ? "Exit" : "Fullscreen"}</span>
+            </button>
+          </LobbyTooltip>
         </div>
       </div>
     </LobbyTooltipProvider>

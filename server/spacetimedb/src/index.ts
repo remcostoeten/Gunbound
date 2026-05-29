@@ -14,10 +14,17 @@ const MAX_ROUND_EVENT_PAYLOAD_LENGTH = 1024;
 const VALID_ROUND_EVENT_KINDS = new Set([
   'battle_move',
   'battle_switch_weapon',
+  'battle_switch_item',
   'battle_fire',
   'battle_surrender'
 ]);
-const VALID_BATTLE_WEAPONS = new Set(['primary', 'secondary']);
+const VALID_BATTLE_WEAPONS = new Set(['primary', 'secondary', 'ss']);
+const VALID_BATTLE_ITEMS = new Set(['power', 'bunge']);
+const PRIMARY_SHOT_DELAY = 760;
+const SECONDARY_SHOT_DELAY = 910;
+const SS_SHOT_DELAY = 1280;
+const MIN_TURN_DELAY = 1;
+const MAX_TURN_DELAY = 3000;
 const REQUEST_STATUS_PENDING = { tag: 'Pending' } as const;
 const REQUEST_STATUS_ACCEPTED = { tag: 'Accepted' } as const;
 const REQUEST_STATUS_DECLINED = { tag: 'Declined' } as const;
@@ -36,7 +43,6 @@ const CHAT_MESSAGE_MAX_LENGTH = 200;
 const LOBBY_CHANNEL_MIN = 1;
 const LOBBY_CHANNEL_MAX = 8;
 const MICROS_PER_DAY = 86_400n * 1_000_000n;
-const EMPTY_DATA_SETTING_KEY = 'empty_data_enabled';
 const BOOTSTRAP_ADMIN_USERNAMES = new Set(['remco', 'remcostoeten']);
 
 const VALID_MOBILE_TYPES = new Set([
@@ -74,28 +80,6 @@ function assertAdmin(ctx: ModuleContext): void {
   if (!isAdmin(ctx)) throw new SenderError('admin privileges required');
 }
 
-function upsertEmptyDataSetting(ctx: ModuleContext, enabled: boolean): void {
-  const value = enabled ? 'true' : 'false';
-  const existing = ctx.db.appSetting.key.find(EMPTY_DATA_SETTING_KEY);
-
-  if (existing) {
-    ctx.db.appSetting.key.update({
-      ...existing,
-      value,
-      updatedBy: ctx.sender,
-      updatedAt: ctx.timestamp
-    });
-    return;
-  }
-
-  ctx.db.appSetting.insert({
-    key: EMPTY_DATA_SETTING_KEY,
-    value,
-    updatedBy: ctx.sender,
-    updatedAt: ctx.timestamp
-  });
-}
-
 function isqrt(n: bigint): bigint {
   if (n <= 0n) return 0n;
   let x = BigInt(Math.floor(Math.sqrt(Number(n))));
@@ -120,11 +104,13 @@ type RoundEventPayload = {
   turn?: unknown;
   direction?: unknown;
   weapon?: unknown;
+  item?: unknown;
   angle?: unknown;
   power?: unknown;
+  turnDelay?: unknown;
 };
 
-function parseRoundEventPayload(kind: string, payload: string): { turn: number } {
+function parseRoundEventPayload(kind: string, payload: string): { turn: number; weapon?: string; turnDelay?: number } {
   let value: RoundEventPayload;
   try {
     value = JSON.parse(payload) as RoundEventPayload;
@@ -143,6 +129,10 @@ function parseRoundEventPayload(kind: string, payload: string): { turn: number }
     if (typeof value.weapon !== 'string' || !VALID_BATTLE_WEAPONS.has(value.weapon)) {
       throw new SenderError('invalid weapon');
     }
+  } else if (kind === 'battle_switch_item') {
+    if (value.item !== null && (typeof value.item !== 'string' || !VALID_BATTLE_ITEMS.has(value.item))) {
+      throw new SenderError('invalid battle item');
+    }
   } else if (kind === 'battle_fire') {
     if (typeof value.weapon !== 'string' || !VALID_BATTLE_WEAPONS.has(value.weapon)) {
       throw new SenderError('invalid weapon');
@@ -153,9 +143,19 @@ function parseRoundEventPayload(kind: string, payload: string): { turn: number }
     if (typeof value.power !== 'number' || value.power < 0 || value.power > 1.1) {
       throw new SenderError('invalid firing power');
     }
+    if (typeof value.turnDelay !== 'number' || value.turnDelay < MIN_TURN_DELAY || value.turnDelay > MAX_TURN_DELAY) {
+      throw new SenderError('invalid turn delay');
+    }
+    if (value.item !== undefined && value.item !== null && (typeof value.item !== 'string' || !VALID_BATTLE_ITEMS.has(value.item))) {
+      throw new SenderError('invalid battle item');
+    }
   }
 
-  return { turn: value.turn };
+  return {
+    turn: value.turn,
+    weapon: typeof value.weapon === 'string' ? value.weapon : undefined,
+    turnDelay: typeof value.turnDelay === 'number' ? Math.round(value.turnDelay) : undefined
+  };
 }
 
 function getExpectedRoundEventTick(ctx: ModuleContext, roundId: bigint): bigint {
@@ -168,6 +168,7 @@ function getExpectedRoundEventTick(ctx: ModuleContext, roundId: bigint): bigint 
 
 function getExpectedBattleTurn(ctx: ModuleContext, roundId: bigint): number {
   let turn = 1;
+  let turnDelays: [number, number] = [0, 0];
   const events = [...ctx.db.roundEvent.round_event_round_id.filter(roundId)].sort((a, b) => {
     if (a.tick > b.tick) return 1;
     if (a.tick < b.tick) return -1;
@@ -177,11 +178,34 @@ function getExpectedBattleTurn(ctx: ModuleContext, roundId: bigint): number {
   for (const event of events) {
     const parsed = parseRoundEventPayload(event.kind, event.payload);
     if (parsed.turn !== turn) continue;
-    if (event.kind === 'battle_move' || event.kind === 'battle_fire') {
-      turn = turn === 1 ? 2 : 1;
+    if (event.kind === 'battle_fire') {
+      turnDelays[turn - 1] += parsed.turnDelay ?? getDefaultWeaponDelay(parsed.weapon);
+      const selection = selectExpectedBattleTurn(turnDelays, turn);
+      turn = selection.turn;
+      turnDelays = selection.turnDelays;
     }
   }
   return turn;
+}
+
+function getDefaultWeaponDelay(weapon: string | undefined): number {
+  if (weapon === 'ss') return SS_SHOT_DELAY;
+  return weapon === 'secondary' ? SECONDARY_SHOT_DELAY : PRIMARY_SHOT_DELAY;
+}
+
+function selectExpectedBattleTurn(turnDelays: [number, number], previousTurn: number): { turn: number; turnDelays: [number, number] } {
+  let turn = 1;
+  if (turnDelays[1] < turnDelays[0]) {
+    turn = 2;
+  } else if (turnDelays[1] === turnDelays[0] && previousTurn === 1) {
+    turn = 2;
+  }
+
+  const baseline = turnDelays[turn - 1];
+  return {
+    turn,
+    turnDelays: [Math.max(0, turnDelays[0] - baseline), Math.max(0, turnDelays[1] - baseline)]
+  };
 }
 
 function assertRoundTurnActor(ctx: ModuleContext, roomId: bigint, turn: number): void {
@@ -338,17 +362,6 @@ function setPlayerDisplayName(ctx: ModuleContext, name: string): void {
 
   insertPlayer(ctx, trimmed);
 }
-
-export const init = spacetimedb.init(ctx => {
-  if (!ctx.db.appSetting.key.find(EMPTY_DATA_SETTING_KEY)) {
-    ctx.db.appSetting.insert({
-      key: EMPTY_DATA_SETTING_KEY,
-      value: 'false',
-      updatedBy: undefined,
-      updatedAt: ctx.timestamp
-    });
-  }
-});
 
 /**
  * Upserts the `player` row for the connecting identity.
@@ -561,14 +574,6 @@ export const set_lobby_presence = spacetimedb.reducer(
       isOnline: active,
       lastSeen: ctx.timestamp
     });
-  }
-);
-
-export const set_empty_data_enabled = spacetimedb.reducer(
-  { enabled: t.bool() },
-  (ctx, { enabled }) => {
-    assertAdmin(ctx);
-    upsertEmptyDataSetting(ctx, enabled);
   }
 );
 
@@ -855,6 +860,20 @@ export const record_round_event = spacetimedb.reducer(
       payload,
       createdAt: ctx.timestamp
     });
+
+    if (kind === 'battle_surrender') {
+      const room = ctx.db.room.id.find(round.roomId);
+      if (room) {
+        let winnerIdentity = undefined;
+        for (const member of ctx.db.roomMember.room_member_room_id.filter(round.roomId)) {
+          if (member.identity.toHexString() !== ctx.sender.toHexString()) {
+            winnerIdentity = member.identity;
+            break;
+          }
+        }
+        endRoundHelper(ctx, round, room, winnerIdentity);
+      }
+    }
   }
 );
 
@@ -867,6 +886,65 @@ export const record_round_event = spacetimedb.reducer(
  * back to `waiting` so the same lobby can immediately start another
  * round without forcing everyone to rejoin.
  */
+function endRoundHelper(
+  ctx: ModuleContext,
+  round: any,
+  room: any,
+  winnerIdentity: Identity | undefined
+): void {
+  const isDraw = winnerIdentity === undefined;
+
+  ctx.db.round.id.update({
+    ...round,
+    status: ROUND_STATUS_FINISHED,
+    endedAt: ctx.timestamp,
+    winnerIdentity
+  });
+
+  for (const member of ctx.db.roomMember.room_member_room_id.filter(round.roomId)) {
+    const player = ctx.db.player.identity.find(member.identity);
+    if (!player) continue;
+
+    const isWinner = !isDraw && member.identity.toHexString() === winnerIdentity!.toHexString();
+
+    let damageDealt = 0;
+    let shotsFired = 0;
+    let directHits = 0;
+    let statRow = null;
+    for (const stat of ctx.db.roundStat.round_stat_round_id.filter(round.id)) {
+      if (stat.playerIdentity.toHexString() === member.identity.toHexString()) {
+        damageDealt = stat.damageDealt;
+        shotsFired = stat.shotsFired;
+        directHits = stat.directHits;
+        statRow = stat;
+        break;
+      }
+    }
+
+    const xpEarned = computeRoundXp(isWinner, isDraw, damageDealt, directHits);
+    const newXp = player.xp + BigInt(xpEarned);
+    const newLevel = computeLevel(newXp);
+
+    ctx.db.player.identity.update({
+      ...player,
+      updatedAt: ctx.timestamp,
+      xp: newXp,
+      level: newLevel,
+      totalWins: isWinner ? player.totalWins + 1 : player.totalWins,
+      totalLosses: !isWinner && !isDraw ? player.totalLosses + 1 : player.totalLosses,
+      totalRoundsPlayed: player.totalRoundsPlayed + 1
+    });
+
+    if (statRow !== null) {
+      ctx.db.roundStat.id.update({ ...statRow, xpAwarded: xpEarned });
+    }
+
+    ctx.db.roomMember.id.update({ ...member, isReady: false });
+  }
+
+  ctx.db.room.id.update({ ...room, status: ROOM_STATUS.WAITING });
+}
+
 export const end_round = spacetimedb.reducer(
   { roundId: t.u64(), winnerIdentity: t.identity().optional() },
   (ctx, { roundId, winnerIdentity }) => {
@@ -895,55 +973,7 @@ export const end_round = spacetimedb.reducer(
     }
     if (!winnerIsMember) throw new SenderError('winner is not a room member');
 
-    ctx.db.round.id.update({
-      ...round,
-      status: ROUND_STATUS_FINISHED,
-      endedAt: ctx.timestamp,
-      winnerIdentity
-    });
-
-    for (const member of ctx.db.roomMember.room_member_room_id.filter(round.roomId)) {
-      const player = ctx.db.player.identity.find(member.identity);
-      if (!player) continue;
-
-      const isWinner = !isDraw && member.identity.toHexString() === winnerIdentity!.toHexString();
-
-      let damageDealt = 0;
-      let shotsFired = 0;
-      let directHits = 0;
-      let statRow = null;
-      for (const stat of ctx.db.roundStat.round_stat_round_id.filter(round.id)) {
-        if (stat.playerIdentity.toHexString() === member.identity.toHexString()) {
-          damageDealt = stat.damageDealt;
-          shotsFired = stat.shotsFired;
-          directHits = stat.directHits;
-          statRow = stat;
-          break;
-        }
-      }
-
-      const xpEarned = computeRoundXp(isWinner, isDraw, damageDealt, directHits);
-      const newXp = player.xp + BigInt(xpEarned);
-      const newLevel = computeLevel(newXp);
-
-      ctx.db.player.identity.update({
-        ...player,
-        updatedAt: ctx.timestamp,
-        xp: newXp,
-        level: newLevel,
-        totalWins: isWinner ? player.totalWins + 1 : player.totalWins,
-        totalLosses: !isWinner && !isDraw ? player.totalLosses + 1 : player.totalLosses,
-        totalRoundsPlayed: player.totalRoundsPlayed + 1
-      });
-
-      if (statRow !== null) {
-        ctx.db.roundStat.id.update({ ...statRow, xpAwarded: xpEarned });
-      }
-
-      ctx.db.roomMember.id.update({ ...member, isReady: false });
-    }
-
-    ctx.db.room.id.update({ ...room, status: ROOM_STATUS.WAITING });
+    endRoundHelper(ctx, round, room, winnerIdentity);
   }
 );
 

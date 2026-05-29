@@ -67,7 +67,7 @@ export type ProjectileTrailSample = {
   color: string;
 };
 
-type ProjectileWeaponStylePair = Record<WeaponType, ProjectilePresentationStyle>;
+type ProjectileWeaponStylePair = Record<Exclude<WeaponType, "ss">, ProjectilePresentationStyle>;
 
 const projectileStyles: Record<MobileType, ProjectileWeaponStylePair> = {
   armor: {
@@ -117,6 +117,19 @@ const projectileStyles: Record<MobileType, ProjectileWeaponStylePair> = {
 };
 
 export function getProjectilePresentationStyle(mobileType: MobileType, weapon: WeaponType): ProjectilePresentationStyle {
+  if (weapon === "ss") {
+    const style = cloneProjectilePresentationStyle(projectileStyles[mobileType].secondary);
+    style.weapon = "ss";
+    style.body.strokeWidth += 0.5;
+    style.body.glowRadius *= 1.25;
+    style.body.radiusScale *= 1.12;
+    style.trail.length += 4;
+    style.trail.width *= 1.18;
+    style.trail.alpha = Math.min(0.9, style.trail.alpha + 0.1);
+    style.impact.radiusScale *= 1.18;
+    return style;
+  }
+
   return cloneProjectilePresentationStyle(projectileStyles[mobileType][weapon]);
 }
 

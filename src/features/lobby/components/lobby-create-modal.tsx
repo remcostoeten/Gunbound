@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLobbyRooms } from "../spacetime/use-lobby-rooms";
 import { generateRoomCode } from "../spacetime/generate-code";
 import { mapPresentationOptions } from "@/features/game/constants/map-presentation";
+import { playUiSfx } from "@/lib/music-bus";
 import type { MapType } from "@/features/game/types/shared";
 
 type Props = {
@@ -25,6 +26,16 @@ export function LobbyCreateModal({ onClose, onCreated, minimized = false, onMini
   const normalized = code.trim().toUpperCase();
   const valid = CODE_PATTERN.test(normalized);
   const selectedMap = mapPresentationOptions.find((option) => option.value === mapType) ?? mapPresentationOptions[0];
+
+  useEffect(function playOpenCue(): void {
+    playUiSfx("open");
+  }, []);
+
+  useEffect(function playErrorCue(): void {
+    if (error !== null) {
+      playUiSfx("error");
+    }
+  }, [error]);
 
   async function submit() {
     if (!valid || busy) return;

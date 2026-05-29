@@ -57,17 +57,17 @@ export function getMobileSpriteSource(type: MobileType): SpriteSource {
     return {
       width: 64,
       height: 64,
-      frameCount: 4,
-      path: "/mobiles/generated/dragon-sheet.png",
+      frameCount: 8,
+      path: "/mobiles/generated/dragon-current-sheet.png",
       previewScale: 1.08,
       previewTranslateX: -2,
-      previewTranslateY: 6,
+      previewTranslateY: 0,
       roomScale: 0.94,
       roomTranslateX: -1,
-      roomTranslateY: 3,
+      roomTranslateY: 0,
       battleScale: 0.9,
       battleTranslateX: -2,
-      battleTranslateY: 8
+      battleTranslateY: 0
     };
   }
 
@@ -75,17 +75,17 @@ export function getMobileSpriteSource(type: MobileType): SpriteSource {
     return {
       width: 64,
       height: 64,
-      frameCount: 5,
-      path: "/mobiles/generated/trico-sheet.png",
+      frameCount: 10,
+      path: "/mobiles/generated/trico-current-sheet.png",
       previewScale: 1.08,
       previewTranslateX: -1,
-      previewTranslateY: 5,
+      previewTranslateY: 0,
       roomScale: 0.94,
       roomTranslateX: -1,
-      roomTranslateY: 3,
+      roomTranslateY: 0,
       battleScale: 0.94,
       battleTranslateX: -1,
-      battleTranslateY: 8
+      battleTranslateY: 0
     };
   }
 
@@ -93,17 +93,17 @@ export function getMobileSpriteSource(type: MobileType): SpriteSource {
     return {
       width: 64,
       height: 64,
-      frameCount: 4,
-      path: "/mobiles/generated/aduko-sheet.png",
+      frameCount: 10,
+      path: "/mobiles/generated/aduko-current-sheet.png",
       previewScale: 1.12,
       previewTranslateX: -1,
-      previewTranslateY: 5,
+      previewTranslateY: 0,
       roomScale: 0.98,
       roomTranslateX: -1,
-      roomTranslateY: 4,
+      roomTranslateY: 0,
       battleScale: 0.98,
       battleTranslateX: -1,
-      battleTranslateY: 8
+      battleTranslateY: 0
     };
   }
 
@@ -111,17 +111,17 @@ export function getMobileSpriteSource(type: MobileType): SpriteSource {
     return {
       width: 64,
       height: 64,
-      frameCount: 4,
-      path: "/mobiles/generated/mage-sheet.png",
+      frameCount: 10,
+      path: "/mobiles/generated/mage-current-sheet.png",
       previewScale: 1.1,
       previewTranslateX: -1,
-      previewTranslateY: 5,
+      previewTranslateY: 0,
       roomScale: 0.96,
       roomTranslateX: -1,
-      roomTranslateY: 4,
+      roomTranslateY: 0,
       battleScale: 0.96,
       battleTranslateX: -1,
-      battleTranslateY: 8
+      battleTranslateY: 0
     };
   }
 
@@ -129,17 +129,17 @@ export function getMobileSpriteSource(type: MobileType): SpriteSource {
     return {
       width: 64,
       height: 64,
-      frameCount: 4,
-      path: "/mobiles/generated/nak-sheet.png",
+      frameCount: 10,
+      path: "/mobiles/generated/nak-current-sheet.png",
       previewScale: 1.12,
       previewTranslateX: -1,
-      previewTranslateY: 6,
+      previewTranslateY: 0,
       roomScale: 0.98,
       roomTranslateX: -1,
-      roomTranslateY: 4,
+      roomTranslateY: 0,
       battleScale: 0.98,
       battleTranslateX: -1,
-      battleTranslateY: 9
+      battleTranslateY: 0
     };
   }
 
@@ -147,17 +147,17 @@ export function getMobileSpriteSource(type: MobileType): SpriteSource {
     return {
       width: 64,
       height: 64,
-      frameCount: 4,
-      path: "/mobiles/generated/turtle-sheet.png",
+      frameCount: 10,
+      path: "/mobiles/generated/turtle-current-sheet.png",
       previewScale: 1.14,
       previewTranslateX: -1,
-      previewTranslateY: 5,
+      previewTranslateY: 0,
       roomScale: 1,
       roomTranslateX: -1,
-      roomTranslateY: 4,
+      roomTranslateY: 0,
       battleScale: 1,
       battleTranslateX: -1,
-      battleTranslateY: 8
+      battleTranslateY: 0
     };
   }
 
@@ -165,17 +165,17 @@ export function getMobileSpriteSource(type: MobileType): SpriteSource {
     return {
       width: 64,
       height: 64,
-      frameCount: 4,
-      path: "/mobiles/generated/frog-sheet.png",
+      frameCount: 10,
+      path: "/mobiles/generated/frog-current-sheet.png",
       previewScale: 1.12,
       previewTranslateX: -1,
-      previewTranslateY: 5,
+      previewTranslateY: 0,
       roomScale: 0.98,
       roomTranslateX: -1,
-      roomTranslateY: 4,
+      roomTranslateY: 0,
       battleScale: 0.98,
       battleTranslateX: -1,
-      battleTranslateY: 8
+      battleTranslateY: 0
     };
   }
 
@@ -183,34 +183,34 @@ export function getMobileSpriteSource(type: MobileType): SpriteSource {
     return {
       width: 64,
       height: 64,
-      frameCount: 4,
-      path: "/mobiles/generated/sate-sheet.png",
+      frameCount: 8,
+      path: "/mobiles/generated/sate-current-sheet.png",
       previewScale: 1.08,
       previewTranslateX: -1,
-      previewTranslateY: 5,
+      previewTranslateY: 0,
       roomScale: 0.94,
       roomTranslateX: -1,
-      roomTranslateY: 4,
+      roomTranslateY: 0,
       battleScale: 0.94,
       battleTranslateX: -1,
-      battleTranslateY: 8
+      battleTranslateY: 0
     };
   }
 
   return {
     width: 64,
     height: 64,
-    frameCount: 4,
-    path: "/mobiles/generated/snow-sheet.png",
+    frameCount: 8,
+    path: "/mobiles/generated/snow-current-sheet.png",
     previewScale: 1.02,
     previewTranslateX: -1,
-    previewTranslateY: 5,
+    previewTranslateY: 0,
     roomScale: 0.9,
     roomTranslateX: -1,
-    roomTranslateY: 3,
+    roomTranslateY: 0,
     battleScale: 0.86,
     battleTranslateX: -1,
-    battleTranslateY: 9
+    battleTranslateY: 0
   };
 }
 
@@ -233,6 +233,7 @@ function getMobileSpriteDefaultFacing(type: MobileType): 1 | -1 {
     type === "dragon" ||
     type === "snow" ||
     type === "aduko" ||
+    type === "mage" ||
     type === "nak" ||
     type === "turtle" ||
     type === "frog" ||

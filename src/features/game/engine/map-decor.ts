@@ -122,11 +122,13 @@ function createMeadowLandmarks(map: MapType, width: number, height: number, stat
     const ryRoll = randomRange(rxRoll.state, 26, 55);
     nextState = ryRoll.state;
     items.push(createEllipse("meadow-hill-" + String(index), "background", xRoll.value, yRoll.value, rxRoll.value, ryRoll.value, palette.landmarkFill, palette.landmarkStroke, 0.82, 0.42, 0));
+    items.push(createEllipse("meadow-hill-shadow-" + String(index), "background", xRoll.value + rxRoll.value * 0.12, yRoll.value + ryRoll.value * 0.1, rxRoll.value * 0.82, ryRoll.value * 0.52, palette.landmarkShadow, null, 0.36, 0.44, 0));
     index += 1;
   }
 
-  items.push(createWindmill(width * 0.18, height * 0.42, 0.95, palette, "meadow-windmill-left"));
-  items.push(createTreeCluster(width * 0.78, height * 0.5, 1.1, palette, "meadow-tree-cluster"));
+  items.push(...createWindmill(width * 0.18, height * 0.42, 0.95, palette, "meadow-windmill-left"));
+  items.push(...createTreeCluster(width * 0.78, height * 0.5, 1.1, palette, "meadow-tree-cluster"));
+  items.push(...createFence(width * 0.48, height * 0.59, 1, palette, "meadow-fence"));
 
   return { items, state: nextState };
 }
@@ -144,11 +146,11 @@ function createSunsetLandmarks(map: MapType, width: number, height: number, stat
     const widthRoll = randomRange(yRoll.state, 64, 140);
     const heightRoll = randomRange(widthRoll.state, 70, 160);
     nextState = heightRoll.state;
-    items.push(createMesa("sunset-mesa-" + String(index), xRoll.value, yRoll.value, widthRoll.value, heightRoll.value, palette, index));
+    items.push(...createMesa("sunset-mesa-" + String(index), xRoll.value, yRoll.value, widthRoll.value, heightRoll.value, palette, index));
     index += 1;
   }
 
-  items.push(createArch(width * 0.7, height * 0.5, 1.2, palette, "sunset-arch"));
+  items.push(...createArch(width * 0.7, height * 0.5, 1.2, palette, "sunset-arch"));
   return { items, state: nextState };
 }
 
@@ -164,11 +166,11 @@ function createMidnightLandmarks(map: MapType, width: number, height: number, st
     const yRoll = randomRange(xRoll.state, height * 0.38, height * 0.58);
     const scaleRoll = randomRange(yRoll.state, 0.75, 1.45);
     nextState = scaleRoll.state;
-    items.push(createCrystal("midnight-crystal-" + String(index), xRoll.value, yRoll.value, scaleRoll.value, palette, "background"));
+    items.push(...createCrystal("midnight-crystal-" + String(index), xRoll.value, yRoll.value, scaleRoll.value, palette, "background"));
     index += 1;
   }
 
-  items.push(createCrashedSatellite(width * 0.28, height * 0.5, 1, palette, "midnight-satellite"));
+  items.push(...createCrashedSatellite(width * 0.28, height * 0.5, 1, palette, "midnight-satellite"));
   return { items, state: nextState };
 }
 
@@ -191,11 +193,11 @@ function createForegroundProps(
     const spec = specs.items[index];
     const y = getGroundY(spec.x, height, terrainHeights);
     if (theme === "sunset") {
-      items.push(createCactus("sunset-cactus-" + String(index), spec.x, y, spec.scale, palette));
+      items.push(...createCactus("sunset-cactus-" + String(index), spec.x, y, spec.scale, palette));
     } else if (theme === "midnight") {
-      items.push(createCrystal("midnight-foreground-crystal-" + String(index), spec.x, y, spec.scale * 0.58, palette, "foreground"));
+      items.push(...createCrystal("midnight-foreground-crystal-" + String(index), spec.x, y, spec.scale * 0.58, palette, "foreground"));
     } else {
-      items.push(createFlowerPatch("meadow-flower-" + String(index), spec.x, y, spec.scale, palette, spec.variant));
+      items.push(...createFlowerPatch("meadow-flower-" + String(index), spec.x, y, spec.scale, palette, spec.variant));
     }
     index += 1;
   }
@@ -223,11 +225,11 @@ function createMaterialAccents(
     const spec = specs.items[index];
     const y = getGroundY(spec.x, height, terrainHeights);
     if (theme === "sunset") {
-      items.push(createStoneStrata("sunset-strata-" + String(index), spec.x, y + 7, spec.scale, palette));
+      items.push(...createStoneStrata("sunset-strata-" + String(index), spec.x, y + 7, spec.scale, palette));
     } else if (theme === "midnight") {
-      items.push(createGlowShard("midnight-glow-shard-" + String(index), spec.x, y - 2, spec.scale, palette));
+      items.push(...createGlowShard("midnight-glow-shard-" + String(index), spec.x, y - 2, spec.scale, palette));
     } else {
-      items.push(createGrassAccent("meadow-grass-accent-" + String(index), spec.x, y, spec.scale, palette));
+      items.push(...createGrassAccent("meadow-grass-accent-" + String(index), spec.x, y, spec.scale, palette));
     }
     index += 1;
   }
@@ -257,93 +259,216 @@ function createGroundSpecs(map: MapType, width: number, count: number, state: nu
   return { items, state: nextState };
 }
 
-function createWindmill(x: number, y: number, scale: number, palette: ThemeDecorPalette, id: string): MapDecorPrimitive {
-  return createPolygon(id, "midground", [
-    { x: x - 9 * scale, y },
-    { x: x + 9 * scale, y },
-    { x: x + 13 * scale, y: y + 78 * scale },
-    { x: x - 13 * scale, y: y + 78 * scale }
-  ], palette.landmarkShadow, palette.landmarkStroke, 0.72, 0.58, 0);
+function createWindmill(x: number, y: number, scale: number, palette: ThemeDecorPalette, id: string): MapDecorPrimitive[] {
+  return [
+    createPolygon(id + "-tower", "midground", [
+      { x: x - 10 * scale, y },
+      { x: x + 10 * scale, y },
+      { x: x + 15 * scale, y: y + 82 * scale },
+      { x: x - 15 * scale, y: y + 82 * scale }
+    ], palette.landmarkShadow, palette.landmarkStroke, 0.76, 0.58, 0),
+    createPolygon(id + "-roof", "midground", [
+      { x: x - 16 * scale, y: y + 4 * scale },
+      { x, y: y - 18 * scale },
+      { x: x + 16 * scale, y: y + 4 * scale }
+    ], palette.landmarkFill, palette.landmarkStroke, 0.78, 0.58, 0),
+    createLine(id + "-sails-a", "midground", [
+      { x: x - 24 * scale, y: y + 14 * scale },
+      { x: x + 24 * scale, y: y + 42 * scale }
+    ], palette.landmarkStroke, null, 0.64, 0.56, 8 * scale),
+    createLine(id + "-sails-b", "midground", [
+      { x: x + 24 * scale, y: y + 14 * scale },
+      { x: x - 24 * scale, y: y + 42 * scale }
+    ], palette.landmarkStroke, null, 0.64, 0.56, 8 * scale),
+    createRect(id + "-hub", "midground", x - 5 * scale, y + 20 * scale, 10 * scale, 10 * scale, 2 * scale, palette.propAccent, palette.landmarkStroke, 0.82, 0.56, 0)
+  ];
 }
 
-function createTreeCluster(x: number, y: number, scale: number, palette: ThemeDecorPalette, id: string): MapDecorPrimitive {
-  return createEllipse(id, "midground", x, y, 58 * scale, 44 * scale, palette.landmarkFill, palette.landmarkStroke, 0.76, 0.52, -0.08);
+function createTreeCluster(x: number, y: number, scale: number, palette: ThemeDecorPalette, id: string): MapDecorPrimitive[] {
+  return [
+    createRect(id + "-trunk-left", "midground", x - 36 * scale, y + 10 * scale, 14 * scale, 52 * scale, 4 * scale, palette.landmarkShadow, palette.landmarkStroke, 0.72, 0.54, 0),
+    createRect(id + "-trunk-mid", "midground", x - 6 * scale, y + 12 * scale, 15 * scale, 56 * scale, 4 * scale, palette.landmarkShadow, palette.landmarkStroke, 0.72, 0.54, 0),
+    createRect(id + "-trunk-right", "midground", x + 20 * scale, y + 10 * scale, 14 * scale, 50 * scale, 4 * scale, palette.landmarkShadow, palette.landmarkStroke, 0.72, 0.54, 0),
+    createEllipse(id + "-canopy-left", "midground", x - 26 * scale, y + 4 * scale, 28 * scale, 24 * scale, palette.landmarkFill, palette.landmarkStroke, 0.78, 0.52, -0.1),
+    createEllipse(id + "-canopy-mid", "midground", x + 4 * scale, y - 8 * scale, 34 * scale, 28 * scale, palette.landmarkFill, palette.landmarkStroke, 0.8, 0.52, 0.04),
+    createEllipse(id + "-canopy-right", "midground", x + 34 * scale, y + 2 * scale, 30 * scale, 24 * scale, palette.landmarkFill, palette.landmarkStroke, 0.76, 0.52, 0.08),
+    createEllipse(id + "-highlight", "midground", x + 8 * scale, y - 14 * scale, 20 * scale, 10 * scale, palette.propAccent, null, 0.24, 0.5, -0.12)
+  ];
 }
 
-function createMesa(id: string, x: number, y: number, width: number, height: number, palette: ThemeDecorPalette, variant: number): MapDecorPrimitive {
+function createFence(x: number, y: number, scale: number, palette: ThemeDecorPalette, id: string): MapDecorPrimitive[] {
+  return [
+    createLine(id + "-rail-top", "background", [
+      { x: x - 72 * scale, y: y - 8 * scale },
+      { x: x + 70 * scale, y: y - 2 * scale }
+    ], palette.landmarkStroke, null, 0.34, 0.48, 4 * scale),
+    createLine(id + "-rail-bottom", "background", [
+      { x: x - 74 * scale, y: y + 10 * scale },
+      { x: x + 68 * scale, y: y + 14 * scale }
+    ], palette.landmarkShadow, null, 0.3, 0.48, 4 * scale),
+    createLine(id + "-post-a", "background", [
+      { x: x - 54 * scale, y: y - 14 * scale },
+      { x: x - 56 * scale, y: y + 18 * scale }
+    ], palette.landmarkShadow, null, 0.26, 0.48, 3 * scale),
+    createLine(id + "-post-b", "background", [
+      { x: x - 16 * scale, y: y - 10 * scale },
+      { x: x - 18 * scale, y: y + 22 * scale }
+    ], palette.landmarkShadow, null, 0.26, 0.48, 3 * scale),
+    createLine(id + "-post-c", "background", [
+      { x: x + 22 * scale, y: y - 8 * scale },
+      { x: x + 20 * scale, y: y + 24 * scale }
+    ], palette.landmarkShadow, null, 0.26, 0.48, 3 * scale),
+    createLine(id + "-post-d", "background", [
+      { x: x + 58 * scale, y: y - 6 * scale },
+      { x: x + 56 * scale, y: y + 26 * scale }
+    ], palette.landmarkShadow, null, 0.26, 0.48, 3 * scale)
+  ];
+}
+
+function createMesa(id: string, x: number, y: number, width: number, height: number, palette: ThemeDecorPalette, variant: number): MapDecorPrimitive[] {
   const leftTop = x - width * (variant % 2 === 0 ? 0.42 : 0.34);
   const rightTop = x + width * (variant % 2 === 0 ? 0.34 : 0.43);
-  return createPolygon(id, "background", [
-    { x: leftTop, y },
-    { x: rightTop, y: y + height * 0.04 },
-    { x: x + width * 0.52, y: y + height },
-    { x: x - width * 0.58, y: y + height * 0.96 }
-  ], palette.landmarkFill, palette.landmarkStroke, 0.78, 0.4, 0);
+  return [
+    createPolygon(id + "-body", "background", [
+      { x: leftTop, y },
+      { x: rightTop, y: y + height * 0.04 },
+      { x: x + width * 0.52, y: y + height },
+      { x: x - width * 0.58, y: y + height * 0.96 }
+    ], palette.landmarkFill, palette.landmarkStroke, 0.78, 0.4, 0),
+    createPolygon(id + "-cap", "background", [
+      { x: leftTop - width * 0.06, y: y - height * 0.06 },
+      { x: rightTop + width * 0.06, y: y - height * 0.03 },
+      { x: rightTop, y: y + height * 0.09 },
+      { x: leftTop, y: y + height * 0.06 }
+    ], palette.propAccent, null, 0.24, 0.4, 0),
+    createLine(id + "-strata-a", "background", [
+      { x: x - width * 0.38, y: y + height * 0.26 },
+      { x: x + width * 0.26, y: y + height * 0.3 }
+    ], palette.landmarkStroke, null, 0.3, 0.42, 5),
+    createLine(id + "-strata-b", "background", [
+      { x: x - width * 0.44, y: y + height * 0.58 },
+      { x: x + width * 0.22, y: y + height * 0.63 }
+    ], palette.landmarkShadow, null, 0.24, 0.42, 6)
+  ];
 }
 
-function createArch(x: number, y: number, scale: number, palette: ThemeDecorPalette, id: string): MapDecorPrimitive {
-  return createLine(id, "midground", [
-    { x: x - 82 * scale, y: y + 64 * scale },
-    { x: x - 56 * scale, y: y + 14 * scale },
-    { x, y: y - 8 * scale },
-    { x: x + 58 * scale, y: y + 18 * scale },
-    { x: x + 86 * scale, y: y + 70 * scale }
-  ], palette.landmarkFill, palette.landmarkStroke, 0.62, 0.54, 20 * scale);
+function createArch(x: number, y: number, scale: number, palette: ThemeDecorPalette, id: string): MapDecorPrimitive[] {
+  return [
+    createLine(id + "-span", "midground", [
+      { x: x - 82 * scale, y: y + 64 * scale },
+      { x: x - 56 * scale, y: y + 14 * scale },
+      { x, y: y - 8 * scale },
+      { x: x + 58 * scale, y: y + 18 * scale },
+      { x: x + 86 * scale, y: y + 70 * scale }
+    ], palette.landmarkFill, palette.landmarkStroke, 0.62, 0.54, 20 * scale),
+    createRect(id + "-left-foot", "midground", x - 84 * scale, y + 42 * scale, 24 * scale, 42 * scale, 6 * scale, palette.landmarkShadow, palette.landmarkStroke, 0.58, 0.56, -0.08),
+    createRect(id + "-right-foot", "midground", x + 56 * scale, y + 46 * scale, 26 * scale, 40 * scale, 6 * scale, palette.landmarkShadow, palette.landmarkStroke, 0.58, 0.56, 0.08)
+  ];
 }
 
-function createCrashedSatellite(x: number, y: number, scale: number, palette: ThemeDecorPalette, id: string): MapDecorPrimitive {
-  return createRect(id, "midground", x - 44 * scale, y - 10 * scale, 88 * scale, 28 * scale, 7 * scale, palette.landmarkShadow, palette.landmarkStroke, 0.74, 0.54, -0.22);
+function createCrashedSatellite(x: number, y: number, scale: number, palette: ThemeDecorPalette, id: string): MapDecorPrimitive[] {
+  return [
+    createRect(id + "-body", "midground", x - 44 * scale, y - 10 * scale, 88 * scale, 28 * scale, 7 * scale, palette.landmarkShadow, palette.landmarkStroke, 0.74, 0.54, -0.22),
+    createRect(id + "-panel-left", "midground", x - 88 * scale, y - 20 * scale, 38 * scale, 18 * scale, 3 * scale, palette.propFill, palette.landmarkStroke, 0.62, 0.56, -0.36),
+    createRect(id + "-panel-right", "midground", x + 48 * scale, y - 2 * scale, 42 * scale, 18 * scale, 3 * scale, palette.propFill, palette.landmarkStroke, 0.56, 0.56, 0.18),
+    createEllipse(id + "-dish", "midground", x + 12 * scale, y - 16 * scale, 13 * scale, 8 * scale, palette.propAccent, palette.landmarkStroke, 0.68, 0.56, -0.28)
+  ];
 }
 
-function createCrystal(id: string, x: number, y: number, scale: number, palette: ThemeDecorPalette, layer: "background" | "foreground"): MapDecorPrimitive {
-  return createPolygon(id, layer, [
-    { x, y: y - 62 * scale },
-    { x: x + 22 * scale, y: y - 16 * scale },
-    { x: x + 10 * scale, y: y + 8 * scale },
-    { x: x - 14 * scale, y: y + 8 * scale },
-    { x: x - 24 * scale, y: y - 18 * scale }
-  ], palette.propAccent, palette.landmarkStroke, layer === "background" ? 0.42 : 0.72, layer === "background" ? 0.46 : 0.82, 0.08);
+function createCrystal(id: string, x: number, y: number, scale: number, palette: ThemeDecorPalette, layer: "background" | "foreground"): MapDecorPrimitive[] {
+  const alpha = layer === "background" ? 0.42 : 0.72;
+  const parallax = layer === "background" ? 0.46 : 0.82;
+
+  return [
+    createPolygon(id + "-main", layer, [
+      { x, y: y - 62 * scale },
+      { x: x + 22 * scale, y: y - 16 * scale },
+      { x: x + 10 * scale, y: y + 8 * scale },
+      { x: x - 14 * scale, y: y + 8 * scale },
+      { x: x - 24 * scale, y: y - 18 * scale }
+    ], palette.propAccent, palette.landmarkStroke, alpha, parallax, 0.08),
+    createPolygon(id + "-side", layer, [
+      { x: x - 8 * scale, y: y - 42 * scale },
+      { x: x + 2 * scale, y: y - 20 * scale },
+      { x: x - 10 * scale, y: y + 6 * scale },
+      { x: x - 20 * scale, y: y - 10 * scale }
+    ], palette.landmarkFill, null, alpha * 0.68, parallax, -0.08),
+    createLine(id + "-shine", layer, [
+      { x: x + 2 * scale, y: y - 48 * scale },
+      { x: x + 9 * scale, y: y - 26 * scale },
+      { x: x + 3 * scale, y: y - 8 * scale }
+    ], palette.landmarkStroke, null, alpha * 0.72, parallax, 3 * scale)
+  ];
 }
 
-function createCactus(id: string, x: number, y: number, scale: number, palette: ThemeDecorPalette): MapDecorPrimitive {
-  return createPolygon(id, "foreground", [
-    { x: x - 7 * scale, y },
-    { x: x - 8 * scale, y: y - 42 * scale },
-    { x: x - 2 * scale, y: y - 56 * scale },
-    { x: x + 7 * scale, y: y - 42 * scale },
-    { x: x + 8 * scale, y }
-  ], palette.propFill, palette.propStroke, 0.92, 0.94, 0);
+function createCactus(id: string, x: number, y: number, scale: number, palette: ThemeDecorPalette): MapDecorPrimitive[] {
+  return [
+    createPolygon(id + "-body", "foreground", [
+      { x: x - 7 * scale, y },
+      { x: x - 8 * scale, y: y - 42 * scale },
+      { x: x - 2 * scale, y: y - 56 * scale },
+      { x: x + 7 * scale, y: y - 42 * scale },
+      { x: x + 8 * scale, y }
+    ], palette.propFill, palette.propStroke, 0.92, 0.94, 0),
+    createRect(id + "-arm-left", "foreground", x - 24 * scale, y - 34 * scale, 12 * scale, 26 * scale, 5 * scale, palette.propFill, palette.propStroke, 0.88, 0.94, -0.18),
+    createRect(id + "-arm-right", "foreground", x + 10 * scale, y - 22 * scale, 12 * scale, 22 * scale, 5 * scale, palette.propFill, palette.propStroke, 0.88, 0.94, 0.16)
+  ];
 }
 
-function createFlowerPatch(id: string, x: number, y: number, scale: number, palette: ThemeDecorPalette, variant: number): MapDecorPrimitive {
+function createFlowerPatch(id: string, x: number, y: number, scale: number, palette: ThemeDecorPalette, variant: number): MapDecorPrimitive[] {
   const radius = (variant % 2 === 0 ? 9 : 12) * scale;
-  return createEllipse(id, "foreground", x, y - 5 * scale, radius, 4 * scale, palette.propAccent, palette.propStroke, 0.86, 0.94, 0);
+  return [
+    createLine(id + "-stem-a", "foreground", [
+      { x: x - 4 * scale, y },
+      { x: x - 2 * scale, y: y - 10 * scale }
+    ], palette.propFill, null, 0.62, 0.94, 2 * scale),
+    createLine(id + "-stem-b", "foreground", [
+      { x: x + 5 * scale, y },
+      { x: x + 2 * scale, y: y - 9 * scale }
+    ], palette.propFill, null, 0.62, 0.94, 2 * scale),
+    createEllipse(id + "-bloom", "foreground", x, y - 5 * scale, radius, 4 * scale, palette.propAccent, palette.propStroke, 0.86, 0.94, 0)
+  ];
 }
 
-function createStoneStrata(id: string, x: number, y: number, scale: number, palette: ThemeDecorPalette): MapDecorPrimitive {
-  return createLine(id, "terrain", [
-    { x: x - 18 * scale, y },
-    { x: x - 4 * scale, y: y + 4 * scale },
-    { x: x + 18 * scale, y: y + 1 * scale }
-  ], palette.materialFill, palette.materialStroke, 0.78, 1, 3 * scale);
+function createStoneStrata(id: string, x: number, y: number, scale: number, palette: ThemeDecorPalette): MapDecorPrimitive[] {
+  return [
+    createLine(id + "-main", "terrain", [
+      { x: x - 18 * scale, y },
+      { x: x - 4 * scale, y: y + 4 * scale },
+      { x: x + 18 * scale, y: y + 1 * scale }
+    ], palette.materialFill, palette.materialStroke, 0.78, 1, 3 * scale),
+    createLine(id + "-echo", "terrain", [
+      { x: x - 12 * scale, y: y + 7 * scale },
+      { x: x + 10 * scale, y: y + 9 * scale }
+    ], palette.materialStroke, null, 0.36, 1, 2 * scale)
+  ];
 }
 
-function createGlowShard(id: string, x: number, y: number, scale: number, palette: ThemeDecorPalette): MapDecorPrimitive {
-  return createPolygon(id, "terrain", [
-    { x, y: y - 16 * scale },
-    { x: x + 6 * scale, y: y - 2 * scale },
-    { x: x + 2 * scale, y: y + 4 * scale },
-    { x: x - 5 * scale, y: y + 2 * scale }
-  ], palette.materialFill, palette.materialStroke, 0.82, 1, 0.12);
+function createGlowShard(id: string, x: number, y: number, scale: number, palette: ThemeDecorPalette): MapDecorPrimitive[] {
+  return [
+    createPolygon(id + "-body", "terrain", [
+      { x, y: y - 16 * scale },
+      { x: x + 6 * scale, y: y - 2 * scale },
+      { x: x + 2 * scale, y: y + 4 * scale },
+      { x: x - 5 * scale, y: y + 2 * scale }
+    ], palette.materialFill, palette.materialStroke, 0.82, 1, 0.12),
+    createLine(id + "-shine", "terrain", [
+      { x: x + 1 * scale, y: y - 12 * scale },
+      { x: x + 2 * scale, y: y - 2 * scale }
+    ], palette.propAccent, null, 0.56, 1, 2 * scale)
+  ];
 }
 
-function createGrassAccent(id: string, x: number, y: number, scale: number, palette: ThemeDecorPalette): MapDecorPrimitive {
-  return createLine(id, "terrain", [
-    { x: x - 9 * scale, y },
-    { x: x - 3 * scale, y: y - 11 * scale },
-    { x: x + 2 * scale, y },
-    { x: x + 9 * scale, y: y - 8 * scale }
-  ], palette.materialFill, palette.materialStroke, 0.72, 1, 2 * scale);
+function createGrassAccent(id: string, x: number, y: number, scale: number, palette: ThemeDecorPalette): MapDecorPrimitive[] {
+  return [
+    createLine(id + "-blades", "terrain", [
+      { x: x - 9 * scale, y },
+      { x: x - 3 * scale, y: y - 11 * scale },
+      { x: x + 2 * scale, y },
+      { x: x + 9 * scale, y: y - 8 * scale }
+    ], palette.materialFill, palette.materialStroke, 0.72, 1, 2 * scale),
+    createEllipse(id + "-bud", "terrain", x + 7 * scale, y - 8 * scale, 2.5 * scale, 1.8 * scale, palette.propAccent, null, 0.52, 1, 0.12)
+  ];
 }
 
 function createEllipse(

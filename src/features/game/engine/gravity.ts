@@ -27,10 +27,24 @@ export function applyMobileGravity(players: [Player, Player], terrain: TerrainSt
     const mobile = nextPlayers[index].mobile;
     const surfaceY = getSurfaceY(terrain, mobile.position.x);
 
+    if (mobile.position.y > terrain.height + 48) {
+      mobile.hp = 0;
+      mobile.verticalVelocity = 0;
+      index += 1;
+      continue;
+    }
+
     if (mobile.position.y < surfaceY - 0.5) {
       mobile.verticalVelocity += 960 * dt;
       mobile.position.y = Math.min(surfaceY, mobile.position.y + mobile.verticalVelocity * dt);
       unstable = true;
+
+      if (mobile.position.y > terrain.height + 48) {
+        mobile.hp = 0;
+        mobile.verticalVelocity = 0;
+        index += 1;
+        continue;
+      }
 
       if (mobile.position.y >= surfaceY) {
         mobile.position.y = surfaceY;
@@ -101,6 +115,8 @@ function cloneMobile(mobile: Player["mobile"]): Player["mobile"] {
     moveRange: mobile.moveRange,
     shotDelay: mobile.shotDelay,
     specialCharges: mobile.specialCharges,
+    lastShotAngle: mobile.lastShotAngle,
+    lastShotTechnique: mobile.lastShotTechnique,
     doubleDamageTurns: mobile.doubleDamageTurns,
     verticalVelocity: mobile.verticalVelocity
   };

@@ -1,5 +1,6 @@
 import type { ProjectileState } from "@/features/game/types/combat";
 import type { Player, TerrainState } from "@/features/game/types/entities";
+import type { MobileExplosionStyle } from "@/features/game/engine/mobile-attacks";
 import type { GamePhase, GameScene, MobileType, PlayerId, Vec2, WeaponType } from "@/features/game/types/shared";
 
 export type ExplosionVisual = {
@@ -115,10 +116,18 @@ export type ExplosionSpriteSheet =
   | "aduka-thor"
   | "armor-primary"
   | "armor-secondary"
+  | "dragon-fire"
+  | "frog-bubble"
   | "gum"
   | "jd-secondary"
   | "jd-lightning"
-  | "nak";
+  | "knight-blade"
+  | "mage-rune"
+  | "nak"
+  | "sate-sonar"
+  | "snow-frost"
+  | "trico-horn"
+  | "turtle-shell";
 
 export type ExplosionSpriteEffect = {
   point: Vec2;
@@ -127,6 +136,8 @@ export type ExplosionSpriteEffect = {
   duration: number;
   sheet: ExplosionSpriteSheet;
   scale: number;
+  style: MobileExplosionStyle;
+  hasDamage: boolean;
 };
 
 export type VisualEffectsState = {
@@ -141,6 +152,7 @@ export type VisualEffectsState = {
   hitFlash: HitFlash | null;
   grass: GrassTuft[];
   previousExplosion: ExplosionVisual | null;
+  previousExplosionKeys: string[];
   previousPhase: GamePhase | "";
   leafSpawnTimer: number;
   windParticlesEnabled: boolean;
@@ -158,6 +170,7 @@ export type VisualEffectsInput = {
   players: [Player, Player];
   turn: PlayerId;
   explosionVisual: ExplosionVisual | null;
+  explosionVisuals: ExplosionVisual[];
   wind: Vec2;
   scene: GameScene;
   charging: boolean;
@@ -166,4 +179,5 @@ export type VisualEffectsInput = {
   terrain: TerrainState | null;
   dt: number;
   visualTime: number;
+  reducedMotion: boolean;
 };

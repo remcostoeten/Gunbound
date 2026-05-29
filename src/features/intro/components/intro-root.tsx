@@ -7,7 +7,6 @@ import { useIntroSequence } from "../hooks/use-intro-sequence";
 import { playIntroMusic } from "../audio/play-music";
 import { IntroMascot } from "./intro-mascot";
 import { IntroLogoGroup } from "./intro-logo-group";
-import { IntroExitToggle } from "./intro-exit-toggle";
 import type { IntroExitMode } from "../types";
 
 type Props = {
@@ -47,6 +46,10 @@ export function IntroRoot({
   }, []);
 
   function handleStartIntro(): void {
+    if (introArmed) {
+      return;
+    }
+
     musicRef.current?.stop();
     musicRef.current = playIntroMusic();
     setIntroArmed(true);
@@ -63,7 +66,7 @@ export function IntroRoot({
       <div className="intro-glow" />
 
       <div className={`intro-stage ${pulling ? "stage-exit" : ""}`}>
-        <IntroMascot mascotIn={mascotIn} pulling={pulling} />
+        <IntroMascot mascotIn={mascotIn} pulling={pulling} scale={fit.scale} />
         <IntroLogoGroup
           pulled={pulling}
           fit={fit}
@@ -72,14 +75,15 @@ export function IntroRoot({
           dustVariants={dustVariants}
         />
       </div>
-
       {!introArmed ? (
-        <button className="intro-start-button" type="button" onClick={handleStartIntro}>
+        <button
+          type="button"
+          className="intro-start-button"
+          onClick={handleStartIntro}
+        >
           Start
         </button>
       ) : null}
-
-      <IntroExitToggle mode={exitMode} onChange={setExitMode} />
     </div>
   );
 }

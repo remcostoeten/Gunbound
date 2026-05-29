@@ -261,7 +261,11 @@
 .gb-toolbar-group:first-child {
   justify-self: start;
 }
-.gb-toolbar-group--end {
+.gb-toolbar-group--center {
+  justify-self: center;
+  justify-content: center;
+}
+.gb-toolbar-group--utility {
   justify-self: end;
   justify-content: flex-end;
 }
@@ -310,6 +314,12 @@
     #3a8bcc 60%,
     #103f73 100%
   );
+}
+.gb-toolbar-tile-fullscreen {
+  background: linear-gradient(180deg, #4a5568 0%, #2d3748 55%, #1a202c 100%);
+}
+.gb-toolbar-item--active .gb-toolbar-tile-fullscreen {
+  background: linear-gradient(180deg, #68d391 0%, #38a169 55%, #22543d 100%);
 }
 .gb-toolbar-glyph {
   font-size: 22px;
@@ -3457,7 +3467,8 @@
     gap: 8px;
   }
   .gb-toolbar-group,
-  .gb-toolbar-group--end {
+  .gb-toolbar-group--center,
+  .gb-toolbar-group--utility {
     justify-self: center;
     flex-wrap: wrap;
     justify-content: center;
@@ -3574,7 +3585,14 @@
   .gb-chat {
     min-height: 140px;
   }
-  .gb-chat-input {
-    font-size: 14px;
-  } /* prevent iOS zoom */
+  /* iOS Safari zoom fix — font-size < 16px on any focusable input
+     causes the entire viewport to auto-zoom on iOS. All text inputs
+     must be ≥ 16px on mobile. */
+  .gb-chat-input,
+  .gb-buddy-input,
+  .gb-field input,
+  .gb-field select,
+  .gb-room-invite input {
+    font-size: 16px; /* prevent iOS zoom */
+  }
 }

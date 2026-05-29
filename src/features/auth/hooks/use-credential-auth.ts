@@ -109,4 +109,18 @@ function validateCredentials(username: string, password: string): { username: st
   return { username: trimmedUsername, password };
 }
 
+export function sanitizeUsername(name: string): string {
+  let sanitized = name.replace(/[^A-Za-z0-9_]/g, "_");
+  sanitized = sanitized.replace(/_+/g, "_");
+  sanitized = sanitized.replace(/^_+|_+$/g, "");
+  if (sanitized.length < 3) {
+    sanitized = (sanitized + "_user").slice(0, 20);
+  }
+  if (sanitized.length > 20) {
+    sanitized = sanitized.slice(0, 20);
+    sanitized = sanitized.replace(/_+$/g, "");
+  }
+  return sanitized;
+}
+
 export { InvalidPasswordError };

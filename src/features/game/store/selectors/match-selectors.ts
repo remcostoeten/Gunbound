@@ -37,3 +37,7 @@ export function selectReturnToSetup(state: GameStoreState) {
 export function selectSurrenderMatch(state: GameStoreState) {
   return state.surrenderMatch;
 }
+
+export function selectHistory(state: GameStoreState) {
+  return state.history;
+}

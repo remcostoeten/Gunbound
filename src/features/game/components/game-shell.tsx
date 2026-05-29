@@ -4,19 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import { getMapPresentation, mapPresentationOptions, parseMapType } from "@/features/game/constants/map-presentation";
 import { getMobilePresentation, mobilePresentationOptions } from "@/features/game/constants/mobile-presentation";
 import { getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
-import { DEFAULT_MOBILE, parseMobileType } from "@/features/game/mobiles/mobile-factory";
+import { DEFAULT_MOBILE, getRandomMobileType, parseMobileType } from "@/features/game/mobiles/mobile-factory";
 import { AimIndicator } from "@/features/game/components/aim-indicator";
 import { BattleChrome } from "@/features/game/components/battle-chrome";
 import { GameCanvas } from "@/features/game/components/game-canvas";
 import { HistoryPanel } from "@/features/game/components/history-panel";
 import { Hud } from "@/features/game/components/hud";
-import { RoomPanel } from "@/features/game/components/room-panel";
 import { TurnBanner } from "@/features/game/components/turn-banner";
 import { useGameState } from "@/features/game/hooks/use-game-state";
 import { lobbyMatchStartAudioEvent, useGunboundSfx } from "@/features/game/hooks/use-gunbound-sfx";
+import { useSoloBot } from "@/features/game/hooks/use-solo-bot";
 import { defaultSetup, useGameStore } from "@/features/game/store/game-store";
 import { useBattleEventSync } from "@/features/game/multiplayer/use-battle-event-sync";
 import {
+    selectHistory,
     selectMessage,
     selectPlayers,
     selectRestartMatch,
@@ -27,12 +28,14 @@ import {
     selectSurrenderMatch,
     selectWinner,
 } from "@/features/game/store/selectors/match-selectors";
-import { selectTurn } from "@/features/game/store/selectors/hud-selectors";
+import { selectPhase, selectTurn, selectWind } from "@/features/game/store/selectors/hud-selectors";
 import type { MatchConfig } from "@/features/game/types/state";
 import type { MapType, MobileType, PlayerAccent, PlayerTitle, TurnDurationMode } from "@/features/game/types/shared";
+import type { MatchEvent } from "@/features/game/types/events";
+import type { Player } from "@/features/game/types/entities";
 import { useRoomSession } from "@/features/lobby/spacetime/use-room-session";
 import { ROOM_STATUS } from "@/features/game/spacetime/room-status";
-import { getBattleImmersive, subscribeDisplaySettings } from "@/lib/display-settings";
+import { getBattleImmersive, setBrowserFullscreen, subscribeDisplaySettings } from "@/lib/display-settings";
 import {
     LOBBY_BGM_SRC,
     lobbyAudioBlockedEvent,
@@ -48,10 +51,12 @@ const BATTLE_TRACKS = [
     { id: "battle-02", src: "/audio/battle/02-Dual fight.mp3" },
     { id: "battle-03", src: "/audio/battle/03-Spirit's dance.mp3" },
     { id: "battle-04", src: "/audio/battle/04-Space odyssey.mp3" },
-    { id: "battle-05", src: "/audio/battle/05-Waiting room.mp3" },
     { id: "battle-06", src: "/audio/battle/06-Machin factory.mp3" },
-    { id: "battle-07", src: "/audio/battle/07-Chatting room.mp3" },
     { id: "battle-08", src: "/audio/battle/08-Reggae party.mp3" },
+];
+const SPECIAL_BATTLE_TRACKS = [
+    { id: "battle-result", src: "/audio/battle/09-Result screen.mp3" },
+    { id: "battle-sudden-death", src: "/audio/battle/10-Sudden death.mp3" },
 ];
 
 const TITLE_OPTIONS: PlayerTitle[] = ["Captain", "Raider", "Engineer", "Oracle"];
@@ -70,121 +75,24 @@ const TURN_DURATION_OPTIONS: Array<{ value: TurnDurationMode; label: string; des
         description: "Async flow: a player can close and resume later on their turn.",
     },
 ];
-const MATCH_START_DELAY_MS = 850;
+const MATCH_START_DELAY_MS = 180;
 const LOBBY_ENTRY_DELAY_MS = 2200;
+const PRACTICE_BOT_MOBILE_POOL: MobileType[] = mobilePresentationOptions
+    .map((option) => option.value)
+    .filter((type) => type !== "armor" && type !== "knight");
 
-type StartView = "channel" | "room-setup";
-
-type LiveRoom = {
-    title: string;
-    host: string;
-    mapType: MapType;
-    seedText: string;
-    players: string;
-    status: string;
-};
-
-type FriendPresence = {
-    name: string;
-    mobile: MobileType;
-    status: string;
-    activity: string;
-};
-
-type ChannelChatMessage = {
-    author: string;
-    accent: PlayerAccent;
-    text: string;
-    time: string;
-};
-
-const LIVE_ROOMS: LiveRoom[] = [
-    {
-        title: "Avatar High Arc",
-        host: "Remco",
-        mapType: "ridge",
-        seedText: "miramo-skyline",
-        players: "2/2",
-        status: "In Match",
-    },
-    {
-        title: "Dragon Storm",
-        host: "Mika",
-        mapType: "canyon",
-        seedText: "dragon-trade",
-        players: "1/2",
-        status: "Waiting",
-    },
-    {
-        title: "Boomer Night",
-        host: "Tariq",
-        mapType: "crater",
-        seedText: "wind-lab",
-        players: "2/2",
-        status: "Round 3",
-    },
-];
-
-const FRIENDS_LIST: FriendPresence[] = [
-    {
-        name: "Nina",
-        mobile: "knight",
-        status: "Online",
-        activity: "Browsing Channel 1",
-    },
-    {
-        name: "Jasper",
-        mobile: "armor",
-        status: "In Room",
-        activity: "Waiting in Dragon Storm",
-    },
-    {
-        name: "Lotte",
-        mobile: "dragon",
-        status: "In Match",
-        activity: "Round 2 on Nirvana",
-    },
-    {
-        name: "Milan",
-        mobile: "snow",
-        status: "Away",
-        activity: "Last seen 12m ago",
-    },
-];
-
-const CHANNEL_CHAT: ChannelChatMessage[] = [
-    {
-        author: "System",
-        accent: "gold",
-        text: "Channel 1 is open. Wind conditions are dynamic tonight.",
-        time: "19:42",
-    },
-    {
-        author: "Nina",
-        accent: "sky",
-        text: "Who is up for a fast 1v1 after this round?",
-        time: "19:43",
-    },
-    {
-        author: "Tariq",
-        accent: "coral",
-        text: "Boomer Night is full, but spectators can clone the map seed.",
-        time: "19:44",
-    },
-    {
-        author: "Lotte",
-        accent: "mint",
-        text: "Dragon on Nirvana still feels unfair with that tailwind.",
-        time: "19:45",
-    },
-];
+function isDocumentFullscreen(): boolean {
+    return typeof document !== "undefined" && document.fullscreenElement !== null;
+}
 
 type GameShellProps = {
     spacetimeRoomId?: bigint;
+    soloPractice?: boolean;
+    soloPlayerName?: string | null;
     onExitToLobby?: () => void;
 };
 
-export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
+export function GameShell({ spacetimeRoomId, soloPractice = false, soloPlayerName, onExitToLobby }: GameShellProps) {
     useMenuClickSound();
     const scene = useGameState(selectScene);
     const players = useGameState(selectPlayers);
@@ -192,17 +100,18 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
     const message = useGameState(selectMessage);
     const setup = useGameState(selectSetup);
     const turn = useGameState(selectTurn);
+    const suddenDeathActive = useGameState((state) => state.suddenDeathActive);
     const startMatch = useGameStore(selectStartMatch);
     const restartMatch = useGameStore(selectRestartMatch);
     const returnToSetup = useGameStore(selectReturnToSetup);
     const surrenderMatch = useGameStore(selectSurrenderMatch);
+    const history = useGameState(selectHistory);
     const roomSession = useRoomSession(spacetimeRoomId);
     const isSpacetimeMatch = spacetimeRoomId !== undefined;
     const battleSync = useBattleEventSync(roomSession);
     const [formState, setFormState] = useState<MatchConfig>(
         setup || defaultSetup,
     );
-    const [startView, setStartView] = useState<StartView>("channel");
     const [showLobbyEntry, setShowLobbyEntry] = useState(true);
     const [matchStarting, setMatchStarting] = useState(false);
     const [surrenderBusy, setSurrenderBusy] = useState(false);
@@ -210,29 +119,47 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
     const [battleImmersive, setBattleImmersiveState] = useState(function initialBattleImmersive(): boolean {
         return getBattleImmersive();
     });
+    const [fullscreen, setFullscreenState] = useState(function initialFullscreen(): boolean {
+        return isDocumentFullscreen();
+    });
     const matchStartTimeoutRef = useRef<number | null>(null);
     const lobbyEntryTimeoutRef = useRef<number | null>(null);
+    const battleTrackIdRef = useRef<string | null>(null);
     const hasShownLobbyEntryRef = useRef(false);
+    const initializedLocalSessionRef = useRef(false);
     const startedSpacetimeRoomRef = useRef<string | null>(null);
     useGunboundSfx();
+    useSoloBot(!isSpacetimeMatch && setup?.soloBot === true);
 
     useEffect(function manageBattleBgm(): void {
         BATTLE_TRACKS.forEach((t) => registerTrack(t.id, t.src, 0.45));
+        SPECIAL_BATTLE_TRACKS.forEach((t) => registerTrack(t.id, t.src, 0.45));
         registerTrack("lobby", LOBBY_BGM_SRC, 0.45);
     }, []);
 
     useEffect(function syncBattleBgm(): void {
         if (scene === "playing") {
-            const pick = BATTLE_TRACKS[Math.floor(Math.random() * BATTLE_TRACKS.length)];
-            playTrack(pick.id);
+            if (suddenDeathActive) {
+                playTrack("battle-sudden-death");
+                return;
+            }
+
+            if (battleTrackIdRef.current === null) {
+                const pick = BATTLE_TRACKS[Math.floor(Math.random() * BATTLE_TRACKS.length)];
+                battleTrackIdRef.current = pick.id;
+            }
+
+            playTrack(battleTrackIdRef.current);
             return;
         }
         if (scene === "start") {
+            battleTrackIdRef.current = null;
             playTrack("lobby");
             return;
         }
-        stopAll();
-    }, [scene]);
+        battleTrackIdRef.current = null;
+        playTrack("battle-result");
+    }, [scene, suddenDeathActive]);
 
     useEffect(function resetPendingMatchStart(): void {
         if (scene !== "start") {
@@ -263,6 +190,11 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
             return function noopCleanup(): void {};
         }
 
+        if (soloPractice) {
+            setShowLobbyEntry(false);
+            return function noopCleanup(): void {};
+        }
+
         if (hasShownLobbyEntryRef.current) {
             setShowLobbyEntry(false);
             return function noopCleanup(): void {};
@@ -284,7 +216,7 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
                 lobbyEntryTimeoutRef.current = null;
             }
         };
-    }, [scene, isSpacetimeMatch]);
+    }, [scene, isSpacetimeMatch, soloPractice]);
 
     useEffect(function bindLobbyAudioNotice(): () => void {
         function handleLobbyAudioBlocked(): void {
@@ -322,12 +254,6 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
         }
     }, [scene]);
 
-    useEffect(function resetStartViewForScene(): void {
-        if (scene === "start" && !isSpacetimeMatch) {
-            setStartView("channel");
-        }
-    }, [scene, isSpacetimeMatch]);
-
     useEffect(function bindBattleImmersiveSetting(): () => void {
         function syncBattleImmersive(): void {
             setBattleImmersiveState(getBattleImmersive());
@@ -335,6 +261,22 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
 
         return subscribeDisplaySettings(syncBattleImmersive);
     }, []);
+
+    useEffect(function bindFullscreenChangeListener(): () => void {
+        function onFullscreenChange(): void {
+            setFullscreenState(isDocumentFullscreen());
+        }
+        document.addEventListener("fullscreenchange", onFullscreenChange);
+        return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+    }, []);
+
+    useEffect(function resetLocalSessionOnEntry(): void {
+        if (isSpacetimeMatch || initializedLocalSessionRef.current) return;
+        initializedLocalSessionRef.current = true;
+        if (scene !== "start") {
+            returnToSetup();
+        }
+    }, [isSpacetimeMatch, returnToSetup, scene]);
 
     useEffect(function startSpacetimeRoomMatch(): void {
         if (!isSpacetimeMatch) return;
@@ -359,44 +301,74 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
         roomSession.members,
     ]);
 
+    useEffect(function prepareLocalSoloPractice(): void {
+        if (!soloPractice || isSpacetimeMatch) return;
+
+        const accountName = soloPlayerName?.trim() || "";
+        setFormState((current) => ({
+            ...current,
+            playerOneName: accountName || current.playerOneName.trim() || "Player 1",
+            playerTwoName: "Practice Bot",
+            playerTwoMobile: getRandomPracticeBotMobile(current.playerOneMobile),
+            playerTwoTitle: "Oracle",
+            playerTwoAccent: "coral",
+            seedText: current.seedText.trim() || "solo-practice",
+            soloBot: true,
+        }));
+    }, [soloPractice, isSpacetimeMatch, soloPlayerName]);
+
     return (
         <main className={battleImmersive ? "game-shell game-shell--immersive" : "game-shell"}>
             <GameCanvas />
-            {spacetimeRoomId !== undefined && onExitToLobby && scene !== "end" ? (
-                <button
-                    type="button"
-                    className="game-shell-exit"
-                    onClick={onExitToLobby}
-                    title="Back to lobby — the match keeps running"
-                >
-                    ← Lobby
-                </button>
+             {spacetimeRoomId !== undefined && onExitToLobby && scene !== "end" ? (
+                 <button
+                     type="button"
+                     className="game-shell-exit"
+                     onClick={onExitToLobby}
+                     title="Back to lobby — the match keeps running"
+                 >
+                     ← Lobby
+                 </button>
+             ) : null}
+             <button
+                 type="button"
+                 className="game-shell-fullscreen"
+                 aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                 onClick={function handleFullscreenToggle(): void {
+                     setBrowserFullscreen(!fullscreen);
+                 }}
+                 title={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+             >
+                 {fullscreen ? "⤢" : "⛶"}
+             </button>
+             {scene === "playing" ? (
+                 <button
+                     type="button"
+                     className="game-shell-surrender"
+                     onClick={handleSurrender}
+                     disabled={surrenderBusy || (isSpacetimeMatch && !roomSession.self)}
+                     title="Forfeit this match"
+                 >
+                     {surrenderBusy ? "Surrendering" : "Surrender"}
+                 </button>
             ) : null}
-            {scene === "playing" ? (
-                <button
-                    type="button"
-                    className="game-shell-surrender"
-                    onClick={handleSurrender}
-                    disabled={surrenderBusy || (isSpacetimeMatch && !roomSession.self)}
-                    title="Forfeit this match"
-                >
-                    {surrenderBusy ? "Surrendering" : "Surrender"}
-                </button>
-            ) : null}
-            {scene === "playing" ? (
-                <BattleChrome
-                    hud={<Hud />}
-                    turnBanner={<TurnBanner />}
-                    aimControls={<AimIndicator />}
-                    statusLine={
-                        <div className="status-line">
-                            {spacetimeRoomId !== undefined && !battleSync.canControl
-                                ? message + " Waiting for " + battleSync.activePlayerName + "."
-                                : message}
-                        </div>
-                    }
-                    historyPanel={<HistoryPanel />}
-                />
+           {scene === "playing" ? (
+                <>
+                    <BattleChrome
+                        hud={<Hud />}
+                        turnBanner={<TurnBanner />}
+                        aimControls={<AimIndicator />}
+                        statusLine={
+                            <div className="status-line" role="status" aria-live="polite">
+                                {spacetimeRoomId !== undefined && !battleSync.canControl
+                                    ? message + " Waiting for " + battleSync.activePlayerName + "."
+                                    : message}
+                            </div>
+                        }
+                        historyPanel={<HistoryPanel />}
+                    />
+                    <BattleA11yStatus />
+                </>
             ) : null}
             {scene === "start"
                 ? isSpacetimeMatch
@@ -407,21 +379,16 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
                       )
                     : showLobbyEntry
                       ? renderLobbyEntryScreen(handleLobbyEntryComplete)
-                      : startView === "channel"
-                        ? renderChannelScreen(
-                              formState,
-                              openCreateRoom,
-                              cloneRoomSetup,
-                              showLobbyAudioNotice,
-                          )
-                        : renderStartScreen(
-                              formState,
-                              setFormState,
-                              queueMatchStart,
-                              openChannelLobby,
-                              matchStarting,
-                              showLobbyAudioNotice,
-                          )
+                      : renderStartScreen(
+                            formState,
+                            setFormState,
+                            queueMatchStart,
+                            onExitToLobby,
+                            matchStarting,
+                            showLobbyAudioNotice,
+                            soloPractice,
+                            soloPlayerName,
+                        )
                 : null}
             {scene === "end"
                 ? renderEndScreen(
@@ -431,6 +398,7 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
                       isSpacetimeMatch && onExitToLobby
                           ? onExitToLobby
                           : returnToSetup,
+                      history,
                   )
                 : null}
         </main>
@@ -473,7 +441,11 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
         matchStartTimeoutRef.current = window.setTimeout(
             function startQueuedMatch(): void {
                 matchStartTimeoutRef.current = null;
-                startMatch(config);
+                try {
+                    startMatch(config);
+                } finally {
+                    setMatchStarting(false);
+                }
             },
             MATCH_START_DELAY_MS,
         );
@@ -492,22 +464,22 @@ export function GameShell({ spacetimeRoomId, onExitToLobby }: GameShellProps) {
         setShowLobbyEntry(false);
     }
 
-    function openCreateRoom(): void {
-        setStartView("room-setup");
-    }
+}
 
-    function openChannelLobby(): void {
-        setStartView("channel");
-    }
+function BattleA11yStatus(): React.JSX.Element {
+    const players = useGameState(selectPlayers);
+    const turn = useGameState(selectTurn);
+    const phase = useGameState(selectPhase);
+    const wind = useGameState(selectWind);
+    const message = useGameState(selectMessage);
+    const activePlayer = players[turn - 1];
+    const otherPlayer = players[turn === 1 ? 1 : 0];
 
-    function cloneRoomSetup(room: LiveRoom): void {
-        setFormState({
-            ...formState,
-            seedText: room.seedText,
-            mapType: room.mapType,
-        });
-        setStartView("room-setup");
-    }
+    return (
+        <div className="game-a11y-status" role="status" aria-live="polite" aria-atomic="true">
+            {message} {activePlayer.name} turn, {phase} phase. {activePlayer.name} has {activePlayer.mobile.hp} HP. {otherPlayer.name} has {otherPlayer.mobile.hp} HP. Wind {Math.round(wind.x * 10) / 10} horizontal, {Math.round(wind.y * 10) / 10} vertical.
+        </div>
+    );
 }
 
 function renderSpacetimeMatchLoadingScreen(
@@ -578,17 +550,17 @@ function renderLobbyEntryScreen(
             <div className="lobby-entry">
                 <div className="lobby-entry-glow" />
                 <div className="lobby-entry-card">
-                    <div className="lobby-entry-badge">Channel Gate</div>
+                    <div className="lobby-entry-badge">Setup Gate</div>
                     <div className="lobby-entry-copy">
                         <span className="lobby-entry-kicker">
-                            Gunbound Network
+                            Local Match
                         </span>
                         <h1 className="lobby-entry-title">
-                            Entering Channel 1
+                            Preparing Setup
                         </h1>
                         <p className="lobby-entry-text">
-                            Syncing room board, loading mobiles, and warming up
-                            the wind map for a local artillery duel.
+                            Loading mobiles and warming up the wind map for a
+                            local artillery duel.
                         </p>
                     </div>
                     <div className="lobby-entry-status">
@@ -596,7 +568,7 @@ function renderLobbyEntryScreen(
                             <span className="lobby-entry-progress-bar" />
                         </div>
                         <div className="lobby-entry-steps" aria-hidden="true">
-                            <span>Room registry online</span>
+                            <span>Setup ready</span>
                             <span>Mobiles checked in</span>
                             <span>Lobby ready</span>
                         </div>
@@ -621,30 +593,37 @@ function renderStartScreen(
     queueMatchStart: {
         (config: MatchConfig): void;
     },
-    openChannelLobby: {
-        (): void;
-    },
+    onExitToLobby: (() => void) | undefined,
     matchStarting: boolean,
     showLobbyAudioNotice: boolean,
+    vsBotMode: boolean,
+    accountPlayerName?: string | null,
 ): React.JSX.Element {
+    const selectedMap = getMapPresentation(formState.mapType);
+    const lockedPlayerName = accountPlayerName?.trim() || "";
+    const isPlayerNameLocked = lockedPlayerName.length > 0;
+    if (vsBotMode) {
+        return renderPracticeStartScreen();
+    }
+
     return (
         <div className="screen">
             <div className="lobby-bg-particles" />
             <div className="lobby-bg-clouds" />
             <div className="lobby">
                 <div className="lobby-header">
-                    <span className="lobby-channel-badge">Channel 1</span>
+                    <span className="lobby-channel-badge">{vsBotMode ? "Vs Bot" : "Local Duel"}</span>
                     <div className="lobby-title-group">
-                        <span className="lobby-kicker">Room Creation</span>
-                        <h1 className="lobby-title">Create Lobby</h1>
-                        <span className="lobby-subtitle">Stage The Duel</span>
+                        <span className="lobby-kicker">Match Setup</span>
+                        <h1 className="lobby-title">{vsBotMode ? "Practice Room" : "Create Match"}</h1>
+                        <span className="lobby-subtitle">
+                            {vsBotMode ? "Tune the arena, pick your mobile, and start against the bot." : "Configure a local two-player match."}
+                        </span>
                     </div>
                     <div className="lobby-room-info">
-                        <span className="lobby-room-tag">Flow</span>
-                        <span className="lobby-room-name">
-                            Channel 1 / New Room
-                        </span>
-                        <span className="lobby-room-status">Draft</span>
+                        <span className="lobby-room-tag">{selectedMap.label}</span>
+                        <span className="lobby-room-name">{formState.targetScore} target / {formState.roundLimit} rounds</span>
+                        <span className="lobby-room-status">{formState.turnDurationMode}</span>
                     </div>
                 </div>
                 {showLobbyAudioNotice ? (
@@ -676,14 +655,23 @@ function renderStartScreen(
                         handlePlayerTwoMobileChange,
                         handlePlayerTwoTitleChange,
                         handlePlayerTwoAccentChange,
+                        vsBotMode ? { nameLocked: true, personaLocked: true, slotLabel: "Bot" } : undefined,
                     )}
                 </div>
 
                 <div className="lobby-controls">
                     <div className="lobby-options">
-                        <div className="lobby-option">
-                            <span className="lobby-option-label">Map</span>
+                        <div className="lobby-option lobby-option-map">
+                            <label className="lobby-option-label" htmlFor="match-map">Map</label>
+                            <img
+                                className="lobby-map-preview"
+                                src={selectedMap.previewImage}
+                                alt=""
+                                aria-hidden="true"
+                            />
                             <select
+                                id="match-map"
+                                name="match-map"
                                 className="lobby-option-input"
                                 value={formState.mapType}
                                 onChange={handleMapTypeChange}
@@ -695,22 +683,27 @@ function renderStartScreen(
                                 ))}
                             </select>
                             <span className="lobby-option-copy">
-                                {getMapPresentation(formState.mapType).description}
+                                {selectedMap.description}
                             </span>
                         </div>
                         <div className="lobby-option">
-                            <span className="lobby-option-label">Seed Variant</span>
+                            <label className="lobby-option-label" htmlFor="match-seed">Seed Variant</label>
                             <input
+                                id="match-seed"
+                                name="match-seed"
                                 className="lobby-option-input"
                                 value={formState.seedText}
                                 onChange={handleSeedChange}
                                 maxLength={32}
+                                autoComplete="off"
                                 placeholder="gunbound-local"
                             />
                         </div>
                         <div className="lobby-option">
-                            <span className="lobby-option-label">Target Score</span>
+                            <label className="lobby-option-label" htmlFor="match-target-score">Target Score</label>
                             <select
+                                id="match-target-score"
+                                name="match-target-score"
                                 className="lobby-option-input"
                                 value={formState.targetScore}
                                 onChange={handleTargetScoreChange}
@@ -723,8 +716,10 @@ function renderStartScreen(
                             </select>
                         </div>
                         <div className="lobby-option">
-                            <span className="lobby-option-label">Round Limit</span>
+                            <label className="lobby-option-label" htmlFor="match-round-limit">Round Limit</label>
                             <select
+                                id="match-round-limit"
+                                name="match-round-limit"
                                 className="lobby-option-input"
                                 value={formState.roundLimit}
                                 onChange={handleRoundLimitChange}
@@ -737,8 +732,10 @@ function renderStartScreen(
                             </select>
                         </div>
                         <div className="lobby-option">
-                            <span className="lobby-option-label">Turn Duration</span>
+                            <label className="lobby-option-label" htmlFor="match-turn-duration">Turn Duration</label>
                             <select
+                                id="match-turn-duration"
+                                name="match-turn-duration"
                                 className="lobby-option-input"
                                 value={formState.turnDurationMode}
                                 onChange={handleTurnDurationModeChange}
@@ -753,16 +750,17 @@ function renderStartScreen(
                                 {getTurnDurationModeDescription(formState.turnDurationMode)}
                             </span>
                         </div>
-                        <RoomPanel formState={formState} />
                     </div>
                     <div className="lobby-actions">
-                        <button
-                            type="button"
-                            className="lobby-btn lobby-btn-secondary"
-                            onClick={openChannelLobby}
-                        >
-                            <span className="lobby-btn-label">Back To Channel</span>
-                        </button>
+                        {onExitToLobby ? (
+                            <button
+                                type="button"
+                                className="lobby-btn lobby-btn-secondary"
+                                onClick={onExitToLobby}
+                            >
+                                <span className="lobby-btn-label">Back To Lobby</span>
+                            </button>
+                        ) : null}
                         <button
                             type="button"
                             className="lobby-btn lobby-btn-primary"
@@ -771,7 +769,7 @@ function renderStartScreen(
                         >
                             <span className="lobby-btn-icon">&#9654;</span>
                             <span className="lobby-btn-label">
-                                {matchStarting ? "Starting" : "Start Match"}
+                                {matchStarting ? "Starting" : vsBotMode ? "Start Bot Match" : "Start Match"}
                             </span>
                         </button>
                     </div>
@@ -798,12 +796,14 @@ function renderStartScreen(
         });
     }
 
-    function handlePlayerOneMobileChange(
-        event: React.ChangeEvent<HTMLSelectElement>,
-    ): void {
+    function handlePlayerOneMobileChange(event: React.ChangeEvent<HTMLSelectElement>): void {
+        const playerOneMobile = event.target.value as MobileType;
         setFormState({
             ...formState,
-            playerOneMobile: event.target.value as MobileType,
+            playerOneMobile,
+            playerTwoMobile: vsBotMode
+                ? getRandomPracticeBotMobile(playerOneMobile)
+                : formState.playerTwoMobile,
         });
     }
 
@@ -900,224 +900,225 @@ function renderStartScreen(
     function handleStartClick(): void {
         queueMatchStart({
             ...formState,
-            playerOneName: formState.playerOneName.trim() || "Player 1",
-            playerTwoName: formState.playerTwoName.trim() || "Player 2",
-            seedText: formState.seedText.trim() || "gunbound-local",
+            playerOneName: isPlayerNameLocked
+                ? lockedPlayerName
+                : formState.playerOneName.trim() || "Player 1",
+            playerTwoName: vsBotMode ? "Practice Bot" : formState.playerTwoName.trim() || "Player 2",
+            playerTwoTitle: vsBotMode ? "Oracle" : formState.playerTwoTitle,
+            playerTwoAccent: vsBotMode ? "coral" : formState.playerTwoAccent,
+            seedText: formState.seedText.trim() || (vsBotMode ? "solo-practice" : "gunbound-local"),
+            soloBot: vsBotMode,
         });
+    }
+
+    function renderPracticeStartScreen(): React.JSX.Element {
+        const playerPresentation = getMobilePresentation(formState.playerOneMobile);
+        const botPresentation = getMobilePresentation(formState.playerTwoMobile);
+        const displayPlayerName = isPlayerNameLocked
+            ? lockedPlayerName
+            : formState.playerOneName.trim() || "Player 1";
+
+        return (
+            <div className="screen">
+                <div className="lobby-bg-particles" />
+                <div className="lobby-bg-clouds" />
+                <div className="lobby lobby--practice">
+                    <div className="practice-toolbar">
+                        <span className="practice-toolbar-badge">Vs Bot</span>
+                        <p className="practice-toolbar-copy">
+                            Pick your mobile, map, and start training.
+                        </p>
+                    </div>
+                    {showLobbyAudioNotice ? (
+                        <div className="lobby-audio-notice" role="status">
+                            Browser autoplay blocked the lobby music. Click or press
+                            any key to enable it.
+                        </div>
+                    ) : null}
+
+                    <div className="practice-setup-grid">
+                        <section className="practice-panel practice-panel--player" aria-labelledby="practice-player-title">
+                            <div className="practice-panel-head">
+                                <span className="practice-panel-kicker">You</span>
+                                <h2 id="practice-player-title" className="practice-panel-title">{displayPlayerName}</h2>
+                            </div>
+                            {renderPracticeMobilePreview(formState.playerOneMobile)}
+                            <div className="practice-fields">
+                                {!isPlayerNameLocked ? (
+                                    <div className="lobby-field">
+                                        <label htmlFor="practice-name">Name</label>
+                                        <input
+                                            id="practice-name"
+                                            value={formState.playerOneName}
+                                            onChange={handlePlayerOneNameChange}
+                                            maxLength={18}
+                                            name="practice-player-name"
+                                            autoComplete="off"
+                                            placeholder="Player 1"
+                                        />
+                                    </div>
+                                ) : null}
+                                <div className="lobby-field">
+                                    <label htmlFor="practice-mobile">Mobile</label>
+                                    <select
+                                        id="practice-mobile"
+                                        name="practice-mobile"
+                                        className="practice-select"
+                                        value={formState.playerOneMobile}
+                                        onChange={handlePlayerOneMobileChange}
+                                    >
+                                        {mobilePresentationOptions.map((option) => (
+                                            <option key={option.value} value={option.value}>
+                                                {option.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="practice-profile">
+                                <span className="lobby-player-profile-role">{playerPresentation.role}</span>
+                                <span className="lobby-player-profile-copy">{playerPresentation.profile}</span>
+                            </div>
+                            {renderPracticeStats(playerPresentation)}
+                        </section>
+
+                        <section className="practice-panel practice-panel--match" aria-labelledby="practice-match-title">
+                            <div className="practice-panel-head">
+                                <span className="practice-panel-kicker">Arena</span>
+                                <h2 id="practice-match-title" className="practice-panel-title">{selectedMap.label}</h2>
+                            </div>
+                            <img
+                                className="practice-map-preview"
+                                src={selectedMap.previewImage}
+                                alt=""
+                                aria-hidden="true"
+                            />
+                            <div className="practice-fields practice-fields--compact">
+                                <div className="lobby-field">
+                                    <label htmlFor="practice-map">Map</label>
+                                    <select
+                                        id="practice-map"
+                                        name="practice-map"
+                                        className="practice-select"
+                                        value={formState.mapType}
+                                        onChange={handleMapTypeChange}
+                                    >
+                                        {mapPresentationOptions.map((option) => (
+                                            <option key={option.value} value={option.value}>
+                                                {option.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="lobby-field">
+                                    <label htmlFor="practice-target-score">Target</label>
+                                    <select
+                                        id="practice-target-score"
+                                        name="practice-target-score"
+                                        className="practice-select"
+                                        value={formState.targetScore}
+                                        onChange={handleTargetScoreChange}
+                                    >
+                                        {TARGET_SCORE_OPTIONS.map((value) => (
+                                            <option key={value} value={value}>
+                                                {value}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="lobby-field">
+                                    <label htmlFor="practice-round-limit">Rounds</label>
+                                    <select
+                                        id="practice-round-limit"
+                                        name="practice-round-limit"
+                                        className="practice-select"
+                                        value={formState.roundLimit}
+                                        onChange={handleRoundLimitChange}
+                                    >
+                                        {ROUND_LIMIT_OPTIONS.map((value) => (
+                                            <option key={value} value={value}>
+                                                {value}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            <span className="practice-map-copy">{selectedMap.description}</span>
+                            <div className="practice-actions">
+                                {onExitToLobby ? (
+                                    <button
+                                        type="button"
+                                        className="lobby-btn lobby-btn-secondary"
+                                        onClick={onExitToLobby}
+                                    >
+                                        <span className="lobby-btn-label">Back To Lobby</span>
+                                    </button>
+                                ) : null}
+                                <button
+                                    type="button"
+                                    className="lobby-btn lobby-btn-primary"
+                                    disabled={matchStarting}
+                                    onClick={handleStartClick}
+                                >
+                                    <span className="lobby-btn-icon">&#9654;</span>
+                                    <span className="lobby-btn-label">
+                                        {matchStarting ? "Starting" : "Start Practice"}
+                                    </span>
+                                </button>
+                            </div>
+                        </section>
+
+                        <section className="practice-panel practice-panel--bot" aria-labelledby="practice-bot-title">
+                            <div className="practice-panel-head">
+                                <span className="practice-panel-kicker">Opponent</span>
+                                <h2 id="practice-bot-title" className="practice-panel-title">Practice Bot</h2>
+                            </div>
+                            {renderPracticeMobilePreview(formState.playerTwoMobile)}
+                            <div className="practice-profile">
+                                <span className="lobby-player-profile-role">{botPresentation.role}</span>
+                                <span className="lobby-player-profile-copy">{botPresentation.profile}</span>
+                            </div>
+                            <div className="practice-bot-summary">
+                                <span className="practice-bot-tag">{botPresentation.hp} HP</span>
+                                <span className="practice-bot-tag">{botPresentation.move} move</span>
+                                <span className="practice-bot-tag">{botPresentation.shot} shot</span>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+        );
     }
 }
 
-function renderChannelScreen(
-    formState: MatchConfig,
-    openCreateRoom: {
-        (): void;
-    },
-    cloneRoomSetup: {
-        (room: LiveRoom): void;
-    },
-    showLobbyAudioNotice: boolean,
-): React.JSX.Element {
+function renderPracticeMobilePreview(mobile: MobileType): React.JSX.Element {
+    const spriteSource = getMobileSpriteSource(mobile);
+
     return (
-        <div className="screen">
-            <div className="lobby-bg-particles" />
-            <div className="lobby-bg-clouds" />
-            <div className="channel-shell">
-                <div className="channel-topbar">
-                    <div className="channel-title-group">
-                        <span className="channel-kicker">Post Login Lobby</span>
-                        <h1 className="channel-title">Channel 1</h1>
-                        <span className="channel-subtitle">
-                            Rooms, friends, and chat before the match starts
-                        </span>
-                    </div>
-                    <div className="channel-actions">
-                        <button
-                            type="button"
-                            className="lobby-btn lobby-btn-secondary"
-                        >
-                            <span className="lobby-btn-label">Quick Match</span>
-                        </button>
-                        <button
-                            type="button"
-                            className="lobby-btn lobby-btn-primary"
-                            onClick={openCreateRoom}
-                        >
-                            <span className="lobby-btn-icon">&#9654;</span>
-                            <span className="lobby-btn-label">Create Room</span>
-                        </button>
-                    </div>
-                </div>
-                {showLobbyAudioNotice ? (
-                    <div className="lobby-audio-notice" role="status">
-                        Browser autoplay blocked the lobby music. Click or press
-                        any key to enable it.
-                    </div>
-                ) : null}
-                <div className="channel-grid">
-                    <section className="channel-panel channel-room-panel">
-                        <div className="channel-panel-head">
-                            <div>
-                                <span className="channel-panel-kicker">
-                                    Room Browser
-                                </span>
-                                <h2>Active Matches</h2>
-                            </div>
-                            <span className="channel-panel-badge">
-                                {String(LIVE_ROOMS.length)} Rooms
-                            </span>
-                        </div>
-                        <div className="channel-room-list">
-                            {LIVE_ROOMS.map((room) => (
-                                <button
-                                    key={room.title}
-                                    type="button"
-                                    className="channel-room-card"
-                                    onClick={function handleCloneRoom(): void {
-                                        cloneRoomSetup(room);
-                                    }}
-                                >
-                                    <div className="channel-room-row">
-                                        <span className="channel-room-title">
-                                            {room.title}
-                                        </span>
-                                        <span className="channel-room-state">
-                                            {room.status}
-                                        </span>
-                                    </div>
-                                    <div className="channel-room-row">
-                                        <span className="channel-room-copy">
-                                            Host {room.host} /{" "}
-                                            {
-                                                getMapPresentation(room.mapType)
-                                                    .label
-                                            }
-                                        </span>
-                                        <span className="channel-room-copy">
-                                            {room.players}
-                                        </span>
-                                    </div>
-                                    <div className="channel-room-seed">
-                                        Seed {room.seedText}
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                    </section>
-                    <section className="channel-panel channel-chat-panel">
-                        <div className="channel-panel-head">
-                            <div>
-                                <span className="channel-panel-kicker">
-                                    Public Feed
-                                </span>
-                                <h2>Channel Chat</h2>
-                            </div>
-                            <span className="channel-panel-badge">
-                                Generic
-                            </span>
-                        </div>
-                        <div className="channel-chat-log">
-                            {CHANNEL_CHAT.map((message) => (
-                                <div
-                                    key={message.author + message.time}
-                                    className="channel-chat-row"
-                                >
-                                    <div className="channel-chat-meta">
-                                        <img
-                                            className="channel-chat-accent"
-                                            src={"/badges/accent-" + message.accent + ".svg"}
-                                            alt=""
-                                            width={8}
-                                            height={8}
-                                        />
-                                        <span className="channel-chat-author">
-                                            {message.author}
-                                        </span>
-                                        <span className="channel-chat-time">
-                                            {message.time}
-                                        </span>
-                                    </div>
-                                    <p className="channel-chat-text">
-                                        {message.text}
-                                    </p>
-                                </div>
-                            ))}
-                        </div>
-                        <div className="channel-chat-compose">
-                            <input
-                                value={
-                                    (formState.playerOneName || "Player 1") +
-                                    " says hello..."
-                                }
-                                readOnly
-                            />
-                            <button
-                                type="button"
-                                className="lobby-btn lobby-btn-secondary"
-                            >
-                                <span className="lobby-btn-label">Send</span>
-                            </button>
-                        </div>
-                    </section>
-                    <section className="channel-panel channel-side-panel">
-                        <div className="channel-panel-head">
-                            <div>
-                                <span className="channel-panel-kicker">
-                                    Friend List
-                                </span>
-                                <h2>Online Friends</h2>
-                            </div>
-                            <span className="channel-panel-badge">
-                                {String(FRIENDS_LIST.length)} Online
-                            </span>
-                        </div>
-                        <div className="channel-friend-list">
-                            {FRIENDS_LIST.map((friend) => (
-                                <div
-                                    key={friend.name}
-                                    className="channel-friend-row"
-                                >
-                                    <div
-                                        className="channel-friend-sprite"
-                                        style={getFriendSpriteStyle(friend.mobile)}
-                                    />
-                                    <div className="channel-friend-copy">
-                                        <span className="channel-friend-name">
-                                            {friend.name}
-                                        </span>
-                                        <span className="channel-friend-state">
-                                            {friend.status}
-                                        </span>
-                                        <span className="channel-friend-activity">
-                                            {friend.activity}
-                                        </span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        <div className="channel-create-card">
-                            <span className="channel-create-kicker">
-                                Ready To Host
-                            </span>
-                            <strong className="channel-create-title">
-                                Open your own room
-                            </strong>
-                            <span className="channel-create-copy">
-                                Current setup uses{" "}
-                                {getMapPresentation(formState.mapType).label} on
-                                seed {formState.seedText || "gunbound-local"}.
-                            </span>
-                            <button
-                                type="button"
-                                className="lobby-btn lobby-btn-primary"
-                                onClick={openCreateRoom}
-                            >
-                                <span className="lobby-btn-label">
-                                    Configure Duel
-                                </span>
-                            </button>
-                        </div>
-                    </section>
-                </div>
+        <div className="practice-mobile-preview">
+            <div
+                className="lobby-player-sprite"
+                aria-label={mobile}
+                style={getLobbySpriteStyle(mobile, spriteSource)}
+            />
+        </div>
+    );
+}
+
+function renderPracticeStats(presentation: ReturnType<typeof getMobilePresentation>): React.JSX.Element {
+    return (
+        <div className="lobby-player-stats practice-stats">
+            <div className="lobby-stat">
+                <span className="lobby-stat-val">{presentation.hp}</span>
+                <span className="lobby-stat-label">HP</span>
+            </div>
+            <div className="lobby-stat">
+                <span className="lobby-stat-val">{presentation.move}</span>
+                <span className="lobby-stat-label">Move</span>
+            </div>
+            <div className="lobby-stat">
+                <span className="lobby-stat-val">{presentation.shot}</span>
+                <span className="lobby-stat-label">Shot</span>
             </div>
         </div>
     );
@@ -1131,6 +1132,7 @@ function renderLobbyPlayer(
     onMobileChange: (e: React.ChangeEvent<HTMLSelectElement>) => void,
     onTitleChange: (e: React.ChangeEvent<HTMLSelectElement>) => void,
     onAccentChange: (e: React.ChangeEvent<HTMLSelectElement>) => void,
+    options?: { nameLocked?: boolean; personaLocked?: boolean; slotLabel?: string },
 ): React.JSX.Element {
     const name = slot === 1 ? formState.playerOneName : formState.playerTwoName;
     const mobile =
@@ -1147,7 +1149,7 @@ function renderLobbyPlayer(
         <div className={"lobby-player-card" + (isBlue ? " blue" : " red")}>
             <div className="lobby-player-head">
                 <span className="lobby-player-team">{team} Team</span>
-                <span className="lobby-player-slot">Player {slot}</span>
+                <span className="lobby-player-slot">{options?.slotLabel ?? "Player " + String(slot)}</span>
             </div>
             <div className="lobby-player-sprite-wrap">
                 <div className="lobby-player-sprite-bg">
@@ -1166,13 +1168,17 @@ function renderLobbyPlayer(
                         value={name}
                         onChange={onNameChange}
                         maxLength={18}
+                        name={"player-" + String(slot) + "-name"}
+                        autoComplete="off"
                         placeholder={"Player " + String(slot)}
+                        disabled={options?.nameLocked === true}
                     />
                 </div>
                 <div className="lobby-field">
                     <label htmlFor={"mobile-" + String(slot)}>Mobile</label>
                     <select
                         id={"mobile-" + String(slot)}
+                        name={"player-" + String(slot) + "-mobile"}
                         value={mobile}
                         onChange={onMobileChange}
                     >
@@ -1187,8 +1193,10 @@ function renderLobbyPlayer(
                     <label htmlFor={"title-" + String(slot)}>Title</label>
                     <select
                         id={"title-" + String(slot)}
+                        name={"player-" + String(slot) + "-title"}
                         value={title}
                         onChange={onTitleChange}
+                        disabled={options?.personaLocked === true}
                     >
                         {TITLE_OPTIONS.map((option) => (
                             <option key={option} value={option}>
@@ -1201,8 +1209,10 @@ function renderLobbyPlayer(
                     <label htmlFor={"accent-" + String(slot)}>Accent</label>
                     <select
                         id={"accent-" + String(slot)}
+                        name={"player-" + String(slot) + "-accent"}
                         value={accent}
                         onChange={onAccentChange}
+                        disabled={options?.personaLocked === true}
                     >
                         {ACCENT_OPTIONS.map((option) => (
                             <option key={option} value={option}>
@@ -1270,30 +1280,17 @@ function getLobbySpriteStyle(
     };
 }
 
-function getFriendSpriteStyle(mobileType: MobileType): React.CSSProperties {
-    const spriteSource = getMobileSpriteSource(mobileType);
-    const scaleX = shouldFlipMobileSprite(mobileType, 1)
-        ? -0.72
-        : 0.72;
-
-    return {
-        backgroundImage: 'url("' + spriteSource.path + '")',
-        backgroundPosition: "0 0",
-        backgroundRepeat: "no-repeat",
-        backgroundSize: String(spriteSource.frameCount * 100) + "% 100%",
-        transform:
-            "scale(" +
-            String(scaleX) +
-            ", 0.72) translate(" +
-            String(spriteSource.previewTranslateX * 0.42) +
-            "px, " +
-            String(spriteSource.previewTranslateY * 0.42) +
-            "px)"
-    };
-}
-
 function capitalizeLabel(value: string): string {
     return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
+function getRandomPracticeBotMobile(playerMobile: MobileType): MobileType {
+    const candidates = PRACTICE_BOT_MOBILE_POOL.filter((type) => type !== playerMobile);
+    if (candidates.length === 0) {
+        return getRandomMobileType();
+    }
+
+    return candidates[Math.floor(Math.random() * candidates.length)] ?? getRandomMobileType();
 }
 
 function createMatchConfigFromRoom(
@@ -1338,6 +1335,43 @@ function getTurnDurationModeDescription(value: TurnDurationMode): string {
     return TURN_DURATION_OPTIONS.find((option) => option.value === value)?.description ?? TURN_DURATION_OPTIONS[0].description;
 }
 
+type MatchStats = {
+    shots: number;
+    hits: number;
+    damageDealt: number;
+    damageReceived: number;
+    hitRatio: number;
+};
+
+function computeMatchStats(players: [Player, Player], history: MatchEvent[]): [MatchStats, MatchStats] {
+    const stats: [MatchStats, MatchStats] = [
+        { shots: 0, hits: 0, damageDealt: 0, damageReceived: 0, hitRatio: 0 },
+        { shots: 0, hits: 0, damageDealt: 0, damageReceived: 0, hitRatio: 0 },
+    ];
+
+    for (const event of history) {
+        if (event.kind === "shot") {
+            stats[event.turn - 1].shots++;
+        } else if (event.kind === "hit") {
+            const turn = event.turn;
+            const damageMatch = event.text.match(/ for (\d+)\.$/);
+            if (damageMatch) {
+                const damage = parseInt(damageMatch[1], 10);
+                stats[turn - 1].hits++;
+                stats[turn - 1].damageDealt += damage;
+                const targetIndex = turn === 1 ? 1 : 0;
+                stats[targetIndex].damageReceived += damage;
+            }
+        }
+    }
+
+    for (let i = 0; i < 2; i++) {
+        stats[i].hitRatio = stats[i].shots > 0 ? stats[i].hits / stats[i].shots : 0;
+    }
+
+    return stats;
+}
+
 function renderEndScreen(
     winnerName: string,
     players: ReturnType<typeof useGameStore.getState>["players"],
@@ -1347,10 +1381,14 @@ function renderEndScreen(
     onLobby: {
         (): void;
     },
+    history: MatchEvent[],
 ): React.JSX.Element {
     const winnerId = players[0].name === winnerName ? 1 : 2;
     const winner = players[winnerId - 1];
     const loser = players[winnerId === 1 ? 1 : 0];
+    const stats = computeMatchStats(players, history);
+    const p1Stats = stats[0];
+    const p2Stats = stats[1];
 
     return (
         <div className="screen screen--result">
@@ -1418,6 +1456,41 @@ function renderEndScreen(
                         {winner.name} defeated {loser.name} with a final score of{" "}
                         {winner.score}–{loser.score}.
                     </p>
+
+                    <div className="result-stats">
+                        <div className="result-stats-table">
+                            <div className="result-stats-row result-stats-header">
+                                <span className="result-stats-cell result-stats-label">Stat</span>
+                                <span className="result-stats-cell result-stats-value">{players[0].name}</span>
+                                <span className="result-stats-cell result-stats-value">{players[1].name}</span>
+                            </div>
+                            <div className="result-stats-row">
+                                <span className="result-stats-cell result-stats-label">Shots</span>
+                                <span className="result-stats-cell result-stats-value">{p1Stats.shots}</span>
+                                <span className="result-stats-cell result-stats-value">{p2Stats.shots}</span>
+                            </div>
+                            <div className="result-stats-row">
+                                <span className="result-stats-cell result-stats-label">Hits</span>
+                                <span className="result-stats-cell result-stats-value">{p1Stats.hits}</span>
+                                <span className="result-stats-cell result-stats-value">{p2Stats.hits}</span>
+                            </div>
+                            <div className="result-stats-row">
+                                <span className="result-stats-cell result-stats-label">Hit Ratio</span>
+                                <span className="result-stats-cell result-stats-value">{Math.round(p1Stats.hitRatio * 100)}%</span>
+                                <span className="result-stats-cell result-stats-value">{Math.round(p2Stats.hitRatio * 100)}%</span>
+                            </div>
+                            <div className="result-stats-row">
+                                <span className="result-stats-cell result-stats-label">Dmg Dealt</span>
+                                <span className="result-stats-cell result-stats-value">{p1Stats.damageDealt}</span>
+                                <span className="result-stats-cell result-stats-value">{p2Stats.damageDealt}</span>
+                            </div>
+                            <div className="result-stats-row">
+                                <span className="result-stats-cell result-stats-label">Dmg Taken</span>
+                                <span className="result-stats-cell result-stats-value">{p1Stats.damageReceived}</span>
+                                <span className="result-stats-cell result-stats-value">{p2Stats.damageReceived}</span>
+                            </div>
+                        </div>
+                    </div>
 
                     <div className="result-actions">
                         <button

@@ -1,21 +1,40 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { playTrack } from "@/lib/music-bus";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { LogIn, ShieldCheck } from "lucide-react";
+import { useAuth } from "react-oidc-context";
+import { playTrack, playUiSfx } from "@/lib/music-bus";
+import {
+  writeStoredToken,
+  writeStoredUsername,
+} from "@/features/game/spacetime/token-storage";
 import { AuthField } from "./auth-field";
 import { AuthButton } from "./auth-button";
-import { useCredentialAuth, InvalidPasswordError } from "../hooks/use-credential-auth";
+import {
+  useCredentialAuth,
+  InvalidPasswordError,
+  sanitizeUsername,
+} from "../hooks/use-credential-auth";
+import { useSpacetimeAuthConfig } from "../spacetime-auth";
 
 type Mode = "login" | "register";
 
-interface Props {
+type Props = {
   mode: Mode;
   onSwitchMode: (m: Mode) => void;
   onAuthed: (username: string) => void;
-}
+};
 
 export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
-  const { register, login, state, isConnected, credentialsReady, connectionError } = useCredentialAuth();
+  const {
+    register,
+    login,
+    state,
+    isConnected,
+    credentialsReady,
+    connectionError,
+  } = useCredentialAuth();
+  const { configured: spacetimeAuthConfigured } = useSpacetimeAuthConfig();
   const [username, setUsername] = useState("");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
@@ -23,6 +42,12 @@ export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
 
   const isRegister = mode === "register";
   const busy = state === "working";
+
+  useEffect(function playErrorCue(): void {
+    if (error !== null) {
+      playUiSfx("error");
+    }
+  }, [error]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -33,7 +58,8 @@ export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
     if (isRegister && pw !== pw2) return setError("PASSWORDS DO NOT MATCH");
     if (connectionError) return setError(connectionError.message.toUpperCase());
     if (!isConnected) return setError("CONNECTING — TRY AGAIN IN A MOMENT");
-    if (!isRegister && !credentialsReady) return setError("ACCOUNT LIST IS STILL LOADING");
+    if (!isRegister && !credentialsReady)
+      return setError("ACCOUNT LIST IS STILL LOADING");
 
     try {
       if (isRegister) {
@@ -53,7 +79,9 @@ export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
   return (
     <div className="gba-window">
       <div className="gba-titlebar">
-        <span className="gba-title">{isRegister ? "CREATE ACCOUNT" : "LOGIN"}</span>
+        <span className="gba-title">
+          {isRegister ? "CREATE ACCOUNT" : "LOGIN"}
+        </span>
         <span className="gba-title-x">×</span>
       </div>
       <div className="gba-body">
@@ -75,11 +103,31 @@ export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
         </div>
 
         <form className="gba-form" onSubmit={submit}>
-          <AuthField label="USERNAME" value={username} onChange={setUsername} maxLength={20} />
-          <AuthField label="PASSWORD" type="password" value={pw} onChange={setPw} maxLength={64} />
-          <div className={`gba-collapse ${isRegister ? "is-open" : ""}`} aria-hidden={!isRegister}>
+          <AuthField
+            label="USERNAME"
+            value={username}
+            onChange={setUsername}
+            maxLength={20}
+          />
+          <AuthField
+            label="PASSWORD"
+            type="password"
+            value={pw}
+            onChange={setPw}
+            maxLength={64}
+          />
+          <div
+            className={`gba-collapse ${isRegister ? "is-open" : ""}`}
+            aria-hidden={!isRegister}
+          >
             <div className="gba-collapse-inner">
-              <AuthField label="CONFIRM" type="password" value={pw2} onChange={setPw2} maxLength={64} />
+              <AuthField
+                label="CONFIRM"
+                type="password"
+                value={pw2}
+                onChange={setPw2}
+                maxLength={64}
+              />
             </div>
           </div>
 
@@ -98,15 +146,121 @@ export function AuthWindow({ mode, onSwitchMode, onAuthed }: Props) {
             </AuthButton>
           </div>
 
-          <p className="gba-foot-hint">
-            {isRegister
-              ? "Pick a memorable password — there is no email reset yet, so save it carefully."
-              : "Sign in to recover your profile on any device."}
-          </p>
+          <div className="gba-divider-row">
+            <span className="gba-divider-line" />
+            <span className="gba-divider-text">OR USE SPACETIMEAUTH</span>
+            <span className="gba-divider-line" />
+          </div>
+
+          {spacetimeAuthConfigured ? (
+            <SpacetimeAuthButtons
+              onAuthed={onAuthed}
+              onError={(message) => setError(message)}
+            />
+          ) : (
+            <div className="gba-auth-config-missing">
+              SET NEXT_PUBLIC_SPACETIME_AUTH_CLIENT_ID
+            </div>
+          )}
         </form>
       </div>
     </div>
   );
+}
+
+type SpacetimeAuthButtonsProps = {
+  onAuthed: (username: string) => void;
+  onError: (message: string) => void;
+};
+
+function SpacetimeAuthButtons({
+  onAuthed,
+  onError,
+}: SpacetimeAuthButtonsProps): React.JSX.Element {
+  const auth = useAuth();
+  const handledSubjectRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!auth.isAuthenticated || !auth.user) return;
+    const token = auth.user.id_token ?? auth.user.access_token;
+    if (!token) {
+      onError("SPACETIMEAUTH DID NOT RETURN A TOKEN");
+      return;
+    }
+
+    const subject = auth.user.profile.sub;
+    if (handledSubjectRef.current === subject) return;
+    handledSubjectRef.current = subject;
+
+    const rawName =
+      getStringClaim(auth.user.profile.preferred_username) ??
+      getStringClaim(auth.user.profile.name) ??
+      getEmailLocalPart(auth.user.profile.email) ??
+      "Player";
+    const username = sanitizeUsername(rawName);
+
+    writeStoredToken(token);
+    writeStoredUsername(username);
+    playTrack("lobby");
+    onAuthed(username);
+  }, [auth.isAuthenticated, auth.user, onAuthed, onError]);
+
+  const disabled = auth.isLoading || Boolean(auth.activeNavigator);
+  const label = auth.activeNavigator ? "OPENING..." : "CONTINUE SECURELY";
+
+  async function signIn(): Promise<void> {
+    try {
+      await auth.signinRedirect();
+    } catch (err) {
+      onError(messageFromError(err));
+    }
+  }
+
+  return (
+    <div className="gba-spacetime-auth-actions">
+      <div className="gba-auth-provider-strip" aria-label="SpacetimeAuth providers">
+        <span className="gba-auth-provider-pill">
+          <span className="gba-auth-provider-mark">G</span>
+          <span>Google</span>
+        </span>
+        <span className="gba-auth-provider-pill">
+          <span className="gba-auth-provider-mark">GH</span>
+          <span>GitHub</span>
+        </span>
+        <span className="gba-auth-provider-pill">
+          <span className="gba-auth-provider-mark">@</span>
+          <span>Magic link</span>
+        </span>
+      </div>
+      <button
+        className="gba-provider-btn"
+        type="button"
+        disabled={disabled}
+        onClick={() => void signIn()}
+      >
+        <LogIn size={16} aria-hidden />
+        <span>{label}</span>
+      </button>
+      <div className="gba-auth-provider-note">
+        <ShieldCheck size={13} aria-hidden />
+        <span>Handled by SpacetimeAuth</span>
+      </div>
+      {auth.error ? (
+        <div className="gba-provider-error">{auth.error.message}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function getStringClaim(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value
+    : undefined;
+}
+
+function getEmailLocalPart(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return value.includes("@") ? value.split("@")[0] : value;
 }
 
 function messageFromError(e: unknown): string {

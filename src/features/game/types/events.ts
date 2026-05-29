@@ -5,6 +5,7 @@ export type MatchEventKind =
   | "turn-start"
   | "move"
   | "shot"
+  | "shot-tech"
   | "weapon-switch"
   | "hit"
   | "bonus"

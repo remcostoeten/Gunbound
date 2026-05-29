@@ -3,515 +3,142 @@ title: Client Integration
 description: React hooks, provider setup, and UI patterns
 ---
 
-## Provider Setup
+## Provider setup
 
-The `GunboundSpacetimeProvider` sets up the SpacetimeDB connection and wraps the entire app:
+`GunboundSpacetimeProvider` wraps the app and builds a single SpacetimeDB connection:
 
 ```typescript
 // src/features/game/spacetime/connection.tsx
-import { useCallback, useMemo } from 'react';
-import { SpacetimeDBProvider } from 'spacetimedb/react';
-import { DbConnection } from './module_bindings';
-import { readStoredToken } from '@/features/game/spacetime/token-storage';
-import { SPACETIME_URI, SPACETIME_MODULE } from '@/features/game/spacetime/config';
+export function GunboundSpacetimeProvider({
+  children,
+  onIdentity,
+  sessionKey
+}: {
+  children: ReactNode;
+  onIdentity?: (identity: Identity) => void;
+  sessionKey?: string | number;
+}) {
+  const [connectionRetry, setConnectionRetry] = useState(0);
 
-export function GunboundSpacetimeProvider({ children }: { children: React.ReactNode }) {
-  // Build connection once, reuse across renders
-  const builder = useMemo(() => {
-    const token = readStoredToken();
-    
+  const connectionBuilder = useMemo(() => {
+    const storedToken = readStoredToken();
     return DbConnection.builder()
-      .withUri(SPACETIME_URI)
+      .withUri(createConnectionUri(connectionRetry, sessionKey))
       .withDatabaseName(SPACETIME_MODULE)
-      .withToken(token || undefined)
-      .onConnect(onConnect)
-      .onConnectError(onConnectError);
-  }, []);  // Empty deps — only run once
+      .withToken(storedToken)
+      .onConnect((_connection, identity, token) => {
+        writeStoredToken(token);
+        if (onIdentity) onIdentity(identity);
+      })
+      .onConnectError((_connection, error) => {
+        if (storedToken && isStoredTokenVerificationError(error)) {
+          clearStoredToken();
+          setConnectionRetry((value) => value + 1);
+        }
+      });
+  }, [connectionRetry, onIdentity, sessionKey]);
 
   return (
-    <SpacetimeDBProvider connectionBuilder={builder}>
+    <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
       {children}
     </SpacetimeDBProvider>
   );
 }
-
-function onConnect(conn: DbConnection) {
-  // Subscribe to all public tables
-  conn.subscriptionBuilder().subscribeToAllTables();
-}
-
-function onConnectError(err: Error) {
-  console.error('SpacetimeDB connection failed:', err);
-}
 ```
 
-**Key points:**
-- Use `useMemo` with empty deps to create the builder only once (prevents reconnects on render)
-- Read stored token from localStorage on mount
-- Pass token to builder so the connection uses the authenticated identity
-- Subscribe to all tables in `onConnect` callback when you intentionally want one broad, non-cancelable public-table subscription
+**Important details:**
 
-## Mounting the Provider
+- Token is read from `localStorage` on mount and refreshed in `onConnect`.
+- Invalid stored tokens are cleared and the connection retried automatically.
+- `sessionKey` changes the websocket URL query string so the provider can remount after login without stale state.
+- There is **no** `subscribeToAllTables()` in the provider — subscriptions are created by `useTable()` (see [Subscriptions](/docs/spacetimedb/subscriptions)).
 
-Wrap the root of your app:
+## Mounting
 
 ```typescript
-// src/app/page.tsx
-import { GunboundSpacetimeProvider } from '@/features/game/spacetime';
-import { HomeScreen } from '@/features/home/home-screen';
-
-export default function Page() {
-  return (
-    <GunboundSpacetimeProvider>
-      <HomeScreen />
-    </GunboundSpacetimeProvider>
-  );
-}
+// src/features/home/home-screen.tsx
+<SpacetimeAuthProvider>
+  <GunboundSpacetimeProvider sessionKey={spacetimeSessionKey}>
+    <HomeScreenInner bumpSession={() => setSpacetimeSessionKey((v) => v + 1)} />
+  </GunboundSpacetimeProvider>
+</SpacetimeAuthProvider>
 ```
 
-All child components can now call SpacetimeDB hooks.
+After login, `bumpSession()` increments `sessionKey`, which is incorporated into `createConnectionUri(...)` and included in the `useMemo(..., [connectionRetry, onIdentity, sessionKey])` dependency array. This rebuilds `connectionBuilder`, causing `SpacetimeDBProvider` to recreate and reconnect its connection with the new session query param so the recovered token is picked up immediately.
 
-## useSpacetimeDB Hook
-
-Access the connection from any component:
+## useSpacetimeDB
 
 ```typescript
-import { useSpacetimeDB } from 'spacetimedb/react';
+const connection = useSpacetimeDB();
+const conn = connection.getConnection();
 
-function MyComponent() {
-  const connection = useSpacetimeDB();
-  const conn = connection.getConnection();
+if (!conn) return <div>Connecting…</div>;
 
-  if (!conn) {
-    return <div>Connecting...</div>;
-  }
-
-  // Use conn to call reducers
-  async function handleClick() {
-    await conn.reducers.myReducer({ param: 'value' });
-  }
-
-  return <button onClick={handleClick}>Do something</button>;
-}
+await conn.reducers.createRoom({ code: 'AB12', seed: 12345n });
 ```
 
-**Key checks:**
-- `getConnection()` returns the connection or null if not yet established
-- Always check for null before using the connection
-- The connection is stable across renders (no need for useCallback deps)
+Useful fields: `connection.identity`, `connection.token`, `connection.isActive`, `connection.connectionError`.
 
-## Identity and Authentication
-
-When a user logs in, their SpacetimeDB `identity` is stored in the token. Access the current identity:
-
-```typescript
-function MyProfile() {
-  const connection = useSpacetimeDB();
-  const conn = connection.getConnection();
-
-  // Get the current identity
-  const identity = conn?.identity;
-
-  if (!identity) {
-    return <div>Not logged in</div>;
-  }
-
-  // Identity is an object with methods
-  const identityHex = identity.toHexString();  // "abcd1234..."
-
-  return <div>Logged in as {identityHex}</div>;
-}
-```
-
-Use identity to find the current player:
+## useTable
 
 ```typescript
 import { useTable } from 'spacetimedb/react';
 import { tables } from '@/features/game/spacetime';
 
-function PlayerStats() {
-  const connection = useSpacetimeDB();
-  const [players] = useTable(tables.player);
-  const identity = connection.getConnection()?.identity;
-
-  if (!identity) return <div>Not logged in</div>;
-
-  const me = players.find(p =>
-    p.identity.toHexString() === identity.toHexString()
-  );
-
-  if (!me) return <div>Loading...</div>;
-
-  return (
-    <div>
-      <h1>{me.name}</h1>
-      <p>Score: {me.score}</p>
-      <p>XP: {me.xp}</p>
-    </div>
-  );
-}
+const [players, isReady] = useTable(tables.player);
+const [rooms] = useTable(tables.room);
 ```
 
-## useTable Hook
+Returns `[rows, isReady]`. `isReady` means the subscription has applied initial data — not a generic network spinner.
 
-Subscribe to a table and receive real-time updates:
+Filtered queries:
 
 ```typescript
-import { useTable } from 'spacetimedb/react';
-import { tables } from '@/features/game/spacetime';
-
-function RoomList() {
-  const [rooms, isReady] = useTable(tables.room);
-
-  if (!isReady) return <div>Loading rooms...</div>;
-
-  return (
-    <ul>
-      {rooms.map(room => (
-        <li key={Number(room.id)}>
-          {room.code} — {room.status}
-        </li>
-      ))}
-    </ul>
-  );
-}
+const waitingRooms = tables.room.where((row) => row.status.eq('waiting'));
+const [rooms, ready] = useTable(waitingRooms);
 ```
 
-**Returns:**
-- `[rows, isReady]` tuple
-- `rows` is an array of rows from the table query
-- `isReady` is true after the subscription has applied
-- Re-renders automatically when data changes
+## Domain hooks
 
-`useTable` can receive a filtered query builder, not just a whole table:
+Business logic lives in `src/features/lobby/spacetime/` and `src/features/game/spacetime/`:
+
+| Hook | Role |
+| --- | --- |
+| `useLobbyRooms` | Room list, create/join/quick join |
+| `useRoomSession` | Members, chat, ready/mobile actions for one room |
+| `useMatchmakingQueue` | Queue join/leave |
+| `useLobbyFriends` / `useLobbyChat` | Social features |
+| `useCurrentPlayer` / `useCurrentRoom` | Session context for home/battle routing |
+| `useBattleEventSync` | Multiplayer round event sync |
+
+Example — `useLobbyRooms` derives member count from `room_member` and calls reducers with current signatures:
 
 ```typescript
-const roomQuery = tables.room.where((row) => row.code.eq('ABC12'));
-const [rooms, isReady] = useTable(roomQuery);
+await conn.reducers.createRoom({ code, seed: generateSeed() });
+await conn.reducers.joinRoomByCode({ code: code.trim().toUpperCase() });
 ```
 
-## Composing Hooks
+## Error handling
 
-Combine multiple `useTable` calls to fetch related data:
-
-```typescript
-function RoomDetails({ roomId }: { roomId: bigint }) {
-  const [rooms] = useTable(tables.room);
-  const [members] = useTable(tables.roomMember);
-  const [players] = useTable(tables.player);
-
-  const room = rooms.find(r => r.id === roomId);
-  const roomMembers = members.filter(m => m.roomId === roomId);
-  
-  // Resolve names
-  const memberNames = roomMembers.map(m => {
-    const player = players.find(p =>
-      p.identity.toHexString() === m.identity.toHexString()
-    );
-    return player?.name ?? 'Unknown';
-  });
-
-  return (
-    <div>
-      <h2>{room?.code}</h2>
-      <ul>
-        {memberNames.map(name => <li key={name}>{name}</li>)}
-      </ul>
-    </div>
-  );
-}
-```
-
-## Custom Domain Hooks
-
-Extract business logic into reusable hooks. Example: `useLobbyRooms`
+Reducers throw `SenderError` messages to the client:
 
 ```typescript
-// src/features/lobby/spacetime/use-lobby-rooms.ts
-import { useCallback, useMemo } from 'react';
-import { useSpacetimeDB, useTable } from 'spacetimedb/react';
-import { tables } from '@/features/game/spacetime';
-
-export interface LobbyRoomView {
-  id: bigint;
-  code: string;
-  status: string;
-  hostName: string;
-  memberCount: number;
-  capacity: number;
-}
-
-export function useLobbyRooms() {
-  const connection = useSpacetimeDB();
-  const [dbRooms, roomsReady] = useTable(tables.room);
-  const [players] = useTable(tables.player);
-
-  // Filter non-ended rooms
-  const activeRooms = useMemo(() => 
-    dbRooms.filter(r => r.status !== 'ended'),
-    [dbRooms]
-  );
-
-  // Transform to view model
-  const rooms: LobbyRoomView[] = useMemo(() =>
-    activeRooms.map(room => {
-      const host = players.find(p =>
-        p.identity.toHexString() === room.hostIdentity.toHexString()
-      );
-      return {
-        id: room.id,
-        code: room.code,
-        status: room.status,
-        hostName: host?.name ?? 'Unknown',
-        memberCount: room.memberCount,
-        capacity: room.capacity,
-      };
-    }),
-    [activeRooms, players]
-  );
-
-  const createRoom = useCallback(async (code?: string) => {
-    const conn = connection.getConnection();
-    if (!conn) throw new Error('not connected');
-
-    const roomCode = code || generateRoomCode();
-    await conn.reducers.createRoom({ code: roomCode });
-  }, [connection]);
-
-  const joinRoomByCode = useCallback(async (code: string) => {
-    const conn = connection.getConnection();
-    if (!conn) throw new Error('not connected');
-
-    await conn.reducers.joinRoomByCode({ code });
-  }, [connection]);
-
-  return {
-    rooms,
-    createRoom,
-    joinRoomByCode,
-    isReady: roomsReady,
-  };
-}
-
-function generateRoomCode(): string {
-  // Generate random 5-char code
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // No 0, O, 1, I
-  let code = '';
-  for (let i = 0; i < 5; i++) {
-    code += alphabet[Math.floor(Math.random() * alphabet.length)];
-  }
-  return code;
-}
-```
-
-**Benefits:**
-- Encapsulates data fetching and filtering
-- Returns view models instead of raw DB rows
-- Provides action methods (createRoom, joinRoomByCode)
-- Simplifies component logic
-
-## Error Handling
-
-Wrap reducer calls in try-catch:
-
-```typescript
-async function handleJoinRoom(code: string) {
-  try {
-    await useLobbyRooms().joinRoomByCode(code);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    showError(message);  // "room not found", "room is full", etc.
-  }
-}
-```
-
-## Loading States
-
-Use the `isReady` flag to show initial loading UI. This is "subscription applied" readiness, not a generic network loading state:
-
-```typescript
-function RoomsList() {
-  const { rooms, isReady } = useLobbyRooms();
-
-  if (!isReady) {
-    return <div>Loading rooms...</div>;
-  }
-
-  if (rooms.length === 0) {
-    return <div>No rooms available. Create one!</div>;
-  }
-
-  return (
-    <ul>
-      {rooms.map(room => (
-        <li key={Number(room.id)}>{room.code}</li>
-      ))}
-    </ul>
-  );
-}
-```
-
-## Performance Optimization
-
-### Memoize Derived Data
-
-```typescript
-// ❌ SLOW — new object every render
-const filtered = rooms.filter(r => r.status === 'waiting');
-
-// ✅ FAST — memoized
-const filtered = useMemo(() =>
-  rooms.filter(r => r.status === 'waiting'),
-  [rooms]
-);
-```
-
-### Avoid Unnecessary Re-renders
-
-Use `useCallback` for reducer calls to avoid stale closures:
-
-```typescript
-// ❌ BAD — new function every render, can cause stale state
-const join = async (code) => {
+try {
   await conn.reducers.joinRoomByCode({ code });
-};
-
-// ✅ GOOD — stable reference
-const join = useCallback(async (code) => {
-  await conn.reducers.joinRoomByCode({ code });
-}, [conn]);
-```
-
-### Extract Complex Logic
-
-Move filtering and transformation to custom hooks:
-
-```typescript
-// ❌ BAD — multiple hooks and filtering in component
-function Component() {
-  const [rooms] = useTable(tables.room);
-  const [players] = useTable(tables.player);
-  const filtered = rooms.filter(...);
-  const transformed = filtered.map(...);
-  // Complex rendering logic
-}
-
-// ✅ GOOD — encapsulated in hook
-function Component() {
-  const { rooms } = useLobbyRooms();  // All logic is in the hook
-  // Simple rendering
+} catch (err) {
+  showError(err instanceof Error ? err.message : String(err));
 }
 ```
 
-## TypeScript
-
-Generated module bindings provide full TypeScript support:
+## Config
 
 ```typescript
-import { tables, type Player, type Room } from '@/features/game/spacetime/module_bindings';
-
-function PlayerCard(player: Player) {
-  // Type safe — player.name is string, player.score is bigint
-  return (
-    <div>
-      <h3>{player.name}</h3>
-      <p>Score: {player.score.toString()}</p>
-    </div>
-  );
-}
+// src/features/game/spacetime/config.ts
+export const SPACETIME_URI =
+  process.env.NEXT_PUBLIC_SPACETIMEDB_URI ?? 'ws://127.0.0.1:3002';
+export const SPACETIME_MODULE = 'gunbound';
 ```
 
-Use type imports to avoid shipping type definitions:
+## Generated bindings
 
-```typescript
-import { type Player, type Room } from '@/features/game/spacetime/module_bindings';
-
-function myFunc(p: Player) { ... }
-```
-
-## Debugging
-
-### Log Connection State
-
-```typescript
-function ConnectionDebug() {
-  const connection = useSpacetimeDB();
-  const conn = connection.getConnection();
-
-  useEffect(() => {
-    console.log('Connected:', !!conn);
-    console.log('Identity:', conn?.identity.toHexString());
-  }, [conn]);
-
-  return null;
-}
-```
-
-### Monitor Table Updates
-
-```typescript
-function DebugRooms() {
-  const [rooms] = useTable(tables.room);
-
-  useEffect(() => {
-    console.log('Rooms updated:', rooms);
-  }, [rooms]);
-
-  return null;
-}
-```
-
-### Check localStorage Token
-
-```typescript
-console.log(localStorage.getItem('gunbound:spacetime-token'));
-```
-
-If empty, the user is not logged in.
-
-## Common Patterns
-
-### Poll External Data
-
-If you need to fetch data from an external API:
-
-```typescript
-function ExternalData() {
-  const [data, setData] = useState(null);
-
-  useEffect(() => {
-    fetch('/api/some-endpoint')
-      .then(r => r.json())
-      .then(setData);
-  }, []);
-
-  return <div>{data}</div>;
-}
-```
-
-SpacetimeDB doesn't directly support external HTTP calls, so use `fetch` or `axios` for external APIs.
-
-### Real-time Notifications
-
-Use the `onApplied` callback to detect when subscription is ready:
-
-```typescript
-const builder = useMemo(() => {
-  return DbConnection.builder()
-    .withUri(SPACETIME_URI)
-    .withDatabaseName(SPACETIME_MODULE)
-    .withToken(token || undefined)
-    .onConnect((conn) => {
-      conn.subscriptionBuilder()
-        .onApplied(() => {
-          console.log('Subscription ready — showing UI');
-        })
-        .onError((err) => {
-          console.error('Subscription failed:', err);
-        })
-        .subscribe(["SELECT * FROM room WHERE status != 'ended'"]);
-    });
-}, []);
-```
-
-This fires once when the initial data is loaded.
+Import tables and types from `@/features/game/spacetime` or `@/features/game/spacetime/module_bindings`. Regenerate after schema changes — never edit generated files by hand.

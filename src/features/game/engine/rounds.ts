@@ -1,4 +1,6 @@
+import { getWeatherDetail, getWeatherLabel, rollWeather } from "@/features/game/engine/weather";
 import { worldWidth } from "@/features/game/constants/world";
+import { selectNextTurn, type TurnDelayQueue } from "@/features/game/engine/delay";
 import { randomInt } from "@/features/game/engine/random";
 import { getWindLabel, rollWind } from "@/features/game/engine/wind";
 import { createBonusBox } from "@/features/game/factories/create-bonus-box";
@@ -8,12 +10,14 @@ import type { BonusBox, Mobile, Player, TerrainState } from "@/features/game/typ
 import type { DamagePopup } from "@/features/game/types/effects";
 import type { MatchEvent } from "@/features/game/types/events";
 import type { MatchConfig } from "@/features/game/types/state";
-import type { BonusType, PlayerId } from "@/features/game/types/shared";
+import type { BonusType, PlayerId, WeatherState } from "@/features/game/types/shared";
 
 export type TurnAdvanceResult = {
   players: [Player, Player];
   turn: PlayerId;
+  turnDelays: TurnDelayQueue;
   wind: { x: number; y: number };
+  weather: WeatherState;
   turnCount: number;
   bonusBoxes: BonusBox[];
   message: string;
@@ -118,14 +122,17 @@ export function advanceRoundTurn(
   randomState: number,
   turnCount: number,
   suddenDeathTurn: number,
-  bonusBoxes: BonusBox[]
+  bonusBoxes: BonusBox[],
+  turnDelays: TurnDelayQueue
 ): TurnAdvanceResult {
-  const nextTurn = getNextTurn(turn);
+  const turnSelection = selectNextTurn(turnDelays, turn, players);
+  const nextTurn = turnSelection.turn;
   const nextTurnCount = turnCount + 1;
   const windRoll = rollWind(randomState);
+  const weatherRoll = rollWeather(windRoll.state, terrain.width, terrain.height);
   const nextPlayers = clonePlayers(players);
   const suddenDeathState = getSuddenDeathState(nextTurnCount, suddenDeathTurn);
-  const bonusRoll = maybeSpawnBonusBoxes(windRoll.state, bonusBoxes, nextTurnCount, terrain);
+  const bonusRoll = maybeSpawnBonusBoxes(weatherRoll.state, bonusBoxes, nextTurnCount, terrain);
   let history = appendMatchEventEntries([], [
     {
       round,
@@ -137,6 +144,7 @@ export function advanceRoundTurn(
   let damagePopups: DamagePopup[] = [];
 
   nextPlayers[nextTurn - 1].mobile.weapon = "primary";
+  facePlayersTowardsEachOther(nextPlayers);
 
   if (suddenDeathState.started) {
     history = appendMatchEventEntries(history, [
@@ -155,16 +163,34 @@ export function advanceRoundTurn(
     damagePopups = suddenDeathResult.damagePopups;
   }
 
+  if (weatherRoll.weather.kind === "moon") {
+    const currentMobile = nextPlayers[nextTurn - 1].mobile;
+    const healed = Math.min(currentMobile.maxHp, currentMobile.hp + weatherRoll.weather.heal) - currentMobile.hp;
+    if (healed > 0) {
+      currentMobile.hp += healed;
+      history = appendMatchEventEntries(history, [
+        {
+          round,
+          turn: nextTurn,
+          kind: "bonus",
+          text: nextPlayers[nextTurn - 1].name + " recovered " + String(healed) + " HP under Moon."
+        }
+      ]);
+    }
+  }
+
   const winner = getRoundWinner(nextPlayers);
   const message =
     winner === null
-      ? nextPlayers[nextTurn - 1].name + " turn. Wind " + getWindLabel(windRoll.wind) + "."
+      ? nextPlayers[nextTurn - 1].name + " turn. Wind " + getWindLabel(windRoll.wind) + ". " + getWeatherLabel(weatherRoll.weather) + ": " + getWeatherDetail(weatherRoll.weather) + "."
       : createWinnerMessage(nextPlayers, winner);
 
   return {
     players: nextPlayers,
     turn: nextTurn,
+    turnDelays: turnSelection.queue,
     wind: windRoll.wind,
+    weather: weatherRoll.weather,
     turnCount: nextTurnCount,
     bonusBoxes: bonusRoll.bonusBoxes,
     message,
@@ -283,14 +309,6 @@ function createWinnerMessage(players: [Player, Player], winner: PlayerId): strin
   return players[winner - 1].name + " wins.";
 }
 
-function getNextTurn(turn: PlayerId): PlayerId {
-  if (turn === 1) {
-    return 2;
-  }
-
-  return 1;
-}
-
 function clonePlayers(players: [Player, Player]): [Player, Player] {
   return [
     {
@@ -330,9 +348,16 @@ function cloneMobile(mobile: Mobile): Mobile {
     moveRange: mobile.moveRange,
     shotDelay: mobile.shotDelay,
     specialCharges: mobile.specialCharges,
+    lastShotAngle: mobile.lastShotAngle,
+    lastShotTechnique: mobile.lastShotTechnique,
     doubleDamageTurns: mobile.doubleDamageTurns,
     verticalVelocity: mobile.verticalVelocity
   };
+}
+
+function facePlayersTowardsEachOther(players: [Player, Player]): void {
+  players[0].mobile.facing = players[0].mobile.position.x <= players[1].mobile.position.x ? 1 : -1;
+  players[1].mobile.facing = players[1].mobile.position.x <= players[0].mobile.position.x ? 1 : -1;
 }
 
 function createDamagePopup(player: Player, value: number): DamagePopup {

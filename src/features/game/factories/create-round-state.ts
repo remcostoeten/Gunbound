@@ -1,8 +1,12 @@
 import { defaultSuddenDeathTurn, getPhaseDuration } from "@/features/game/constants/gameplay";
 import { worldHeight, worldWidth } from "@/features/game/constants/world";
+import { createBattleItemInventories } from "@/features/game/engine/battle-items";
+import { createInitialTurnDelays } from "@/features/game/engine/delay";
 import { normalizeSeed } from "@/features/game/engine/random";
+import { defaultShotMode } from "@/features/game/engine/shot-techniques";
 import { createTerrain } from "@/features/game/engine/terrain";
-import { rollWind } from "@/features/game/engine/wind";
+import { getWeatherDetail, getWeatherLabel, rollWeather } from "@/features/game/engine/weather";
+import { getWindLabel, rollWind } from "@/features/game/engine/wind";
 import { appendMatchEventEntries } from "@/features/game/factories/create-match-event";
 import { createPlayers, createPlayersForRound } from "@/features/game/factories/create-player";
 import { createTurnAnnouncement } from "@/features/game/factories/create-turn-announcement";
@@ -26,12 +30,15 @@ export function createStartedMatchState(config: MatchConfig): StartedMatchState 
   const terrainRoll = createTerrain(seed, worldWidth, worldHeight, config.mapType);
   const players = createPlayers(config, terrainRoll.terrain);
   const windRoll = rollWind(terrainRoll.state);
+  const weatherRoll = rollWeather(windRoll.state, terrainRoll.terrain.width, terrainRoll.terrain.height);
 
   return {
     scene: "playing",
     phase: "move",
     turn: 1,
+    shotMode: defaultShotMode,
     wind: windRoll.wind,
+    weather: weatherRoll.weather,
     players,
     tick: 0,
     seed,
@@ -44,16 +51,23 @@ export function createStartedMatchState(config: MatchConfig): StartedMatchState 
     suddenDeathActive: false,
     power: 0,
     charging: false,
+    chargeAscending: true,
     turnCount: 1,
+    turnElapsed: 0,
+    turnDelays: createInitialTurnDelays(),
+    turnMoveRemaining: players[0].mobile.moveRange,
+    battleItemInventories: createBattleItemInventories(),
+    selectedBattleItems: [null, null],
     phaseTimer: getPhaseDuration("move", config.turnDurationMode),
     phaseDuration: getPhaseDuration("move", config.turnDurationMode),
     bonusBoxes: [],
     explosionVisual: null,
+    explosionVisuals: [],
     damagePopups: [],
     turnAnnouncement: createTurnAnnouncement(1, players[0].name),
     history: createRoundHistory([], players, 1, 1, "Round 1 started.", players[0].name + " turn."),
-    message: "Player 1 turn. Move or fire.",
-    randomState: windRoll.state,
+    message: players[0].name + " turn. Wind " + getWindLabel(windRoll.wind) + ". " + getWeatherLabel(weatherRoll.weather) + ": " + getWeatherDetail(weatherRoll.weather) + ".",
+    randomState: weatherRoll.state,
     resolveTimer: 0
   };
 }
@@ -68,14 +82,17 @@ export function createNextRoundState(
   const terrainRoll = createTerrain(seed, worldWidth, worldHeight, setup.mapType);
   const players = createPlayersForRound(setup, terrainRoll.terrain, previousPlayers);
   const windRoll = rollWind(terrainRoll.state);
+  const weatherRoll = rollWeather(windRoll.state, terrainRoll.terrain.width, terrainRoll.terrain.height);
   const starter: PlayerId = round % 2 === 0 ? 2 : 1;
-  const message = players[starter - 1].name + " starts round " + String(round) + ".";
+  const message = players[starter - 1].name + " starts round " + String(round) + ". Wind " + getWindLabel(windRoll.wind) + ". " + getWeatherLabel(weatherRoll.weather) + ": " + getWeatherDetail(weatherRoll.weather) + ".";
 
   return {
     scene: "playing",
     phase: "move",
     turn: starter,
+    shotMode: defaultShotMode,
     wind: windRoll.wind,
+    weather: weatherRoll.weather,
     players,
     seed,
     terrain: terrainRoll.terrain,
@@ -85,11 +102,18 @@ export function createNextRoundState(
     suddenDeathActive: false,
     power: 0,
     charging: false,
+    chargeAscending: true,
     turnCount: 1,
+    turnElapsed: 0,
+    turnDelays: createInitialTurnDelays(),
+    turnMoveRemaining: players[starter - 1].mobile.moveRange,
+    battleItemInventories: createBattleItemInventories(),
+    selectedBattleItems: [null, null],
     phaseTimer: getPhaseDuration("move", setup.turnDurationMode),
     phaseDuration: getPhaseDuration("move", setup.turnDurationMode),
     bonusBoxes: [],
     explosionVisual: null,
+    explosionVisuals: [],
     damagePopups: [],
     turnAnnouncement: createTurnAnnouncement(starter, "Round " + String(round)),
     history: createRoundHistory(
@@ -101,7 +125,7 @@ export function createNextRoundState(
       players[starter - 1].name + " opens the round."
     ),
     message,
-    randomState: windRoll.state,
+    randomState: weatherRoll.state,
     resolveTimer: 0
   };
 }

@@ -7,11 +7,16 @@ import {
   getBattleImmersive,
   getLobbyEmptyStateAnimated,
   setBattleImmersive,
+  setBrowserFullscreen,
   setLobbyEmptyStateAnimated,
   subscribeDisplaySettings,
 } from "@/lib/display-settings";
 
 type Toggle = { key: string; label: string; on: boolean };
+
+function isDocumentFullscreen(): boolean {
+  return typeof document !== "undefined" && document.fullscreenElement !== null;
+}
 
 interface Props {
   theme: AuthThemeId;
@@ -23,6 +28,7 @@ export function AuthSettingsMenu({ theme, onThemeChange }: Props) {
   const [musicVolume, setMusicVolume] = useState(() => getAudioVolume("music"));
   const [sfxVolume, setSfxVolume] = useState(() => getAudioVolume("sfx"));
   const [battleImmersive, setBattleImmersiveState] = useState(() => getBattleImmersive());
+  const [fullscreen, setFullscreenState] = useState(() => isDocumentFullscreen());
   const [emptyStateAnimated, setEmptyStateAnimatedState] = useState(() => getLobbyEmptyStateAnimated());
   const [toggles, setToggles] = useState<Toggle[]>([
     { key: "lowfx", label: "LOW EFFECTS", on: false },
@@ -50,6 +56,14 @@ export function AuthSettingsMenu({ theme, onThemeChange }: Props) {
       setBattleImmersiveState(getBattleImmersive());
       setEmptyStateAnimatedState(getLobbyEmptyStateAnimated());
     });
+  }, []);
+
+  useEffect(() => {
+    function onFullscreenChange(): void {
+      setFullscreenState(isDocumentFullscreen());
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
 
   const flip = (k: string) =>
@@ -88,40 +102,56 @@ export function AuthSettingsMenu({ theme, onThemeChange }: Props) {
               />
             </li>
           </ul>
-          <ul className="gba-settings-list">
-            <li>
-              <button
-                type="button"
-                className="gba-settings-row"
-                onClick={function handleImmersiveToggle(): void {
-                  setBattleImmersive(!battleImmersive);
-                }}
-                role="menuitemcheckbox"
-                aria-checked={battleImmersive}
-              >
-                <span>IMMERSIVE</span>
-                <span className={`gba-pill ${battleImmersive ? "is-on" : ""}`}>
-                  {battleImmersive ? "ON" : "OFF"}
-                </span>
-              </button>
-            </li>
-            <li>
-              <button
-                type="button"
-                className="gba-settings-row"
-                onClick={function handleEmptyMotionToggle(): void {
-                  setLobbyEmptyStateAnimated(!emptyStateAnimated);
-                }}
-                role="menuitemcheckbox"
-                aria-checked={emptyStateAnimated}
-              >
-                <span>EMPTY MOTION</span>
-                <span className={`gba-pill ${emptyStateAnimated ? "is-on" : ""}`}>
-                  {emptyStateAnimated ? "ON" : "OFF"}
-                </span>
-              </button>
-            </li>
-          </ul>
+           <ul className="gba-settings-list">
+             <li>
+               <button
+                 type="button"
+                 className="gba-settings-row"
+                 onClick={function handleImmersiveToggle(): void {
+                   setBattleImmersive(!battleImmersive);
+                 }}
+                 role="menuitemcheckbox"
+                 aria-checked={battleImmersive}
+               >
+                 <span>IMMERSIVE</span>
+                 <span className={`gba-pill ${battleImmersive ? "is-on" : ""}`}>
+                   {battleImmersive ? "ON" : "OFF"}
+                 </span>
+               </button>
+             </li>
+             <li>
+               <button
+                 type="button"
+                 className="gba-settings-row"
+                 onClick={function handleFullscreenToggle(): void {
+                   setBrowserFullscreen(!fullscreen);
+                 }}
+                 role="menuitemcheckbox"
+                 aria-checked={fullscreen}
+               >
+                 <span>FULLSCREEN</span>
+                 <span className={`gba-pill ${fullscreen ? "is-on" : ""}`}>
+                   {fullscreen ? "ON" : "OFF"}
+                 </span>
+               </button>
+             </li>
+             <li>
+               <button
+                 type="button"
+                 className="gba-settings-row"
+                 onClick={function handleEmptyMotionToggle(): void {
+                   setLobbyEmptyStateAnimated(!emptyStateAnimated);
+                 }}
+                 role="menuitemcheckbox"
+                 aria-checked={emptyStateAnimated}
+               >
+                 <span>EMPTY MOTION</span>
+                 <span className={`gba-pill ${emptyStateAnimated ? "is-on" : ""}`}>
+                   {emptyStateAnimated ? "ON" : "OFF"}
+                 </span>
+               </button>
+             </li>
+           </ul>
           <ul className="gba-settings-list">
             {toggles.map((t) => (
               <li key={t.key}>

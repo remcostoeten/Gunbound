@@ -2,14 +2,19 @@
 
 import { useEffect, useRef } from "react";
 import { getBonusIconPath } from "@/features/game/constants/weapon-icons";
+import { isTrueAngle } from "@/features/game/engine/aiming";
 import { createCameraRig, getCameraFrame, stepCameraRig } from "@/features/game/engine/camera";
 import { createVisualEffectsState, stepVisualEffectsState } from "@/features/game/engine/effects";
 import { createMapDecor } from "@/features/game/engine/map-decor";
 import { createProjectileRenderStyle, getProjectileImpactStyle, getProjectileTrailStyle } from "@/features/game/engine/projectile-presentation";
+import { getShotTechniqueLabel } from "@/features/game/engine/shot-techniques";
+import { clamp } from "@/features/game/engine/terrain";
 import { getSkyPalette, getTerrainPalette } from "@/features/game/engine/terrain-theme";
+import { applyWeatherToFlightState } from "@/features/game/engine/weather";
 import { getMobileSpriteFrame, getMobileSpriteSource, shouldFlipMobileSprite } from "@/features/game/engine/mobile-sprites";
-import { getLaunchRadians, getMuzzlePosition } from "@/features/game/engine/physics";
+import { getLaunchRadians, getMuzzlePosition, windForceCoefficient } from "@/features/game/engine/physics";
 import { getMobileRiderMount, getMobileRiderSpriteSource } from "@/features/game/engine/rider-sprites";
+import { createWeaponProfile } from "@/features/game/engine/weapons";
 import { useGameLoop } from "@/features/game/hooks/use-game-loop";
 import { useInput } from "@/features/game/hooks/use-input";
 import { useGameStore } from "@/features/game/store/game-store";
@@ -33,7 +38,8 @@ import type {
   WindLeaf
 } from "@/features/game/types/effects";
 import type { CameraFrame, MapDecorPlan, MapDecorPrimitive } from "@/features/game/types/presentation";
-import type { BonusType, MobileType, PlayerAccent, TerrainTheme, Vec2 } from "@/features/game/types/shared";
+import type { BonusType, MobileType, PlayerAccent, PlayerId, TerrainTheme, Vec2, WeatherState, WeaponType } from "@/features/game/types/shared";
+import type { InputState } from "@/features/game/types/state";
 
 type SpriteCache = {
   armor: HTMLImageElement | null;
@@ -85,6 +91,18 @@ const explosionSpriteSpecs: Record<ExplosionSpriteSheet, ExplosionSpriteSpec> = 
     width: 1921,
     height: 124
   },
+  "dragon-fire": {
+    path: "/explodes/generated/dragon-fire.svg",
+    frames: 16,
+    width: 2048,
+    height: 128
+  },
+  "frog-bubble": {
+    path: "/explodes/generated/frog-bubble.svg",
+    frames: 16,
+    width: 2048,
+    height: 128
+  },
   gum: {
     path: "/explodes/gum1.png",
     frames: 14,
@@ -103,10 +121,46 @@ const explosionSpriteSpecs: Record<ExplosionSpriteSheet, ExplosionSpriteSpec> = 
     width: 1253,
     height: 122
   },
+  "knight-blade": {
+    path: "/explodes/generated/knight-blade.svg",
+    frames: 16,
+    width: 2048,
+    height: 128
+  },
+  "mage-rune": {
+    path: "/explodes/generated/mage-rune.svg",
+    frames: 16,
+    width: 2048,
+    height: 128
+  },
   nak: {
     path: "/explodes/nak.png",
     frames: 9,
     width: 1094,
+    height: 128
+  },
+  "sate-sonar": {
+    path: "/explodes/generated/sate-sonar.svg",
+    frames: 16,
+    width: 2048,
+    height: 128
+  },
+  "snow-frost": {
+    path: "/explodes/generated/snow-frost.svg",
+    frames: 16,
+    width: 2048,
+    height: 128
+  },
+  "trico-horn": {
+    path: "/explodes/generated/trico-horn.svg",
+    frames: 16,
+    width: 2048,
+    height: 128
+  },
+  "turtle-shell": {
+    path: "/explodes/generated/turtle-shell.svg",
+    frames: 16,
+    width: 2048,
     height: 128
   }
 };
@@ -115,6 +169,7 @@ export function GameCanvas(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const previousFrameTimeRef = useRef(0);
   const visualTimeRef = useRef(0);
+  const reducedMotionRef = useRef(false);
   const cameraRigRef = useRef(createCameraRig());
   const visualEffectsRef = useRef<VisualEffectsState>(createVisualEffectsState());
   const mapDecorRef = useRef<MapDecorCache>({
@@ -137,12 +192,16 @@ export function GameCanvas(): React.JSX.Element {
   });
   const explosionSpriteCacheRef = useRef<ExplosionSpriteCache>(createExplosionSpriteCache());
   const bonusIconCacheRef = useRef<BonusIconCache>(createBonusIconCache());
+  const liveShotRef = useRef<GhostShot & { owner: PlayerId } | null>(null);
+  const lastShotRef = useRef<[GhostShot | null, GhostShot | null]>([null, null]);
+  const ghostRoundRef = useRef<number>(0);
 
   useInput();
   useGameLoop(drawFrame);
   useEffect(setupCanvas, []);
+  useEffect(syncReducedMotionPreference, []);
 
-  return <canvas ref={canvasRef} className="game-canvas" aria-label="Gunbound game canvas" />;
+  return <canvas ref={canvasRef} className="game-canvas" role="img" aria-label="Gunbound game canvas" />;
 
   function setupCanvas(): void {
     const canvas = canvasRef.current;
@@ -164,11 +223,13 @@ export function GameCanvas(): React.JSX.Element {
     const delta = advanceVisualClock();
 
     const state = useGameStore.getState();
+    captureGhostShot(state, liveShotRef, lastShotRef, ghostRoundRef);
     visualEffectsRef.current = stepVisualEffectsState(visualEffectsRef.current, {
       projectile: state.projectile,
       players: state.players,
       turn: state.turn,
       explosionVisual: state.explosionVisual,
+      explosionVisuals: state.explosionVisuals,
       wind: state.wind,
       scene: state.scene,
       charging: state.charging,
@@ -176,7 +237,8 @@ export function GameCanvas(): React.JSX.Element {
       damagePopups: state.damagePopups,
       terrain: state.terrain,
       dt: delta,
-      visualTime: visualTimeRef.current
+      visualTime: visualTimeRef.current,
+      reducedMotion: reducedMotionRef.current
     });
     const visualEffects = visualEffectsRef.current;
     const mapDecor = getMapDecorPlan(mapDecorRef.current, state.terrain);
@@ -189,12 +251,13 @@ export function GameCanvas(): React.JSX.Element {
       explosionVisual: state.explosionVisual,
       dt: delta
     });
-    const cameraFrame = getCameraFrame(cameraRigRef.current, visualTimeRef.current, state.explosionVisual, visualEffects.fireShake);
+    const cameraFrame = getCameraFrame(cameraRigRef.current, visualTimeRef.current, reducedMotionRef.current ? null : state.explosionVisual, reducedMotionRef.current ? 0 : visualEffects.fireShake);
 
     context.save();
     applyCameraFrame(context, cameraFrame);
 
     drawBackground(context, state.terrain?.theme || "meadow", visualTimeRef.current, mapDecor);
+    drawWeatherOverlay(context, state.weather, visualTimeRef.current);
 
     if (state.terrain !== null) {
       drawTerrain(context, state.terrain);
@@ -208,12 +271,16 @@ export function GameCanvas(): React.JSX.Element {
     drawBonusBoxes(context, state.bonusBoxes, bonusIconCacheRef.current);
 
     if (state.scene === "playing" && state.projectile === null && state.terrain !== null) {
-      drawAimGuide(context, state.players[state.turn - 1], state.wind, state.power, state.charging, state.terrain);
+      const ghost = lastShotRef.current[state.turn - 1];
+      if (ghost !== null) {
+        drawGhostShot(context, ghost);
+      }
+      drawAimGuide(context, state.players[state.turn - 1], state.wind, state.weather, state.power, state.charging, state.terrain);
     }
 
     drawProjectileTrail(context, visualEffects.trail, visualEffects.lastMobileType, visualEffects.lastWeapon);
     drawWindLeaves(context, visualEffects.leaves);
-    drawPlayers(context, state.players, state.turn, visualTimeRef.current, spriteCacheRef.current);
+    drawPlayers(context, state.players, state.turn, state.input, visualTimeRef.current, spriteCacheRef.current);
 
     if (state.projectile !== null) {
       drawProjectile(context, state.projectile);
@@ -226,7 +293,7 @@ export function GameCanvas(): React.JSX.Element {
     drawSmokePuffs(context, visualEffects.smokePuffs);
     drawBounceSparks(context, visualEffects.bounceSparks);
     drawMuzzleFlash(context, visualEffects.muzzleFlash);
-    drawExplosionVisual(context, state.explosionVisual);
+    drawExplosionVisuals(context, state.explosionVisuals.length > 0 ? state.explosionVisuals : state.explosionVisual === null ? [] : [state.explosionVisual]);
     drawExplosionSprites(context, visualEffects.explosionSprites, explosionSpriteCacheRef.current);
     drawDamagePopups(context, state.damagePopups);
     drawHitFlash(context, visualEffects.hitFlash);
@@ -243,6 +310,16 @@ export function GameCanvas(): React.JSX.Element {
     previousFrameTimeRef.current = now;
     visualTimeRef.current += delta;
     return delta;
+  }
+
+  function syncReducedMotionPreference(): () => void {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = (): void => {
+      reducedMotionRef.current = media.matches;
+    };
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
   }
 }
 
@@ -282,12 +359,23 @@ function drawBackground(context: CanvasRenderingContext2D, theme: TerrainTheme, 
   context.fillStyle = gradient;
   context.fillRect(0, 0, worldWidth, worldHeight);
 
+  drawSkyGlow(context, theme);
+  if (theme === "midnight") {
+    drawStars(context, palette.starColor, visualTime);
+  }
   drawSun(context, theme);
-  drawCloud(context, 175 + Math.sin(visualTime * 0.16) * 12, 135, 1.18, palette.cloudAlpha);
-  drawCloud(context, 418 + Math.sin(visualTime * 0.14 + 1.3) * 10, 110, 0.9, palette.cloudAlpha * 0.84);
-  drawCloud(context, 985 + Math.sin(visualTime * 0.11 + 2.2) * 14, 100, 1.04, palette.cloudAlpha * 0.9);
-  drawCloud(context, 1120 + Math.sin(visualTime * 0.19 + 0.7) * 8, 172, 0.82, palette.cloudAlpha * 0.72);
+  // Distant cloud layer: smaller, fainter and slower for parallax depth.
+  drawCloud(context, palette, 260 + Math.sin(visualTime * 0.07 + 0.4) * 20, 64, 0.62, palette.cloudAlpha * 0.4);
+  drawCloud(context, palette, 620 + Math.sin(visualTime * 0.06 + 2.7) * 24, 52, 0.7, palette.cloudAlpha * 0.36);
+  drawCloud(context, palette, 996 + Math.sin(visualTime * 0.08 + 1.1) * 18, 72, 0.56, palette.cloudAlpha * 0.42);
+  // Near cloud layer.
+  drawCloud(context, palette, 138 + Math.sin(visualTime * 0.16) * 12, 140, 1.22, palette.cloudAlpha);
+  drawCloud(context, palette, 402 + Math.sin(visualTime * 0.14 + 1.3) * 10, 116, 0.96, palette.cloudAlpha * 0.84);
+  drawCloud(context, palette, 870 + Math.sin(visualTime * 0.11 + 2.2) * 14, 108, 1.08, palette.cloudAlpha * 0.9);
+  drawCloud(context, palette, 1116 + Math.sin(visualTime * 0.19 + 0.7) * 8, 174, 0.86, palette.cloudAlpha * 0.72);
   drawBackMountains(context, theme);
+  drawMidMountains(context, theme);
+  drawHorizonMist(context, palette);
   if (mapDecor !== null) {
     drawMapDecorPrimitives(context, mapDecor.backgroundLandmarks, visualTime);
   }
@@ -300,10 +388,22 @@ function drawTerrain(context: CanvasRenderingContext2D, terrain: TerrainState): 
   }
 
   const skyPalette = getSkyPalette(terrain.theme);
+  context.strokeStyle = "rgba(67, 39, 23, 0.28)";
+  context.lineWidth = 6;
+  context.beginPath();
+  let x = 0;
+  while (x < terrain.heights.length) {
+    const y = terrain.heights[x] + 3;
+    if (x === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+    x += 8;
+  }
+  context.stroke();
+
   context.strokeStyle = skyPalette.terrainStroke;
   context.lineWidth = 3;
   context.beginPath();
-  let x = 0;
+  x = 0;
   while (x < terrain.heights.length) {
     const y = terrain.heights[x];
     if (x === 0) context.moveTo(x, y);
@@ -419,10 +519,16 @@ function drawGrass(context: CanvasRenderingContext2D, terrain: TerrainState, vis
   for (let i = 0; i < grass.length; i++) {
     const g = grass[i];
     const sway = Math.sin(visualTime * 2.4 + g.sway) * 3 + wind.x * 4;
-    context.strokeStyle = "rgba(" + String(palette.grassMid[0]) + ", " + String(palette.grassMid[1]) + ", " + String(palette.grassMid[2]) + ", 0.7)";
-    context.lineWidth = 1.5;
+    context.strokeStyle = "rgba(" + String(palette.grassShadow[0]) + ", " + String(palette.grassShadow[1]) + ", " + String(palette.grassShadow[2]) + ", 0.55)";
+    context.lineWidth = 2.2;
     context.beginPath();
     context.moveTo(g.x, g.y);
+    context.quadraticCurveTo(g.x + sway * 0.4, g.y - g.height * 0.55, g.x + sway * 0.92, g.y - g.height * 0.96);
+    context.stroke();
+    context.strokeStyle = "rgba(" + String(palette.grassAccent[0]) + ", " + String(palette.grassAccent[1]) + ", " + String(palette.grassAccent[2]) + ", 0.62)";
+    context.lineWidth = 1.1;
+    context.beginPath();
+    context.moveTo(g.x, g.y - 1);
     context.quadraticCurveTo(g.x + sway * 0.5, g.y - g.height * 0.8, g.x + sway, g.y - g.height);
     context.stroke();
   }
@@ -469,19 +575,22 @@ function drawBonusBox(context: CanvasRenderingContext2D, box: BonusBox, iconCach
 
 // ---- Players ----
 
-function drawPlayers(context: CanvasRenderingContext2D, players: [Player, Player], turn: 1 | 2, visualTime: number, spriteCache: SpriteCache): void {
+function drawPlayers(context: CanvasRenderingContext2D, players: [Player, Player], turn: 1 | 2, input: InputState, visualTime: number, spriteCache: SpriteCache): void {
   let index = 0;
   while (index < players.length) {
     const player = players[index];
     const isTurn = player.id === turn;
-    drawMobile(context, player, isTurn, visualTime, spriteCache);
+    const moving = isTurn && (input.moveLeft || input.moveRight);
+    drawMobile(context, player, isTurn, moving, visualTime, spriteCache);
     index += 1;
   }
 }
 
-function drawMobile(context: CanvasRenderingContext2D, player: Player, isTurn: boolean, visualTime: number, spriteCache: SpriteCache): void {
+function drawMobile(context: CanvasRenderingContext2D, player: Player, isTurn: boolean, moving: boolean, visualTime: number, spriteCache: SpriteCache): void {
   const accent = getAccentColor(player.accent);
-  const bob = Math.sin((player.mobile.position.x * 0.02 + visualTime * 4.2) * 0.9) * 1.6;
+  const bobSpeed = moving ? 7.4 : 3.2;
+  const bobAmount = moving ? 2.2 : 1.1;
+  const bob = Math.sin((player.mobile.position.x * 0.02 + visualTime * bobSpeed) * 0.9) * bobAmount;
 
   if (isTurn) {
     drawTurnGlow(context, player.mobile.position.x, player.mobile.position.y + bob, accent);
@@ -491,8 +600,11 @@ function drawMobile(context: CanvasRenderingContext2D, player: Player, isTurn: b
   context.translate(0, bob);
   drawAccentAura(context, player, accent);
   drawMobileShadow(context, player);
-  drawMobileSprite(context, player, spriteCache, visualTime);
+  drawMobileSprite(context, player, spriteCache, visualTime, moving);
   drawHpTickMarks(context, player);
+  if (isTurn) {
+    drawAngleBadge(context, player, accent);
+  }
   drawPennant(context, player, accent);
   context.restore();
 }
@@ -500,6 +612,47 @@ function drawMobile(context: CanvasRenderingContext2D, player: Player, isTurn: b
 function getTurretAngle(player: Player): number {
   const degrees = player.mobile.facing === 1 ? player.mobile.angle : 180 - player.mobile.angle;
   return (degrees * Math.PI) / 180;
+}
+
+function drawAngleBadge(context: CanvasRenderingContext2D, player: Player, accent: string): void {
+  const launchRadians = getLaunchRadians(player.mobile);
+  const muzzle = getMuzzlePosition(player.mobile, launchRadians);
+  const directionX = Math.cos(launchRadians);
+  const directionY = Math.sin(launchRadians);
+  const trueAngleActive = isTrueAngle(player.mobile.type, player.mobile.angle);
+  const isRearArc = player.mobile.angle > 90;
+  const label = Math.round(player.mobile.angle) + " DEG";
+  const modeLabel = trueAngleActive ? "TRUE" : isRearArc ? "REAR" : "FRONT";
+  const width = 68;
+  const height = 22;
+  const anchorX = clamp(muzzle.x + directionX * 24, width * 0.5 + 10, worldWidth - width * 0.5 - 10);
+  const anchorY = clamp(muzzle.y - directionY * 18 - 22, 28, worldHeight - 48);
+  const cardX = anchorX - width * 0.5;
+  const cardY = anchorY - height * 0.5;
+
+  context.strokeStyle = colorWithAlpha(accent, 0.8);
+  context.lineWidth = 2;
+  context.beginPath();
+  context.moveTo(muzzle.x, muzzle.y);
+  context.lineTo(anchorX, anchorY);
+  context.stroke();
+
+  context.fillStyle = "rgba(9, 20, 36, 0.88)";
+  roundRect(context, cardX, cardY, width, height, 7);
+  context.fill();
+  context.strokeStyle = colorWithAlpha(accent, 0.78);
+  context.lineWidth = 1.5;
+  context.stroke();
+
+  context.font = '700 8px "Press Start 2P"';
+  context.textAlign = "left";
+  context.textBaseline = "middle";
+  context.fillStyle = "#fff7de";
+  context.fillText(label, cardX + 7, anchorY + 0.5);
+
+  context.textAlign = "right";
+  context.fillStyle = colorWithAlpha(accent, 0.95);
+  context.fillText(modeLabel, cardX + width - 6, anchorY + 0.5);
 }
 
 function drawProjectile(context: CanvasRenderingContext2D, projectile: ProjectileState): void {
@@ -524,6 +677,33 @@ function drawProjectile(context: CanvasRenderingContext2D, projectile: Projectil
   context.beginPath();
   context.ellipse(style.radius * 0.18, -style.radius * 0.1, style.radius * 0.42, style.radius * 0.28, 0, 0, Math.PI * 2);
   context.fill();
+  context.restore();
+
+  if (projectile.technique !== null) {
+    drawProjectileTechniqueBadge(context, projectile);
+  }
+}
+
+function drawProjectileTechniqueBadge(context: CanvasRenderingContext2D, projectile: ProjectileState): void {
+  const fullLabel = getShotTechniqueLabel(projectile.technique);
+  const label = fullLabel === "Butt Shot" ? "BUTT" : "BACK";
+  const width = label === "BUTT" ? 40 : 42;
+  const height = 16;
+  const x = clamp(projectile.position.x - width * 0.5, 8, worldWidth - width - 8);
+  const y = clamp(projectile.position.y - 28, 8, worldHeight - height - 8);
+
+  context.save();
+  context.fillStyle = "rgba(14, 24, 36, 0.92)";
+  roundRect(context, x, y, width, height, 6);
+  context.fill();
+  context.strokeStyle = projectile.technique === "buttshot" ? "rgba(255, 211, 97, 0.9)" : "rgba(126, 204, 255, 0.92)";
+  context.lineWidth = 1.25;
+  context.stroke();
+  context.font = '700 7px "Press Start 2P"';
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillStyle = "#fff8dc";
+  context.fillText(label, x + width * 0.5, y + height * 0.55);
   context.restore();
 }
 
@@ -659,10 +839,18 @@ function createExplosionSpriteCache(): ExplosionSpriteCache {
     "aduka-thor": null,
     "armor-primary": null,
     "armor-secondary": null,
+    "dragon-fire": null,
+    "frog-bubble": null,
     gum: null,
     "jd-secondary": null,
     "jd-lightning": null,
-    nak: null
+    "knight-blade": null,
+    "mage-rune": null,
+    nak: null,
+    "sate-sonar": null,
+    "snow-frost": null,
+    "trico-horn": null,
+    "turtle-shell": null
   };
 }
 
@@ -759,7 +947,7 @@ function drawMobileShadow(context: CanvasRenderingContext2D, player: Player): vo
   context.fill();
 }
 
-function drawMobileSprite(context: CanvasRenderingContext2D, player: Player, spriteCache: SpriteCache, visualTime: number): void {
+function drawMobileSprite(context: CanvasRenderingContext2D, player: Player, spriteCache: SpriteCache, visualTime: number, moving: boolean): void {
   const sprite = getCachedSprite(spriteCache, player.mobile.type);
   if (sprite === null || !sprite.complete || sprite.naturalWidth === 0) {
     drawFallbackMobile(context, player);
@@ -767,7 +955,7 @@ function drawMobileSprite(context: CanvasRenderingContext2D, player: Player, spr
   }
 
   const spriteSource = getMobileSpriteSource(player.mobile.type);
-  const frame = getMobileSpriteFrame(visualTime + player.id * 0.17, 6.5, spriteSource.frameCount);
+  const frame = getMobileAnimationFrame(player.mobile.type, visualTime + player.id * 0.17, moving, spriteSource.frameCount);
   const destinationWidth = spriteSource.width * spriteSource.battleScale;
   const destinationHeight = spriteSource.height * spriteSource.battleScale;
   const destinationX =
@@ -777,7 +965,7 @@ function drawMobileSprite(context: CanvasRenderingContext2D, player: Player, spr
   const destinationY =
     player.mobile.position.y -
     destinationHeight +
-    14 +
+    4 +
     spriteSource.battleTranslateY;
 
   context.save();
@@ -792,6 +980,28 @@ function drawMobileSprite(context: CanvasRenderingContext2D, player: Player, spr
     destinationX, destinationY, destinationWidth, destinationHeight
   );
   context.restore();
+}
+
+function getMobileAnimationFrame(type: MobileType, time: number, moving: boolean, frameCount: number): number {
+  if (usesCurrentMotionSheet(type)) {
+    return moving ? getMobileSpriteFrame(time, 10, frameCount) : 0;
+  }
+
+  return getMobileSpriteFrame(time, moving ? 7.5 : 4.5, frameCount);
+}
+
+function usesCurrentMotionSheet(type: MobileType): boolean {
+  return (
+    type === "dragon" ||
+    type === "snow" ||
+    type === "trico" ||
+    type === "aduko" ||
+    type === "mage" ||
+    type === "nak" ||
+    type === "turtle" ||
+    type === "frog" ||
+    type === "sate"
+  );
 }
 
 function drawMountedRider(context: CanvasRenderingContext2D, player: Player, spriteCache: SpriteCache): void {
@@ -914,7 +1124,7 @@ function applyCameraFrame(context: CanvasRenderingContext2D, cameraFrame: Camera
   context.translate(-cameraFrame.offset.x, -cameraFrame.offset.y);
 }
 
-function drawProjectileTrail(context: CanvasRenderingContext2D, trail: Vec2[], mobileType: MobileType, weaponType: "primary" | "secondary"): void {
+function drawProjectileTrail(context: CanvasRenderingContext2D, trail: Vec2[], mobileType: MobileType, weaponType: WeaponType): void {
   if (trail.length < 2) return;
   const style = getProjectileTrailStyle(mobileType, weaponType);
   let index = 0;
@@ -922,8 +1132,10 @@ function drawProjectileTrail(context: CanvasRenderingContext2D, trail: Vec2[], m
     const point = trail[index];
     const alpha = (index + 1) / trail.length;
     const radius = 1 + alpha * style.width;
-    context.shadowBlur = 8 * alpha;
-    context.shadowColor = style.glow;
+    context.shadowBlur = index % 3 === 0 ? 7 * alpha : 0;
+    if (context.shadowBlur > 0) {
+      context.shadowColor = style.glow;
+    }
     context.fillStyle = colorWithAlpha(index % 2 === 0 ? style.color : style.accent, alpha * style.alpha);
     context.beginPath();
     context.arc(point.x, point.y, radius, 0, Math.PI * 2);
@@ -990,6 +1202,15 @@ function drawExplosionVisual(context: CanvasRenderingContext2D, explosionVisual:
   context.stroke();
 }
 
+function drawExplosionVisuals(context: CanvasRenderingContext2D, explosionVisuals: ExplosionVisual[]): void {
+  let index = 0;
+
+  while (index < explosionVisuals.length) {
+    drawExplosionVisual(context, explosionVisuals[index]);
+    index += 1;
+  }
+}
+
 function colorWithAlpha(color: string, alpha: number): string {
   if (color.startsWith("#") && color.length === 7) {
     const red = Number.parseInt(color.slice(1, 3), 16);
@@ -1010,40 +1231,302 @@ function colorWithAlpha(color: string, alpha: number): string {
 function drawExplosionSprites(context: CanvasRenderingContext2D, sprites: ExplosionSpriteEffect[], spriteCache: ExplosionSpriteCache): void {
   let index = 0;
   while (index < sprites.length) {
-    drawExplosionSprite(context, sprites[index], spriteCache);
+    drawExplosionSpriteSheetFrame(context, sprites[index], spriteCache);
+    drawProceduralExplosion(context, sprites[index]);
     index += 1;
   }
 }
 
-function drawExplosionSprite(context: CanvasRenderingContext2D, sprite: ExplosionSpriteEffect, spriteCache: ExplosionSpriteCache): void {
+function drawExplosionSpriteSheetFrame(context: CanvasRenderingContext2D, sprite: ExplosionSpriteEffect, spriteCache: ExplosionSpriteCache): void {
   const image = spriteCache[sprite.sheet];
-  if (image === null || !image.complete || image.naturalWidth === 0) {
+  if (image === null || !image.complete || image.naturalWidth === 0 || image.naturalHeight === 0) {
     return;
   }
 
   const spec = explosionSpriteSpecs[sprite.sheet];
   const frameWidth = spec.width / spec.frames;
-  const progress = Math.max(0, Math.min(0.999, sprite.timer / sprite.duration));
-  const frame = Math.min(spec.frames - 1, Math.floor(progress * spec.frames));
-  const alpha = progress < 0.82 ? 1 : 1 - (progress - 0.82) / 0.18;
-  const destinationWidth = frameWidth * sprite.scale;
-  const destinationHeight = spec.height * sprite.scale;
+  const frameHeight = spec.height;
+  const frame = Math.min(spec.frames - 1, Math.floor((sprite.timer / sprite.duration) * spec.frames));
+  const size = Math.max(72, sprite.radius * 2.4 * sprite.scale);
+  const alpha = Math.max(0, 1 - Math.max(0, sprite.timer / sprite.duration - 0.7) / 0.3);
 
   context.save();
-  context.globalAlpha = Math.max(0, Math.min(1, alpha));
-  context.globalCompositeOperation = "screen";
+  context.globalAlpha = alpha * 0.88;
+  context.globalCompositeOperation = "lighter";
   context.drawImage(
     image,
     frame * frameWidth,
     0,
     frameWidth,
-    spec.height,
-    sprite.point.x - destinationWidth * 0.5,
-    sprite.point.y - destinationHeight * 0.72,
-    destinationWidth,
-    destinationHeight
+    frameHeight,
+    sprite.point.x - size / 2,
+    sprite.point.y - size / 2,
+    size,
+    size
   );
   context.restore();
+}
+
+function explosionNoise(seed: number, index: number): number {
+  const value = Math.sin(seed * 12.9898 + index * 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function drawProceduralExplosion(context: CanvasRenderingContext2D, sprite: ExplosionSpriteEffect): void {
+  const progress = clamp(sprite.timer / sprite.duration, 0, 1);
+  const fade = progress < 0.65 ? 1 : Math.max(0, 1 - (progress - 0.65) / 0.35);
+  if (fade <= 0) {
+    return;
+  }
+
+  const x = sprite.point.x;
+  const y = sprite.point.y;
+  const style = sprite.style;
+  const reach = sprite.radius * 1.45;
+  const seed = Math.abs(x * 0.37 + y * 0.71 + sprite.radius);
+
+  context.save();
+  context.globalCompositeOperation = "lighter";
+
+  const coreFade = Math.max(0, 1 - progress / 0.55);
+  if (coreFade > 0) {
+    const coreRadius = reach * (0.18 + progress * 0.5);
+    const coreGradient = context.createRadialGradient(x, y, 0, x, y, coreRadius);
+    coreGradient.addColorStop(0, colorWithAlpha("#ffffff", coreFade));
+    coreGradient.addColorStop(0.4, colorWithAlpha(style.core, coreFade * 0.9));
+    coreGradient.addColorStop(1, colorWithAlpha(style.ring, 0));
+    context.fillStyle = coreGradient;
+    context.beginPath();
+    context.arc(x, y, coreRadius, 0, Math.PI * 2);
+    context.fill();
+  }
+
+  const ringRadius = reach * (0.3 + progress * 1.0);
+  context.strokeStyle = colorWithAlpha(style.ring, fade * 0.8 * (1 - progress * 0.4));
+  context.lineWidth = Math.max(1, (sprite.hasDamage ? 5 : 3) * (1 - progress) + 1);
+  context.beginPath();
+  context.arc(x, y, ringRadius, 0, Math.PI * 2);
+  context.stroke();
+
+  drawExplosionMotif(context, sprite, progress, fade, reach, seed);
+  context.restore();
+
+  if (progress > 0.25) {
+    const smokeFade = Math.min(1, (progress - 0.25) / 0.35) * (1 - progress) * 1.4;
+    if (smokeFade > 0) {
+      const smokeY = y - progress * 8;
+      const smokeRadius = reach * (0.5 + progress * 0.7);
+      const smokeGradient = context.createRadialGradient(x, smokeY, 0, x, smokeY, smokeRadius);
+      smokeGradient.addColorStop(0, colorWithAlpha(style.smoke, smokeFade * 0.4));
+      smokeGradient.addColorStop(0.7, colorWithAlpha(style.smoke, smokeFade * 0.22));
+      smokeGradient.addColorStop(1, colorWithAlpha(style.smoke, 0));
+      context.fillStyle = smokeGradient;
+      context.beginPath();
+      context.arc(x, smokeY, smokeRadius, 0, Math.PI * 2);
+      context.fill();
+    }
+  }
+}
+
+function drawExplosionSpokes(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  count: number,
+  innerRadius: number,
+  outerRadius: number,
+  halfWidth: number,
+  color: string,
+  rotation: number
+): void {
+  context.fillStyle = color;
+  let index = 0;
+  while (index < count) {
+    const angle = rotation + (index / count) * Math.PI * 2;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const perpX = -sin * halfWidth;
+    const perpY = cos * halfWidth;
+    context.beginPath();
+    context.moveTo(x + cos * innerRadius + perpX, y + sin * innerRadius + perpY);
+    context.lineTo(x + cos * outerRadius, y + sin * outerRadius);
+    context.lineTo(x + cos * innerRadius - perpX, y + sin * innerRadius - perpY);
+    context.closePath();
+    context.fill();
+    index += 1;
+  }
+}
+
+function drawExplosionParticles(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  seed: number,
+  count: number,
+  reach: number,
+  progress: number,
+  fade: number,
+  color: string,
+  baseSize: number,
+  rise: number
+): void {
+  let index = 0;
+  while (index < count) {
+    const angle = explosionNoise(seed, index) * Math.PI * 2;
+    const distance = reach * (0.2 + progress) * (0.5 + explosionNoise(seed, index + 50) * 0.7);
+    const px = x + Math.cos(angle) * distance;
+    const py = y + Math.sin(angle) * distance - rise * progress * reach * 0.4;
+    const size = baseSize * (1 - progress * 0.6) * (0.6 + explosionNoise(seed, index + 99) * 0.8);
+    if (size > 0.4) {
+      context.fillStyle = colorWithAlpha(color, fade);
+      context.beginPath();
+      context.arc(px, py, size, 0, Math.PI * 2);
+      context.fill();
+    }
+    index += 1;
+  }
+}
+
+function drawExplosionBolt(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  seed: number,
+  angle: number,
+  length: number,
+  sway: number,
+  color: string,
+  width: number
+): void {
+  const segments = 5;
+  context.strokeStyle = color;
+  context.lineWidth = width;
+  context.beginPath();
+  context.moveTo(x, y);
+  let step = 1;
+  while (step <= segments) {
+    const t = step / segments;
+    const radial = length * t;
+    const offset = (explosionNoise(seed, step) - 0.5) * sway * (1 - t);
+    const px = x + Math.cos(angle) * radial + Math.cos(angle + Math.PI / 2) * offset;
+    const py = y + Math.sin(angle) * radial + Math.sin(angle + Math.PI / 2) * offset;
+    context.lineTo(px, py);
+    step += 1;
+  }
+  context.stroke();
+}
+
+function drawExplosionMotif(
+  context: CanvasRenderingContext2D,
+  sprite: ExplosionSpriteEffect,
+  progress: number,
+  fade: number,
+  reach: number,
+  seed: number
+): void {
+  const x = sprite.point.x;
+  const y = sprite.point.y;
+  const style = sprite.style;
+
+  if (style.motif === "fire") {
+    drawExplosionSpokes(context, x, y, 7, reach * 0.1, reach * (0.5 + progress * 0.6), reach * 0.12 * (1 - progress), colorWithAlpha(style.ring, fade * 0.7), -Math.PI / 2 + (explosionNoise(seed, 1) - 0.5) * 0.6);
+    drawExplosionParticles(context, x, y, seed, 12, reach, progress, fade * 0.9, style.spark, reach * 0.075, 1.2);
+    return;
+  }
+
+  if (style.motif === "frost") {
+    drawExplosionSpokes(context, x, y, 8, reach * 0.16, reach * (0.55 + progress * 0.8), reach * 0.07 * (1 - progress), colorWithAlpha(style.core, fade * 0.85), progress * 0.4);
+    drawExplosionSpokes(context, x, y, 8, reach * 0.12, reach * (0.4 + progress * 0.55), reach * 0.05 * (1 - progress), colorWithAlpha(style.ring, fade * 0.7), Math.PI / 8 + progress * 0.4);
+    drawExplosionParticles(context, x, y, seed, 8, reach, progress, fade * 0.8, style.spark, reach * 0.05, 0.2);
+    return;
+  }
+
+  if (style.motif === "shell") {
+    drawExplosionParticles(context, x, y, seed, 11, reach, progress, fade, style.debris, reach * 0.11, 0.4);
+    drawExplosionSpokes(context, x, y, 5, reach * 0.12, reach * (0.4 + progress * 0.5), reach * 0.06 * (1 - progress), colorWithAlpha(style.ring, fade * 0.6), seed);
+    return;
+  }
+
+  if (style.motif === "horn") {
+    drawExplosionSpokes(context, x, y, 11, reach * 0.22, reach * (0.6 + progress * 0.7), reach * 0.1 * (1 - progress), colorWithAlpha(style.ring, fade * 0.85), progress * 0.5);
+    drawExplosionSpokes(context, x, y, 11, reach * 0.16, reach * (0.45 + progress * 0.55), reach * 0.06 * (1 - progress), colorWithAlpha(style.spark, fade * 0.7), Math.PI / 11 + progress * 0.5);
+    return;
+  }
+
+  if (style.motif === "spark") {
+    const bolts = 6;
+    let index = 0;
+    while (index < bolts) {
+      const angle = (index / bolts) * Math.PI * 2 + explosionNoise(seed, index) * 0.5;
+      drawExplosionBolt(context, x, y, seed + index, angle, reach * (0.7 + progress * 0.8), reach * 0.4, colorWithAlpha(index % 2 === 0 ? style.core : style.spark, fade * 0.9), Math.max(1, 2.5 * (1 - progress)));
+      index += 1;
+    }
+    return;
+  }
+
+  if (style.motif === "rune") {
+    context.strokeStyle = colorWithAlpha(style.spark, fade * 0.7);
+    context.lineWidth = Math.max(1, 2 * (1 - progress));
+    context.beginPath();
+    context.arc(x, y, reach * (0.4 + progress * 0.4), 0, Math.PI * 2);
+    context.stroke();
+    drawExplosionSpokes(context, x, y, 6, reach * 0.3, reach * (0.5 + progress * 0.45), reach * 0.04, colorWithAlpha(style.core, fade * 0.8), -progress * 0.8);
+    drawExplosionParticles(context, x, y, seed, 7, reach, progress, fade * 0.7, style.spark, reach * 0.05, 0.6);
+    return;
+  }
+
+  if (style.motif === "dust") {
+    drawExplosionParticles(context, x, y, seed, 14, reach, progress, fade, style.debris, reach * 0.1, 0.25);
+    drawExplosionParticles(context, x, y, seed + 7, 10, reach, progress, fade * 0.6, style.smoke, reach * 0.13, 0.15);
+    return;
+  }
+
+  if (style.motif === "bubble") {
+    context.lineWidth = Math.max(1, 2 * (1 - progress));
+    let index = 0;
+    while (index < 9) {
+      const angle = explosionNoise(seed, index) * Math.PI * 2;
+      const distance = reach * (0.2 + progress) * (0.4 + explosionNoise(seed, index + 30) * 0.8);
+      const bubbleRadius = reach * 0.12 * (0.5 + explosionNoise(seed, index + 60) * 0.9) * (1 - progress * 0.4);
+      if (bubbleRadius > 0.6) {
+        context.strokeStyle = colorWithAlpha(index % 2 === 0 ? style.ring : style.spark, fade * 0.75);
+        context.beginPath();
+        context.arc(x + Math.cos(angle) * distance, y + Math.sin(angle) * distance - progress * reach * 0.2, bubbleRadius, 0, Math.PI * 2);
+        context.stroke();
+      }
+      index += 1;
+    }
+    return;
+  }
+
+  if (style.motif === "sonar") {
+    let index = 0;
+    while (index < 3) {
+      const ringProgress = clamp(progress * 1.4 - index * 0.22, 0, 1);
+      if (ringProgress > 0 && ringProgress < 1) {
+        context.strokeStyle = colorWithAlpha(index % 2 === 0 ? style.ring : style.core, fade * (1 - ringProgress) * 0.9);
+        context.lineWidth = Math.max(1, 3 * (1 - ringProgress));
+        context.beginPath();
+        context.arc(x, y, reach * (0.2 + ringProgress * 1.1), 0, Math.PI * 2);
+        context.stroke();
+      }
+      index += 1;
+    }
+    return;
+  }
+
+  // blade
+  context.lineWidth = Math.max(1, 3 * (1 - progress));
+  let index = 0;
+  while (index < 3) {
+    const base = seed + index * 1.7 - progress * 0.6;
+    const arcRadius = reach * (0.4 + progress * 0.7);
+    context.strokeStyle = colorWithAlpha(index % 2 === 0 ? style.core : style.spark, fade * 0.8);
+    context.beginPath();
+    context.arc(x, y, arcRadius, base, base + Math.PI * 0.5);
+    context.stroke();
+    index += 1;
+  }
 }
 
 function drawDamagePopups(context: CanvasRenderingContext2D, damagePopups: DamagePopup[]): void {
@@ -1065,14 +1548,114 @@ function drawDamagePopups(context: CanvasRenderingContext2D, damagePopups: Damag
   }
 }
 
-function drawAimGuide(context: CanvasRenderingContext2D, player: Player, wind: { x: number; y: number }, power: number, charging: boolean, terrain: TerrainState): void {
+type GhostShot = {
+  points: Vec2[];
+  mobileType: MobileType;
+  weapon: WeaponType;
+};
+
+// Records the live shot's flight path each frame and freezes it on impact, per
+// player, so the active player can see the faint ghost arc and landing mark of
+// their own previous shot — the classic Gunbound "adjust off the last one" loop
+// without ever showing a live solution line.
+function captureGhostShot(
+  state: ReturnType<typeof useGameStore.getState>,
+  liveShot: React.MutableRefObject<(GhostShot & { owner: PlayerId }) | null>,
+  lastShot: React.MutableRefObject<[GhostShot | null, GhostShot | null]>,
+  ghostRound: React.MutableRefObject<number>
+): void {
+  if (state.round !== ghostRound.current) {
+    ghostRound.current = state.round;
+    lastShot.current = [null, null];
+    liveShot.current = null;
+  }
+
+  const projectile = state.projectile;
+  if (projectile !== null) {
+    if (liveShot.current === null || liveShot.current.owner !== projectile.owner) {
+      liveShot.current = { owner: projectile.owner, points: [], mobileType: projectile.mobileType, weapon: projectile.weapon };
+    }
+    const points = liveShot.current.points;
+    const previous = points[points.length - 1];
+    if (previous === undefined || Math.hypot(projectile.position.x - previous.x, projectile.position.y - previous.y) > 5) {
+      points.push({ x: projectile.position.x, y: projectile.position.y });
+      if (points.length > 240) {
+        points.shift();
+      }
+    }
+    return;
+  }
+
+  if (liveShot.current !== null) {
+    if (liveShot.current.points.length > 1) {
+      lastShot.current[liveShot.current.owner - 1] = {
+        points: liveShot.current.points,
+        mobileType: liveShot.current.mobileType,
+        weapon: liveShot.current.weapon
+      };
+    }
+    liveShot.current = null;
+  }
+}
+
+function drawGhostShot(context: CanvasRenderingContext2D, ghost: GhostShot): void {
+  const points = ghost.points;
+  if (points.length < 2) {
+    return;
+  }
+
+  context.save();
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.setLineDash([3, 7]);
+  context.lineWidth = 1.5;
+  context.strokeStyle = "rgba(255, 255, 255, 0.18)";
+  context.beginPath();
+  context.moveTo(points[0].x, points[0].y);
+  let index = 1;
+  while (index < points.length) {
+    context.lineTo(points[index].x, points[index].y);
+    index += 1;
+  }
+  context.stroke();
+  context.setLineDash([]);
+
+  const impact = points[points.length - 1];
+  context.strokeStyle = "rgba(255, 220, 130, 0.42)";
+  context.lineWidth = 1.5;
+  context.beginPath();
+  context.arc(impact.x, impact.y, 6, 0, Math.PI * 2);
+  context.moveTo(impact.x - 9, impact.y);
+  context.lineTo(impact.x + 9, impact.y);
+  context.moveTo(impact.x, impact.y - 9);
+  context.lineTo(impact.x, impact.y + 9);
+  context.stroke();
+  context.restore();
+}
+
+function drawAimGuide(
+  context: CanvasRenderingContext2D,
+  player: Player,
+  wind: { x: number; y: number },
+  weather: WeatherState,
+  power: number,
+  charging: boolean,
+  terrain: TerrainState
+): void {
   const launchRadians = getLaunchRadians(player.mobile);
   const muzzle = getMuzzlePosition(player.mobile, launchRadians);
   const guidePower = charging ? Math.max(0.14, power) : 0.56;
-  let velocityX = Math.cos(launchRadians) * (420 + guidePower * 380);
-  let velocityY = -Math.sin(launchRadians) * (420 + guidePower * 380);
+  const profile = createWeaponProfile(player.mobile.type, player.mobile.weapon, guidePower);
+  let damage = profile.damage;
+  let blastRadius = profile.blastRadius;
+  let velocity = {
+    x: Math.cos(launchRadians) * profile.speed,
+    y: -Math.sin(launchRadians) * profile.speed
+  };
   let x = muzzle.x;
   let y = muzzle.y;
+  let forceBoosted = false;
+  let tornadoTriggered = false;
   let step = 0;
 
   context.strokeStyle = "rgba(255, 255, 255, 0.48)";
@@ -1080,10 +1663,35 @@ function drawAimGuide(context: CanvasRenderingContext2D, player: Player, wind: {
   context.beginPath();
 
   while (step < 28) {
-    velocityX += wind.x * 580 * 0.08;
-    velocityY += (530 + wind.y * 120) * 0.08;
-    x += velocityX * 0.08;
-    y += velocityY * 0.08;
+    const previous = { x, y };
+    velocity = {
+      x: velocity.x + wind.x * windForceCoefficient * profile.windScale * 0.08,
+      y: velocity.y + (530 * profile.gravityScale + wind.y * 120) * 0.08
+    };
+    let position = {
+      x: x + velocity.x * 0.08,
+      y: y + velocity.y * 0.08
+    };
+    const weatherFlight = applyWeatherToFlightState(
+      {
+        position,
+        previousPosition: previous,
+        velocity,
+        damage,
+        blastRadius,
+        forceBoosted,
+        tornadoTriggered
+      },
+      weather
+    );
+    velocity = weatherFlight.velocity;
+    position = weatherFlight.position;
+    damage = weatherFlight.damage;
+    blastRadius = weatherFlight.blastRadius;
+    forceBoosted = weatherFlight.forceBoosted;
+    tornadoTriggered = weatherFlight.tornadoTriggered;
+    x = position.x;
+    y = position.y;
 
     if (step === 0) context.moveTo(x, y);
     else context.lineTo(x, y);
@@ -1098,6 +1706,46 @@ function drawAimGuide(context: CanvasRenderingContext2D, player: Player, wind: {
   context.beginPath();
   context.arc(muzzle.x, muzzle.y, 4, 0, Math.PI * 2);
   context.fill();
+}
+
+function drawWeatherOverlay(context: CanvasRenderingContext2D, weather: WeatherState, visualTime: number): void {
+  if (weather.kind === "force") {
+    const glow = context.createLinearGradient(weather.beamX - 18, 0, weather.beamX + 18, 0);
+    glow.addColorStop(0, "rgba(255, 214, 94, 0)");
+    glow.addColorStop(0.5, "rgba(255, 214, 94, 0.34)");
+    glow.addColorStop(1, "rgba(255, 214, 94, 0)");
+    context.fillStyle = glow;
+    context.fillRect(weather.beamX - 18, 0, 36, worldHeight);
+    return;
+  }
+
+  if (weather.kind === "tornado") {
+    context.save();
+    context.translate(weather.vortex.x, weather.vortex.y);
+    context.strokeStyle = "rgba(196, 238, 255, 0.55)";
+    context.lineWidth = 2;
+    let ring = 0;
+    while (ring < 4) {
+      const radius = weather.radius - ring * 10;
+      context.beginPath();
+      context.arc(0, Math.sin(visualTime * 2.2 + ring) * 6, radius, visualTime * weather.swirl * 0.6 + ring * 0.5, visualTime * weather.swirl * 0.6 + Math.PI * 1.15 + ring * 0.5);
+      context.stroke();
+      ring += 1;
+    }
+    context.restore();
+    return;
+  }
+
+  if (weather.kind === "moon") {
+    context.fillStyle = "rgba(210, 236, 255, 0.08)";
+    context.fillRect(0, 0, worldWidth, worldHeight);
+    return;
+  }
+
+  if (weather.kind === "eclipse") {
+    context.fillStyle = "rgba(35, 24, 58, 0.12)";
+    context.fillRect(0, 0, worldWidth, worldHeight);
+  }
 }
 
 // ---- Particle draw functions ----
@@ -1226,6 +1874,12 @@ function drawSun(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
     context.beginPath();
     context.arc(170, 120, 72, 0, Math.PI * 2);
     context.fill();
+    context.fillStyle = "rgba(208, 222, 255, 0.48)";
+    context.beginPath();
+    context.arc(146, 102, 8, 0, Math.PI * 2);
+    context.arc(182, 138, 11, 0, Math.PI * 2);
+    context.arc(193, 100, 5, 0, Math.PI * 2);
+    context.fill();
     return;
   }
 
@@ -1237,10 +1891,33 @@ function drawSun(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
   context.beginPath();
   context.arc(170, 120, 92, 0, Math.PI * 2);
   context.fill();
+
+  context.save();
+  context.translate(170, 120);
+  context.strokeStyle = theme === "sunset" ? "rgba(255, 193, 130, 0.18)" : "rgba(255, 240, 174, 0.16)";
+  context.lineWidth = theme === "sunset" ? 18 : 14;
+  for (let i = 0; i < 8; i += 1) {
+    context.rotate(Math.PI / 4);
+    context.beginPath();
+    context.moveTo(34, 0);
+    context.lineTo(108, 0);
+    context.stroke();
+  }
+  context.restore();
 }
 
-function drawCloud(context: CanvasRenderingContext2D, x: number, y: number, scale: number, opacity: number): void {
-  context.fillStyle = "rgba(255, 255, 255, " + String(opacity) + ")";
+function drawCloud(
+  context: CanvasRenderingContext2D,
+  palette: ReturnType<typeof getSkyPalette>,
+  x: number,
+  y: number,
+  scale: number,
+  opacity: number
+): void {
+  context.fillStyle = palette.cloudShade;
+  drawCloudBubble(context, x + 8 * scale, y + 12 * scale, 50 * scale, 18 * scale);
+  drawCloudBubble(context, x + 70 * scale, y + 15 * scale, 66 * scale, 20 * scale);
+  context.fillStyle = withOpacity(palette.cloudColor, opacity);
   drawCloudBubble(context, x, y, 46 * scale, 26 * scale);
   drawCloudBubble(context, x + 50 * scale, y + 2 * scale, 58 * scale, 30 * scale);
   drawCloudBubble(context, x + 98 * scale, y - 8 * scale, 44 * scale, 24 * scale);
@@ -1254,40 +1931,124 @@ function drawCloudBubble(context: CanvasRenderingContext2D, x: number, y: number
 }
 
 function drawBackMountains(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
-  context.fillStyle = getSkyPalette(theme).backMountains;
-  context.beginPath();
-  context.moveTo(0, 465);
-  context.lineTo(140, 355);
-  context.lineTo(250, 435);
-  context.lineTo(385, 310);
-  context.lineTo(535, 428);
-  context.lineTo(690, 332);
-  context.lineTo(885, 452);
-  context.lineTo(1010, 346);
-  context.lineTo(1160, 432);
-  context.lineTo(1280, 370);
-  context.lineTo(1280, 720);
-  context.lineTo(0, 720);
-  context.closePath();
-  context.fill();
+  const palette = getSkyPalette(theme);
+  const crests =
+    theme === "midnight"
+      ? [444, 374, 408, 328, 412, 320, 430, 340, 418, 356]
+      : theme === "sunset"
+        ? [474, 386, 440, 320, 436, 336, 454, 350, 428, 390]
+        : [460, 355, 435, 310, 428, 332, 452, 346, 432, 370];
+  fillHillBand(context, crests, palette.backMountains, 0.06);
+}
+
+function drawMidMountains(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
+  const palette = getSkyPalette(theme);
+  const crests =
+    theme === "midnight"
+      ? [504, 434, 472, 400, 490, 410, 500, 432, 520]
+      : theme === "sunset"
+        ? [518, 454, 510, 430, 520, 444, 530, 458, 534]
+        : [498, 432, 486, 402, 500, 418, 504, 438, 516];
+  fillHillBand(context, crests, palette.midMountains, 0.09);
 }
 
 function drawFrontMountains(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
-  context.fillStyle = getSkyPalette(theme).frontMountains;
+  const palette = getSkyPalette(theme);
+  fillHillBand(context, [520, 438, 504, 418, 526, 432, 520, 458, 536], palette.frontMountains, 0.12);
+}
+
+// Draws one parallax hill band from evenly spaced crest heights, rounding the
+// silhouette into soft Gunbound-style rolls and adding a faint sun-side crest
+// highlight so the layers read as receding atmospheric depth.
+function fillHillBand(
+  context: CanvasRenderingContext2D,
+  crestHeights: number[],
+  fillColor: string,
+  highlightStrength: number
+): void {
+  const crests = crestHeights.map((y, index) => ({
+    x: (worldWidth * index) / (crestHeights.length - 1),
+    y
+  }));
+
   context.beginPath();
-  context.moveTo(0, 520);
-  context.lineTo(95, 438);
-  context.lineTo(220, 504);
-  context.lineTo(365, 418);
-  context.lineTo(548, 526);
-  context.lineTo(735, 432);
-  context.lineTo(930, 520);
-  context.lineTo(1055, 458);
-  context.lineTo(1280, 536);
-  context.lineTo(1280, 720);
-  context.lineTo(0, 720);
+  traceSmoothRidge(context, crests);
+  context.lineTo(worldWidth, worldHeight);
+  context.lineTo(0, worldHeight);
   context.closePath();
+  context.fillStyle = fillColor;
   context.fill();
+
+  context.save();
+  context.beginPath();
+  traceSmoothRidge(context, crests);
+  context.lineWidth = 2.5;
+  context.strokeStyle = "rgba(255, 255, 255, " + String(highlightStrength) + ")";
+  context.stroke();
+  context.restore();
+}
+
+function traceSmoothRidge(context: CanvasRenderingContext2D, crests: Vec2[]): void {
+  context.moveTo(crests[0].x, crests[0].y);
+  let index = 0;
+  while (index < crests.length - 1) {
+    const current = crests[index];
+    const next = crests[index + 1];
+    context.quadraticCurveTo(current.x, current.y, (current.x + next.x) / 2, (current.y + next.y) / 2);
+    index += 1;
+  }
+  const last = crests[crests.length - 1];
+  context.lineTo(last.x, last.y);
+}
+
+function drawSkyGlow(context: CanvasRenderingContext2D, theme: TerrainTheme): void {
+  const palette = getSkyPalette(theme);
+  const glow = context.createLinearGradient(0, 0, 0, worldHeight);
+  glow.addColorStop(0.2, "rgba(255, 255, 255, 0)");
+  glow.addColorStop(0.66, palette.horizonGlowSoft);
+  glow.addColorStop(1, palette.horizonGlow);
+  context.fillStyle = glow;
+  context.fillRect(0, 0, worldWidth, worldHeight);
+  context.fillStyle = palette.haze;
+  context.fillRect(0, worldHeight * 0.58, worldWidth, worldHeight * 0.24);
+}
+
+function drawHorizonMist(context: CanvasRenderingContext2D, palette: ReturnType<typeof getSkyPalette>): void {
+  const mist = context.createLinearGradient(0, 420, 0, 620);
+  mist.addColorStop(0, "rgba(255, 255, 255, 0)");
+  mist.addColorStop(0.35, palette.haze);
+  mist.addColorStop(1, "rgba(255, 255, 255, 0)");
+  context.fillStyle = mist;
+  context.fillRect(0, 400, worldWidth, 220);
+}
+
+function drawStars(context: CanvasRenderingContext2D, color: string, visualTime: number): void {
+  const stars = [
+    { x: 82, y: 68, size: 1.6, speed: 0.9 },
+    { x: 214, y: 142, size: 2.2, speed: 1.1 },
+    { x: 366, y: 88, size: 1.4, speed: 1.4 },
+    { x: 520, y: 164, size: 1.8, speed: 0.7 },
+    { x: 708, y: 72, size: 2, speed: 1.2 },
+    { x: 884, y: 138, size: 1.5, speed: 0.85 },
+    { x: 1016, y: 80, size: 2.1, speed: 1.35 },
+    { x: 1184, y: 132, size: 1.7, speed: 0.95 }
+  ];
+
+  for (let i = 0; i < stars.length; i += 1) {
+    const star = stars[i];
+    const alpha = 0.45 + (Math.sin(visualTime * star.speed + i * 1.7) + 1) * 0.22;
+    context.fillStyle = withOpacity(color, alpha);
+    context.fillRect(star.x, star.y, star.size, star.size);
+  }
+}
+
+function withOpacity(color: string, opacity: number): string {
+  if (!color.startsWith("rgba(")) {
+    return color;
+  }
+
+  const channels = color.slice(5, -1).split(",").map((part) => part.trim());
+  return "rgba(" + channels[0] + ", " + channels[1] + ", " + channels[2] + ", " + String(opacity) + ")";
 }
 
 function drawParachute(context: CanvasRenderingContext2D, x: number, y: number, color: string): void {

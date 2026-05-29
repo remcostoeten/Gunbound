@@ -3,404 +3,103 @@ title: Caveats & Limitations
 description: Known issues, constraints, and operational notes
 ---
 
-## Current Limitations
+## Product limitations
 
-### No Email-based Recovery
+### No email-based recovery
 
-If a user forgets their password, their account is unrecoverable. There's no email verification or password reset flow.
+Forgotten passwords mean a lost account. Users must store credentials in a password manager.
 
-**Workaround**: Users must save their password securely. Consider storing an unencrypted backup in their password manager.
+### Password change UI
 
-**Future fix**: Implement email verification with OTP-based password reset (see account recovery docs).
+The server exposes `updateCredentialToken` for re-encrypting the stored token after a password change. There is no full password-change flow in the auth UI yet.
 
-### No Password Change
+### Single-factor authentication
 
-Once registered, users cannot change their password. Changing the password would require re-encrypting and updating the stored token.
+Password only — no 2FA.
 
-**Workaround**: Users should choose a strong password initially.
+### No server-side login rate limiting
 
-**Future fix**: Implement `update_credential_token` reducer to allow password changes.
+Brute-force against encrypted tokens is mitigated by PBKDF2 (150k iterations) on the client, but there is no per-IP throttle on credential reads.
 
-### Single-Factor Authentication
+### Username enumeration
 
-Only password-based authentication. No 2FA or biometric login.
+The `credential` table is public; usernames are discoverable. Acceptable for a game; encryption is the access control.
 
-**Workaround**: Enforce strong password requirements (8+ chars minimum is enforced).
+## Technical constraints
 
-**Future fix**: Add TOTP-based 2FA.
-
-### No Brute-Force Protection
-
-The server doesn't rate-limit login attempts. An attacker can try many passwords in rapid succession.
-
-**Note**: Even with brute-force, PBKDF2 with 150,000 iterations makes this computationally expensive (roughly 150ms per attempt). Large-scale attacks are infeasible.
-
-**Future fix**: Implement per-IP rate limiting on credential table queries.
-
-### Username Enumeration
-
-The `credential` table is public, so anyone can read it and discover all registered usernames.
-
-**Workaround**: Don't consider usernames sensitive.
-
-**Why**: Making credentials private would require authentication-before-authentication (Catch-22). Public visibility is acceptable for a game.
-
-## Technical Constraints
-
-### BigInt Serialization
-
-Auto-increment IDs and u64 values are JavaScript `bigint` types. These can't be serialized to JSON directly:
+### BigInt serialization
 
 ```typescript
-// ❌ WRONG
-JSON.stringify({ roomId: 5n });  // TypeError: Do not know how to serialize a BigInt
-
-// ✅ RIGHT
-JSON.stringify({ roomId: 5n.toString() });  // "5"
+JSON.stringify({ roomId: roomId.toString() }); // not 5n directly
 ```
 
-When sending stats or storing room IDs in external APIs, convert to string first.
+### Identity comparison
 
-### Identity Comparison
+Always use `.toHexString()` — object reference equality fails.
 
-Identities are objects, not strings. Direct comparison fails:
-
-```typescript
-// ❌ WRONG
-if (player.identity === ctx.sender) { ... }  // Always false
-
-// ✅ RIGHT
-if (player.identity.toHexString() === ctx.sender.toHexString()) { ... }
-```
-
-Always use `.toHexString()` for comparison.
-
-### Timestamp Access
-
-Timestamps are not milliseconds; they're objects with `microsSinceUnixEpoch` field:
+### Timestamps
 
 ```typescript
-// ❌ WRONG
-new Date(row.createdAt);
-
-// ✅ RIGHT
 new Date(Number(row.createdAt.microsSinceUnixEpoch / 1000n));
 ```
 
-Divide by 1000n to convert microseconds to milliseconds, then to Date.
+### Optional fields
 
-### No Null Propagation
+Use optional chaining — `.optional()` columns can be `null`.
 
-If a field is optional and null, accessing nested properties throws:
+### Multi-column indexes
 
-```typescript
-// ❌ WRONG
-const name = player.mobileType.toUpperCase();  // Throws if mobileType is null
+Filter manually on non-indexed columns after an index lookup.
 
-// ✅ RIGHT
-const name = player.mobileType?.toUpperCase();  // Checks for null
-```
+### One transaction per reducer
 
-### No Multi-Column Indexes
+Combine related mutations into a single reducer when you need atomicity across steps.
 
-Indexes with multiple columns don't work correctly in SpacetimeDB. Filter results manually:
+### Encrypted token size cap
 
-```typescript
-// ❌ BROKEN
-ctx.db.scores.by_player_level.filter(playerId);  // Only filters first column
+2048 characters max in `registerCredential` / `updateCredentialToken`.
 
-// ✅ CORRECT
-for (const row of ctx.db.scores.by_player.filter(playerId)) {
-  if (row.level === targetLevel) { /* ... */ }
-}
-```
+## Operational notes
 
-### No Transactions Across Reducers
-
-Each reducer call is atomic, but you can't group multiple reducers into a single transaction. If you need transactional semantics, combine logic into a single reducer.
-
-### Token Size Limit
-
-Encrypted tokens are capped at 2048 characters:
-
-```typescript
-if (encryptedToken.length > 2048) {
-  throw new SenderError('token too large');
-}
-```
-
-The actual token is much smaller (~100-200 bytes), so this is rarely hit.
-
-### Subscription Latency
-
-All updates go through the subscription channel. In rare cases (network issues), updates may lag behind mutations by 100-500ms. UI should be resilient to stale data.
-
-## Operational Considerations
-
-### Deploy Process
-
-After modifying the SpacetimeDB schema or reducers:
+### Publish and generate
 
 ```bash
-# 1. Update server code
-vim server/spacetimedb/src/schema.ts
-vim server/spacetimedb/src/index.ts
-
-# 2. Publish module (local development)
-spacetime publish gunbound --clear-database -y --module-path server/spacetimedb
-
-# 3. Regenerate client bindings
-spacetime generate --lang typescript --out-dir src/features/game/spacetime/module_bindings --module-path server/spacetimedb
-
-# 4. Rebuild client
-npm run build  # or npm run dev
+bun run spacetime:publish:local      # dev publish
+bun run spacetime:generate           # refresh bindings
+bun run spacetime:publish:local:reset  # wipe local data
 ```
 
-### Data Loss on Clear
+Do not use `--delete-data` / reset flags against production.
 
-The `--clear-database` flag wipes all data. Use only in development:
+### Module name
+
+Must match everywhere: `gunbound` in publish commands and `SPACETIME_MODULE` in client config.
+
+### Local URI
+
+Default: `ws://127.0.0.1:3002` (SpacetimeDB server, not Next.js on `:3000`).
+
+### Stale bindings
+
+After schema edits, always run `bun run spacetime:generate` before trusting TypeScript types.
+
+## Performance
+
+- Avoid `[...ctx.db.table.iter()]` in reducers at scale — use index `.filter()`.
+- Room capacity is 2; subscription payload stays small for typical sessions.
+- Local SpacetimeDB is in-memory; use Maincloud for durable production hosting.
+
+## Debugging
 
 ```bash
-# ❌ WRONG — loses all data
-spacetime publish gunbound --clear-database -y
-
-# ✅ RIGHT — for production, publish without --clear-database
-spacetime publish gunbound --module-path server/spacetimedb
+bun run spacetime:logs
 ```
 
-On production deploys, schema migrations should be backwards-compatible or handle existing data carefully.
-
-### Module Naming
-
-The module name (`gunbound`) must match across:
-- `spacetime publish gunbound ...`
-- `SPACETIME_MODULE` in client config
-- the database name used by the provider
-
-If mismatched, the client can't connect.
-
-### Connection URI
-
-The default local SpacetimeDB URI is `ws://127.0.0.1:3002` for the local server started by
-`bun run spacetime:start`. For maincloud deployment, use the provided URI from SpacetimeDB.
+Browser:
 
 ```typescript
-const SPACETIMEDB_URI = process.env.NEXT_PUBLIC_SPACETIMEDB_URI || 'ws://127.0.0.1:3002';
+localStorage.getItem('gunbound:spacetime-token');
+localStorage.getItem('gunbound:username');
 ```
 
-### Backup Strategy
-
-SpacetimeDB (local) doesn't persist data across restarts by default. For production:
-1. Use SpacetimeDB Maincloud (hosted)
-2. Implement regular backups
-3. Export critical data to external storage
-
-## Known Issues
-
-### Slow .iter() on Large Tables
-
-Using `.iter()` on a table with thousands of rows causes performance issues because the iteration is recalculated on every table mutation:
-
-```typescript
-// ❌ SLOW at scale — re-evaluates on every change
-const allRows = [...ctx.db.myTable.iter()];
-
-// ✅ FAST — uses index
-const filtered = [...ctx.db.myTable.my_index.filter(value)];
-```
-
-### Missing Credentials After Publish
-
-If you add a new column to a table, existing rows won't have the new field. Accessing it returns undefined:
-
-```typescript
-// If you add: newField: t.string()
-// Existing rows have: newField = undefined
-```
-
-Use `.optional()` for new fields:
-
-```typescript
-newField: t.string().optional(),
-```
-
-Or set a default value during migration.
-
-### Type Generation Lag
-
-After modifying the schema, client types don't update until you run `spacetime generate`. Stale types can cause confusion.
-
-```bash
-# Always regenerate after schema changes
-spacetime generate ...
-```
-
-### View Recalculation Overhead
-
-If a view uses `.iter()` on a large table, it's recalculated on every row change:
-
-```typescript
-// ❌ SLOW
-spacetimedb.view({ name: 'all_items', public: true }, t.array(Item), (ctx) => {
-  return [...ctx.db.item.iter()];  // Re-runs on every insert/update
-});
-
-// ✅ FAST
-spacetimedb.view({ name: 'user_items', public: true }, t.array(Item), (ctx) => {
-  return [...ctx.db.item.by_owner.filter(ctx.sender)];  // Uses index
-});
-```
-
-## Debugging Tips
-
-### Enable Server Logs
-
-```bash
-spacetime logs gunbound -f  # Follow logs
-```
-
-### Check Module is Published
-
-```bash
-spacetime db list gunbound
-```
-
-Should show the database. If missing, publish again.
-
-### Verify Client Bindings
-
-```bash
-ls -la src/features/game/spacetime/module_bindings/
-```
-
-Should contain `index.ts` with table exports and reducer functions. If missing or old, regenerate.
-
-### Test Reducers Directly
-
-From the browser console after app loads:
-
-```typescript
-const { DbConnection, tables } = window.__gunbound__;
-const conn = DbConnection.builder()
-  .withUri('ws://127.0.0.1:3002')
-  .withDatabaseName('gunbound')
-  .build();
-
-await conn.connect();
-await conn.reducers.createRoom({ code: 'TEST1' });
-```
-
-### Monitor Subscription
-
-```typescript
-conn.subscriptionBuilder()
-  .onApplied(() => console.log('Subscription ready'))
-  .onError((e) => console.error('Subscription error:', e))
-  .subscribe(['SELECT * FROM player']);
-```
-
-### Check localStorage
-
-```typescript
-localStorage.getItem('gunbound:spacetime-token');   // Current session token
-```
-
-## Performance Notes
-
-### Subscription Size
-
-The full subscription (all public tables) is roughly 100KB gzipped for ~100 players, ~1000 messages, and ~50 active rooms. This is acceptable for real-time games.
-
-### Reducer Latency
-
-Reducers complete in 1-10ms on average. Complex operations (loops, lots of updates) can be slower.
-
-### Client Processing
-
-JavaScript filtering and mapping of subscribed data is fast (~1ms) for typical game state sizes.
-
-### Network Bandwidth
-
-Each table mutation broadcasts to all subscribed clients. With 100 concurrent players, expect 1-10MB/hour of mutations.
-
-## Scaling Considerations
-
-### Max Players
-
-Local SpacetimeDB handles ~100 concurrent players easily. For larger deployments, use SpacetimeDB Maincloud or shard across multiple databases.
-
-### Database Size
-
-Local SpacetimeDB stores data in-memory. RAM usage is roughly 1KB per row. For 1M rows, expect ~1GB RAM.
-
-### Latency
-
-Local development: &lt;10ms. Maincloud: ~20-50ms depending on region.
-
-### Rate Limiting
-
-Implement rate limiting in the server if you expect high reducer call frequency (e.g., 100+ calls/sec from a single client).
-
-```typescript
-// Not yet implemented in gunbound — consider adding if needed
-const lastCall = new Map<Identity, bigint>();
-if (lastCall.get(ctx.sender) > ctx.timestamp - 100_000n) {  // <100ms since last
-  throw new SenderError('rate limit exceeded');
-}
-lastCall.set(ctx.sender, ctx.timestamp);
-```
-
-## Testing
-
-### Write Schema Tests
-
-Verify table creation and column types:
-
-```typescript
-// test/schema.test.ts
-import spacetimedb from '../src/schema';
-import { t } from 'spacetimedb/server';
-
-test('Player table has correct columns', () => {
-  const player = spacetimedb.tables.player;
-  expect(player.columns).toContainEqual(expect.objectContaining({
-    name: 'identity',
-    type: 'Identity'
-  }));
-});
-```
-
-### Test Reducers Locally
-
-Spin up a local server and call reducers from a test client:
-
-```typescript
-// test/reducers.test.ts
-describe('register_credential', () => {
-  it('should insert credential row', async () => {
-    const conn = await setupTestConnection();
-    await conn.reducers.registerCredential({
-      username: 'alice',
-      encryptedToken: '{"v":1,...}'
-    });
-
-    const [credentials] = conn.tables.credential;
-    expect(credentials).toContainEqual(
-      expect.objectContaining({ username: 'alice' })
-    );
-  });
-});
-```
-
-### Validate End-to-End
-
-1. Signup on Device A
-2. Logout, clear localStorage
-3. Login on Device B with same credentials
-4. Verify account state recovered (name, score, XP)
-
-## Support & Resources
-
-- **SpacetimeDB Docs**: https://spacetimedb.com
-- **GitHub Issues**: Check closed issues for workarounds
-- **Discord**: SpacetimeDB community for questions
+Invalid tokens are cleared automatically by `GunboundSpacetimeProvider` on connect error.

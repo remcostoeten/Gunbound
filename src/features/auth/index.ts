@@ -1,4 +1,5 @@
 export { AuthRoot } from "./components/auth-root";
+export { SpacetimeAuthProvider } from "./spacetime-auth";
 export {
   AUTH_THEMES,
   AUTH_THEME_LIST,

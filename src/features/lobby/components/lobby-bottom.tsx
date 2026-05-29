@@ -25,7 +25,6 @@ export function LobbyBottom({ onBack, onOptions, messages, onSend, whisperTo, on
         onFriendRequestResponse={onFriendRequestResponse}
       />
       <div className="gb-bottom-actions">
-        <LobbyActionButton label="Event"  glyph="🎟" tone="purple" />
         <LobbyActionButton label="Option" glyph="⚙" tone="blue" onClick={onOptions} />
         <LobbyActionButton label="Back"   glyph="↩" tone="blue" onClick={onBack} />
       </div>

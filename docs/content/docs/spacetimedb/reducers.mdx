@@ -3,537 +3,141 @@ title: Reducers & Mutations
 description: Server-side state changes and transactional logic
 ---
 
-## Overview
+All mutations go through reducers in `server/spacetimedb/src/index.ts`. Client calls use camelCase: `create_room` → `createRoom`.
 
-Reducers are server-side functions that mutate the database. All state changes go through reducers, ensuring consistency and enabling real-time synchronization across clients.
-
-**Key principles:**
-- Reducers are transactional (all-or-nothing)
-- Reducers are deterministic (no I/O, randomness, or timers)
-- Reducers do not return values to the caller
-- Reducers validate input and enforce business logic
-
-## Calling a Reducer from the Client
-
-Reducers are called with object syntax (not positional arguments):
+## Calling reducers
 
 ```typescript
 const conn = useSpacetimeDB().getConnection();
+if (!conn) throw new Error('not connected');
 
-// Call a reducer
-await conn.reducers.registerCredential({
-  username: 'alice',
-  encryptedToken: '{"v":1,...}'
-});
-
-await conn.reducers.createRoom({
-  code: 'ABC12'
-});
-
-await conn.reducers.sendChat({
-  roomId: 5n,
-  message: 'hello'
-});
+await conn.reducers.registerCredential({ username, encryptedToken });
+await conn.reducers.createRoom({ code: 'AB12', seed: 42n });
+await conn.reducers.setReady({ roomId: 5n, isReady: true });
 ```
 
-The reducer name is automatically converted from snake_case to camelCase.
+Reducers are transactional, deterministic, and return nothing to the caller. Failures throw `SenderError` with a message string.
 
-## Common Reducers
+## Lifecycle hooks
+
+| Hook | Behavior |
+| --- | --- |
+| `onClientConnected` | Upsert `player`, apply login streak XP, cleanup orphan waiting rooms |
+| `onClientDisconnected` | Set `isOnline: false`, leave queue, evict from **waiting** rooms only |
+
+Mid-match room membership is preserved across disconnect so players can reconnect.
+
+## Auth
 
 ### registerCredential
 
-Registers a user account with username and encrypted token.
+`{ username, encryptedToken }` — binds username to `ctx.sender`, rejects duplicate username or duplicate identity.
 
-**Server definition:**
+### updateCredentialToken
 
-```typescript
-// server/spacetimedb/src/index.ts
-export const register_credential = spacetimedb.reducer(
-  { username: t.string(), encryptedToken: t.string() },
-  (ctx, { username, encryptedToken }) => {
-    // Validate username
-    if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) {
-      throw new SenderError('invalid username');
-    }
+`{ username, encryptedToken }` — replaces ciphertext for the caller's existing row (password change flow). Server reducer exists; wire up client UI when exposing password updates.
 
-    // Check uniqueness
-    if (ctx.db.credential.username.find(username)) {
-      throw new SenderError('username already registered');
-    }
+## Profile
 
-    // Check token size
-    if (encryptedToken.length > 2048) {
-      throw new SenderError('token too large');
-    }
+| Reducer | Args | Notes |
+| --- | --- | --- |
+| `setPlayerProfile` | `{ name }` | Display name, max 32 chars |
+| `setPlayerName` | `{ name }` | Alias for profile update |
+| `setPlayerCountry` | `{ country }` | Optional country code |
+| `setLobbyPresence` | `{ active }` | Sets `player.isOnline` |
 
-    // Insert credential row
-    ctx.db.credential.insert({
-      username,
-      identity: ctx.sender,
-      encryptedToken,
-      createdAt: ctx.timestamp,
-      updatedAt: ctx.timestamp
-    });
-
-    // Update player name
-    const player = ctx.db.player.identity.find(ctx.sender);
-    if (player) {
-      ctx.db.player.identity.update({
-        ...player,
-        name: username,
-        updatedAt: ctx.timestamp
-      });
-    }
-  }
-);
-```
-
-**Client call:**
-
-```typescript
-const encryptedToken = await encryptToken(token, password, username);
-await conn.reducers.registerCredential({ username, encryptedToken });
-```
+## Rooms
 
 ### createRoom
 
-Creates a new room with a code.
+`{ code, seed }` — host becomes first `room_member` with empty `mobileType`. Defaults: map `rolling`, target score 2, round limit 5, timed turns.
 
-**Server definition:**
+### updateRoomSettings
 
-```typescript
-export const create_room = spacetimedb.reducer(
-  { code: t.string() },
-  (ctx, { code }) => {
-    // Validate code format
-    if (!/^[A-Z2-9]{4,8}$/.test(code)) {
-      throw new SenderError('invalid room code');
-    }
-
-    // Check code uniqueness
-    if (ctx.db.room.code.find(code)) {
-      throw new SenderError('code already in use');
-    }
-
-    // Insert room
-    const inserted = ctx.db.room.insert({
-      id: 0n,
-      hostIdentity: ctx.sender,
-      code,
-      status: 'waiting',
-      memberCount: 1,
-      capacity: 4,
-      seed: ctx.crypto.randomU64(),
-      createdAt: ctx.timestamp,
-      updatedAt: ctx.timestamp
-    });
-
-    // Add host as first member
-    ctx.db.roomMember.insert({
-      id: 0n,
-      roomId: inserted.id,
-      identity: ctx.sender,
-      mobileType: 'armor',  // Default mobile
-      isReady: false,
-      joinedAt: ctx.timestamp
-    });
-  }
-);
-```
-
-**Client call:**
-
-```typescript
-const code = generateRoomCode();  // e.g., "A3F5K"
-await conn.reducers.createRoom({ code });
-```
+`{ roomId, mapType, targetScore, roundLimit, turnDurationMode }` — host only, `waiting` status only.
 
 ### joinRoomByCode
 
-Joins a room using its code.
+`{ code }` — joins a `waiting` room; idempotent if already a member. Max 2 members.
 
-**Server definition:**
+### leaveRoom
 
-```typescript
-export const join_room_by_code = spacetimedb.reducer(
-  { code: t.string() },
-  (ctx, { code }) => {
-    // Find room
-    const room = ctx.db.room.code.find(code);
-    if (!room) throw new SenderError('room not found');
+`{ roomId }` — removes member; transfers host or ends room if empty.
 
-    // Check room is still waiting
-    if (room.status !== 'waiting') {
-      throw new SenderError('room is not accepting joins');
-    }
+### kickFromRoom
 
-    // Check capacity
-    const members = [...ctx.db.roomMember.room_member_room_id.filter(room.id)];
-    if (members.length >= room.capacity) {
-      throw new SenderError('room is full');
-    }
+`{ roomId, identity }` — host only, waiting rooms only.
 
-    // Check player not already in room
-    if (members.some(m => m.identity.toHexString() === ctx.sender.toHexString())) {
-      throw new SenderError('already in this room');
-    }
-
-    // Add player to room
-    ctx.db.roomMember.insert({
-      id: 0n,
-      roomId: room.id,
-      identity: ctx.sender,
-      mobileType: 'armor',  // Auto-select default
-      isReady: false,
-      joinedAt: ctx.timestamp
-    });
-
-    // Increment member count
-    ctx.db.room.id.update({
-      ...room,
-      memberCount: room.memberCount + 1,
-      updatedAt: ctx.timestamp
-    });
-  }
-);
-```
-
-**Client call:**
-
-```typescript
-await conn.reducers.joinRoomByCode({ code: 'A3F5K' });
-```
-
-### sendChat
-
-Sends a chat message in a room.
-
-**Server definition:**
-
-```typescript
-export const send_chat = spacetimedb.reducer(
-  { roomId: t.u64(), message: t.string() },
-  (ctx, { roomId, message }) => {
-    // Validate message
-    if (!message.trim()) throw new SenderError('message cannot be empty');
-    if (message.length > 256) throw new SenderError('message too long');
-
-    // Verify room exists
-    const room = ctx.db.room.id.find(roomId);
-    if (!room) throw new SenderError('room not found');
-
-    // Verify player is in room
-    const members = [...ctx.db.roomMember.room_member_room_id.filter(roomId)];
-    if (!members.some(m => m.identity.toHexString() === ctx.sender.toHexString())) {
-      throw new SenderError('not a member of this room');
-    }
-
-    // Insert message
-    ctx.db.chatMessage.insert({
-      id: 0n,
-      roomId,
-      identity: ctx.sender,
-      message: message.trim(),
-      createdAt: ctx.timestamp
-    });
-  }
-);
-```
-
-**Client call:**
-
-```typescript
-await conn.reducers.sendChat({ roomId: 5n, message: 'let\'s go!' });
-```
-
-### setReady
-
-Toggles the ready state of a player in a room.
-
-**Server definition:**
-
-```typescript
-export const set_ready = spacetimedb.reducer(
-  { roomId: t.u64(), ready: t.bool() },
-  (ctx, { roomId, ready }) => {
-    // Find member
-    const members = [...ctx.db.roomMember.room_member_room_id.filter(roomId)];
-    const member = members.find(m => m.identity.toHexString() === ctx.sender.toHexString());
-    if (!member) throw new SenderError('not a member of this room');
-
-    // Update ready state
-    ctx.db.roomMember.id.update({
-      ...member,
-      isReady: ready
-    });
-  }
-);
-```
-
-**Client call:**
-
-```typescript
-await conn.reducers.setReady({ roomId: 5n, ready: true });
-```
+## Match flow
 
 ### selectMobile
 
-Selects a mobile unit (combat character) for the player in a room.
+`{ roomId, mobileType }` — must be a valid mobile string; blocked during active rounds.
 
-**Server definition:**
+### setReady
 
-```typescript
-export const select_mobile = spacetimedb.reducer(
-  { roomId: t.u64(), mobileType: t.string() },
-  (ctx, { roomId, mobileType }) => {
-    // Validate mobile
-    const VALID_MOBILES = ['armor', 'mage', 'frog', 'nak', 'turtle', 'sate'];
-    if (!VALID_MOBILES.includes(mobileType)) {
-      throw new SenderError('invalid mobile');
-    }
-
-    // Find member
-    const members = [...ctx.db.roomMember.room_member_room_id.filter(roomId)];
-    const member = members.find(m => m.identity.toHexString() === ctx.sender.toHexString());
-    if (!member) throw new SenderError('not a member of this room');
-
-    // Update mobile
-    ctx.db.roomMember.id.update({
-      ...member,
-      mobileType,
-      isReady: false  // Deselect ready when changing mobile
-    });
-  }
-);
-```
-
-**Client call:**
-
-```typescript
-await conn.reducers.selectMobile({ roomId: 5n, mobileType: 'mage' });
-```
+`{ roomId, isReady }` — note **`isReady`**, not `ready`.
 
 ### startRound
 
-Transitions room from "waiting" to "in_round" when all members are ready.
+`{ roomId, seed }` — host only; all members ready with mobiles selected; creates a `round` row and sets room status to `in_match`.
 
-**Server definition:**
+### recordRoundEvent
 
-```typescript
-export const start_round = spacetimedb.reducer(
-  { roomId: t.u64() },
-  (ctx, { roomId }) => {
-    // Find room
-    const room = ctx.db.room.id.find(roomId);
-    if (!room) throw new SenderError('room not found');
-
-    // Verify host is the caller
-    if (room.hostIdentity.toHexString() !== ctx.sender.toHexString()) {
-      throw new SenderError('only host can start round');
-    }
-
-    // Check room is waiting
-    if (room.status !== 'waiting') {
-      throw new SenderError('round already started');
-    }
-
-    // Check all members are ready
-    const members = [...ctx.db.roomMember.room_member_room_id.filter(roomId)];
-    if (!members.every(m => m.isReady)) {
-      throw new SenderError('not all players are ready');
-    }
-
-    // Check all members have selected mobiles
-    if (!members.every(m => m.mobileType)) {
-      throw new SenderError('not all players have selected mobiles');
-    }
-
-    // Transition to in_round
-    ctx.db.room.id.update({
-      ...room,
-      status: 'in_round',
-      updatedAt: ctx.timestamp
-    });
-  }
-);
-```
-
-**Client call:**
-
-```typescript
-await conn.reducers.startRound({ roomId: 5n });
-```
+`{ roundId, tick, kind, payload }` — append-only battle sync; validates turn order and payload shape.
 
 ### submitRoundStats
 
-Records game statistics after a round completes.
+`{ roundId, damageDealt, shotsFired, directHits }` — once per player per round, before `endRound`.
 
-**Server definition:**
+### endRound
 
-```typescript
-export const submit_round_stats = spacetimedb.reducer(
-  {
-    roomId: t.u64(),
-    damageDealt: t.u32(),
-    damageTaken: t.u32(),
-    kills: t.u32(),
-    deaths: t.u32()
-  },
-  (ctx, { roomId, damageDealt, damageTaken, kills, deaths }) => {
-    // Find room
-    const room = ctx.db.room.id.find(roomId);
-    if (!room) throw new SenderError('room not found');
+`{ roundId, winnerIdentity? }` — host only; optional winner (omit for draw); awards XP and resets ready flags.
 
-    // Find member to get mobile
-    const members = [...ctx.db.roomMember.room_member_room_id.filter(roomId)];
-    const member = members.find(m => m.identity.toHexString() === ctx.sender.toHexString());
-    if (!member) throw new SenderError('not a member of this room');
+## Chat
 
-    // Insert stats
-    ctx.db.roundStat.insert({
-      id: 0n,
-      roomId,
-      identity: ctx.sender,
-      mobileType: member.mobileType,
-      damageDealt,
-      damageTaken,
-      kills,
-      deaths,
-      recordedAt: ctx.timestamp
-    });
+| Reducer | Args |
+| --- | --- |
+| `sendChat` | `{ roomId, message }` — room members, max 200 chars |
+| `sendLobbyChat` | `{ channel, message }` — channels 1–8 |
 
-    // Update player XP/score
-    const player = ctx.db.player.identity.find(ctx.sender);
-    if (player) {
-      ctx.db.player.identity.update({
-        ...player,
-        score: player.score + kills * 10n,
-        xp: player.xp + (damageDealt / 10n),
-        updatedAt: ctx.timestamp
-      });
-    }
-  }
-);
-```
+## Social
 
-**Client call:**
+| Reducer | Args |
+| --- | --- |
+| `sendFriendRequest` | `{ recipientIdentityHex }` |
+| `respondFriendRequest` | `{ requestId, accept }` |
+| `removeFriend` | `{ buddyIdentityHex }` |
+| `sendRoomInvite` | `{ roomId, recipientIdentityHex }` |
+| `respondRoomInvite` | `{ inviteId, accept }` |
+
+## Matchmaking
+
+| Reducer | Args |
+| --- | --- |
+| `joinQueue` | _(none)_ — pairs immediately if someone is waiting |
+| `leaveQueue` | _(none)_ |
+
+## Update pattern
+
+Always spread the existing row when updating:
 
 ```typescript
-await conn.reducers.submitRoundStats({
-  roomId: 5n,
-  damageDealt: 150,
-  damageTaken: 75,
-  kills: 2,
-  deaths: 1
-});
-```
-
-## Error Handling
-
-Reducers throw `SenderError` for client-facing errors:
-
-```typescript
-throw new SenderError('room not found');
-throw new SenderError('not a member of this room');
-throw new SenderError('room is full');
-```
-
-The client catches these and displays them to the user:
-
-```typescript
-try {
-  await conn.reducers.joinRoomByCode({ code });
-} catch (err) {
-  if (err instanceof Error) {
-    showError(err.message);  // "room not found"
-  }
-}
-```
-
-## Update Pattern
-
-To update a row, spread the existing row and override specific fields:
-
-```typescript
-// ❌ WRONG — nulls out other fields
-ctx.db.room.id.update({
-  id: roomId,
-  status: 'in_round'
-});
-
-// ✅ RIGHT — preserves all fields
 const room = ctx.db.room.id.find(roomId);
-ctx.db.room.id.update({
-  ...room,
-  status: 'in_round',
-  updatedAt: ctx.timestamp
-});
+ctx.db.room.id.update({ ...room, status: ROOM_STATUS.IN_MATCH });
 ```
 
-## Identity Comparison
-
-When comparing identities, use `toHexString()`:
+## Identity comparison
 
 ```typescript
-// ❌ WRONG — identity comparison is unreliable
-if (member.identity === ctx.sender) { ... }
-
-// ✅ RIGHT — hex string comparison
-if (member.identity.toHexString() === ctx.sender.toHexString()) { ... }
+if (member.identity.toHexString() === ctx.sender.toHexString()) { /* … */ }
 ```
 
-## Importing ctx.crypto
-
-For random number generation in reducers:
-
-```typescript
-import { Uuid, TimestampMs } from 'spacetimedb';
-
-// Random u64
-const seed = ctx.crypto.randomU64();
-
-// Random u32
-const value = ctx.crypto.randomU32();
-```
-
-These use the server's CSPRNG and are deterministic across replicas.
-
-## Testing Reducers Locally
-
-Start a local SpacetimeDB instance:
+## Regenerate after changes
 
 ```bash
-bun run spacetime:start
+bun run spacetime:publish:local
+bun run spacetime:generate
 ```
 
-Publish the module:
-
-```bash
-spacetime publish gunbound --clear-database -y --module-path server/spacetimedb
-```
-
-Generate client bindings:
-
-```bash
-spacetime generate --lang typescript --out-dir src/features/game/spacetime/module_bindings --module-path server/spacetimedb
-```
-
-Then run the client and call reducers from the browser console:
-
-```typescript
-// In browser console after app loads
-const conn = window.__spacetimedb__.connection;
-await conn.reducers.createRoom({ code: 'TEST1' });
-```
-
-Check the browser UI or the server logs to confirm the row changes.
-
-## Next Steps
-
-After modifying reducers:
-1. Update `server/spacetimedb/src/index.ts`
-2. Run `spacetime publish gunbound --clear-database -y --module-path server/spacetimedb`
-3. Run `spacetime generate ...` to regenerate client bindings
-4. Restart the client dev server
-
-The client types will auto-update and the new reducers will be callable via `conn.reducers.yourNewReducerName()`.
+Or use `bun run spacetime:dev` for the watch loop.

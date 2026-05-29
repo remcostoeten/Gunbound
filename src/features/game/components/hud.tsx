@@ -1,23 +1,31 @@
 "use client";
 
-import { getWindLabel } from "@/features/game/engine/wind";
+import { getWeatherDetail, getWeatherGlyph, getWeatherLabel } from "@/features/game/engine/weather";
+import { getWindDirectionLabel, getWindLabel, getWindRelation, getWindRelationLabel, maxWindMagnitude, type WindRelation } from "@/features/game/engine/wind";
 import { useGameState } from "@/features/game/hooks/use-game-state";
 import {
   selectPlayers,
+  selectWeather,
   selectTurn,
+  selectTurnDelays,
+  selectTurnElapsed,
   selectWind
 } from "@/features/game/store/selectors/hud-selectors";
 
 export function Hud(): React.JSX.Element {
   const players = useGameState(selectPlayers);
   const turn = useGameState(selectTurn);
+  const turnDelays = useGameState(selectTurnDelays);
+  const turnElapsed = useGameState(selectTurnElapsed);
   const wind = useGameState(selectWind);
+  const weather = useGameState(selectWeather);
   const currentPlayer = players[turn - 1];
+  const windRelation = getWindRelation(wind, currentPlayer.mobile.facing);
 
   return (
     <div className="hud">
       <div className="hud-top">
-        <div className="hud-card">
+        <div className={getHudCardClassName(1, turn)}>
           <span className="player-name">{players[0].name}</span>
           <div className="hud-player-identity">
             <img className="hud-accent-chip" src={"/badges/accent-" + players[0].accent + ".svg"} alt="" width={12} height={12} />
@@ -43,15 +51,30 @@ export function Hud(): React.JSX.Element {
         <div className="hud-card wind-card">
           <span className="wind-label">Wind</span>
           <span className="wind-value">
-            <span className="wind-glyph">{getWindGlyph(wind.x)}</span>
+            <span className="wind-glyph">{getWindDirectionLabel(wind)}</span>
             <span>{getWindLabel(wind)}</span>
+          </span>
+          <span className="wind-relation" style={{ color: getWindRelationColor(windRelation) }}>
+            {getWindRelationArrow(wind.x, windRelation)} {getWindRelationLabel(windRelation)}
           </span>
           <div className="wind-meter">
             <div className="wind-meter-center" />
             <div className="wind-meter-pointer" style={{ left: getWindMeterLeft(wind.x) }} />
           </div>
+          <div className="weather-readout" aria-label="Current weather">
+            <span className="weather-chip">{getWeatherGlyph(weather)}</span>
+            <span className="weather-copy">
+              <b>{getWeatherLabel(weather)}</b>
+              <small>{getWeatherDetail(weather)}</small>
+            </span>
+          </div>
+          <div className="delay-readout" aria-label="Turn delay queue">
+            <span>P1 {formatDelay(turnDelays[0])}</span>
+            <span>{String(Math.floor(turnElapsed)).padStart(2, "0")}s</span>
+            <span>P2 {formatDelay(turnDelays[1])}</span>
+          </div>
         </div>
-        <div className="hud-card right">
+        <div className={getHudCardClassName(2, turn) + " right"}>
           <span className="player-name">{players[1].name}</span>
           <div className="hud-player-identity">
             <img className="hud-accent-chip" src={"/badges/accent-" + players[1].accent + ".svg"} alt="" width={12} height={12} />
@@ -79,6 +102,10 @@ export function Hud(): React.JSX.Element {
   );
 }
 
+function getHudCardClassName(player: 1 | 2, turn: 1 | 2): string {
+  return player === turn ? "hud-card is-active" : "hud-card";
+}
+
 function getHpWidth(hp: number, maxHp: number): string {
   return String(Math.max(0, Math.min(100, Math.round((hp / maxHp) * 100)))) + "%";
 }
@@ -91,22 +118,34 @@ function getHpClassName(hp: number, maxHp: number): string {
   return "hp-fill";
 }
 
-function getWindGlyph(horizontalWind: number): string {
-  if (horizontalWind < -0.12) {
-    return "< <";
-  }
-
-  if (horizontalWind > 0.12) {
-    return "> >";
-  }
-
-  return "- -";
+function getWindMeterLeft(horizontalWind: number): string {
+  const normalized = Math.max(-maxWindMagnitude, Math.min(maxWindMagnitude, horizontalWind));
+  const percentage = ((normalized + maxWindMagnitude) / (maxWindMagnitude * 2)) * 100;
+  return String(percentage) + "%";
 }
 
-function getWindMeterLeft(horizontalWind: number): string {
-  const normalized = Math.max(-0.75, Math.min(0.75, horizontalWind));
-  const percentage = ((normalized + 0.75) / 1.5) * 100;
-  return String(percentage) + "%";
+function getWindRelationArrow(horizontalWind: number, relation: WindRelation): string {
+  if (relation === "calm") {
+    return "•";
+  }
+
+  return horizontalWind > 0 ? "→" : "←";
+}
+
+function getWindRelationColor(relation: WindRelation): string {
+  if (relation === "tailwind") {
+    return "#8ef0a0";
+  }
+
+  if (relation === "headwind") {
+    return "#ffb347";
+  }
+
+  return "rgba(255, 255, 255, 0.6)";
+}
+
+function formatDelay(value: number): string {
+  return String(Math.max(0, Math.round(value)));
 }
 
 function capitalize(value: string): string {

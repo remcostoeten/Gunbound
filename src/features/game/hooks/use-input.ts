@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { canTriggerButtShot } from "@/features/game/engine/shot-techniques";
 import { useGameStore } from "@/features/game/store/game-store";
 import { dispatchBattleInputCommand } from "@/features/game/multiplayer/battle-command-bus";
 
@@ -15,6 +16,9 @@ type CleanupHandler = {
 function bindInput(): CleanupHandler {
   function handleKeyDown(event: KeyboardEvent): void {
     const store = useGameStore.getState();
+    if (store.scene !== "playing" || isEditableTarget(event.target)) {
+      return;
+    }
 
     if (event.code === "ArrowUp") {
       event.preventDefault();
@@ -30,17 +34,31 @@ function bindInput(): CleanupHandler {
       return;
     }
 
-    if (event.code === "KeyA" && !event.repeat) {
+    if (event.code === "KeyA") {
       event.preventDefault();
+      if (event.repeat) return;
+      if (canTriggerButtShot(store.pendingButtShot, -1)) {
+        if (dispatchBattleInputCommand({ kind: "flip-tech", direction: -1 })) return;
+        store.applyBattleFlipTech(-1);
+        return;
+      }
+      if (store.phase === "fire" || store.projectile !== null) return;
       if (dispatchBattleInputCommand({ kind: "move", direction: -1 })) return;
-      store.attemptMove(-1);
+      store.setMoveKey(-1, true);
       return;
     }
 
-    if (event.code === "KeyD" && !event.repeat) {
+    if (event.code === "KeyD") {
       event.preventDefault();
+      if (event.repeat) return;
+      if (canTriggerButtShot(store.pendingButtShot, 1)) {
+        if (dispatchBattleInputCommand({ kind: "flip-tech", direction: 1 })) return;
+        store.applyBattleFlipTech(1);
+        return;
+      }
+      if (store.phase === "fire" || store.projectile !== null) return;
       if (dispatchBattleInputCommand({ kind: "move", direction: 1 })) return;
-      store.attemptMove(1);
+      store.setMoveKey(1, true);
       return;
     }
 
@@ -48,6 +66,13 @@ function bindInput(): CleanupHandler {
       event.preventDefault();
       if (dispatchBattleInputCommand({ kind: "switch-weapon" })) return;
       store.switchWeapon();
+      return;
+    }
+
+    if (event.code === "KeyE" && !event.repeat) {
+      event.preventDefault();
+      if (dispatchBattleInputCommand({ kind: "switch-item" })) return;
+      store.switchBattleItem();
       return;
     }
 
@@ -60,6 +85,9 @@ function bindInput(): CleanupHandler {
 
   function handleKeyUp(event: KeyboardEvent): void {
     const store = useGameStore.getState();
+    if (store.scene !== "playing" || isEditableTarget(event.target)) {
+      return;
+    }
 
     if (event.code === "ArrowUp") {
       event.preventDefault();
@@ -72,6 +100,20 @@ function bindInput(): CleanupHandler {
       event.preventDefault();
       if (dispatchBattleInputCommand({ kind: "aim", key: "down", active: false })) return;
       store.setAimKey("down", false);
+      return;
+    }
+
+    if (event.code === "KeyA") {
+      event.preventDefault();
+    if (event.code === "KeyA") {
+      event.preventDefault();
+      store.setMoveKey(-1, false);
+      return;
+    }
+
+    if (event.code === "KeyD") {
+      event.preventDefault();
+      store.setMoveKey(1, false);
       return;
     }
 
@@ -89,4 +131,17 @@ function bindInput(): CleanupHandler {
     window.removeEventListener("keydown", handleKeyDown);
     window.removeEventListener("keyup", handleKeyUp);
   };
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (target.isContentEditable) {
+    return true;
+  }
+
+  const tagName = target.tagName.toLowerCase();
+  return tagName === "input" || tagName === "textarea" || tagName === "select" || tagName === "button" || tagName === "a";
 }

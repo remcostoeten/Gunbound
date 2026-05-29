@@ -6,6 +6,16 @@ import { useEffect } from "react";
 import { getAudioVolume, getUiClickEnabled, subscribeAudioSettings } from "@/lib/audio-settings";
 
 type TrackId = string;
+export type UiSfxId =
+  | "click"
+  | "primary"
+  | "confirm"
+  | "select"
+  | "open"
+  | "close"
+  | "notify"
+  | "error"
+  | "denied";
 
 interface Track {
   el: HTMLAudioElement;
@@ -164,19 +174,46 @@ export function stopAll() {
   scheduleTick();
 }
 
-let clickAudio: HTMLAudioElement | null = null;
+const uiSfxCache = new Map<UiSfxId, HTMLAudioElement>();
+
+const UI_SFX_PATHS: Record<UiSfxId, string> = {
+  click: "/audio/ui/ui-click-soft.wav",
+  primary: "/audio/ui/ui-click-primary.wav",
+  confirm: "/audio/ui/ui-confirm.wav",
+  select: "/audio/ui/ui-select.wav",
+  open: "/audio/ui/ui-open.wav",
+  close: "/audio/ui/ui-close.wav",
+  notify: "/audio/ui/ui-notify.wav",
+  error: "/audio/ui/ui-error.wav",
+  denied: "/audio/ui/ui-denied.wav",
+};
 
 export function playClick(): void {
+  playUiSfx("click");
+}
+
+export function playUiSfx(id: UiSfxId): void {
   if (typeof window === "undefined" || typeof Audio === "undefined") return;
   if (!getUiClickEnabled()) return;
-  if (!clickAudio) {
-    clickAudio = new Audio("/audio/button-click-1.mp3");
-    clickAudio.preload = "auto";
+
+  let audio = uiSfxCache.get(id) ?? null;
+  if (audio === null) {
+    audio = new Audio(UI_SFX_PATHS[id]);
+    audio.preload = "auto";
+    uiSfxCache.set(id, audio);
   }
-  const volume = 0.5 * getAudioVolume("sfx");
-  const clone = clickAudio.cloneNode(true) as HTMLAudioElement;
+
+  const volume = getUiSfxVolume(id) * getAudioVolume("sfx");
+  const clone = audio.cloneNode(true) as HTMLAudioElement;
   clone.volume = volume;
   clone.play().catch(() => {});
+}
+
+function getUiSfxVolume(id: UiSfxId): number {
+  if (id === "notify") return 0.45;
+  if (id === "error" || id === "denied") return 0.4;
+  if (id === "primary" || id === "confirm") return 0.38;
+  return 0.34;
 }
 
 export function useMenuClickSound() {
@@ -185,12 +222,70 @@ export function useMenuClickSound() {
     const handleGlobalClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
       if (!target) return;
-      const button = target.closest("button");
-      if (button && !button.disabled) {
-        playClick();
+
+      if (isModalBackdropClick(target, e.target)) {
+        playUiSfx("close");
+        return;
       }
+
+      const control = target.closest("button, [role='button'], a, .gb-room-btn, .gb-channel, .gb-tip, .gb-top-btn") as HTMLElement | null;
+      if (control === null || isDisabledControl(control)) {
+        return;
+      }
+
+      playUiSfx(getControlSfx(control));
     };
     window.addEventListener("click", handleGlobalClick);
     return () => window.removeEventListener("click", handleGlobalClick);
   }, []);
+}
+
+function isDisabledControl(control: HTMLElement): boolean {
+  if (control instanceof HTMLButtonElement || control instanceof HTMLInputElement) {
+    return control.disabled;
+  }
+
+  return control.getAttribute("aria-disabled") === "true" || control.classList.contains("disabled");
+}
+
+function isModalBackdropClick(target: HTMLElement, eventTarget: EventTarget | null): boolean {
+  return target === eventTarget && target.classList.contains("gb-modal-back");
+}
+
+function getControlSfx(control: HTMLElement): UiSfxId {
+  const explicit = control.dataset.uiSfx as UiSfxId | undefined;
+  if (explicit && explicit in UI_SFX_PATHS) {
+    return explicit;
+  }
+
+  const label = getControlLabel(control);
+  if (control.classList.contains("gb-modal-x") || control.classList.contains("gb-modal-min")) {
+    return "close";
+  }
+  if (/\b(cancel|close|leave|back|done|decline|dismiss|exit)\b/i.test(label)) {
+    return "close";
+  }
+  if (/\b(error|blocked|locked|disabled|denied)\b/i.test(label)) {
+    return "denied";
+  }
+  if (/\b(start|play|launch|ready|create|join|accept|save|login|register|continue|restart)\b/i.test(label)) {
+    return "confirm";
+  }
+  if (/\b(option|settings|theme|map|mobile|weapon|item|switch|tab|channel|inbox|search|info|leaderboard)\b/i.test(label)) {
+    return "select";
+  }
+  if (control.classList.contains("gb-room-btn") || control.closest(".gb-room")) {
+    return "primary";
+  }
+
+  return "click";
+}
+
+function getControlLabel(control: HTMLElement): string {
+  return [
+    control.getAttribute("aria-label"),
+    control.getAttribute("title"),
+    control.textContent,
+    control.className
+  ].filter(Boolean).join(" ");
 }

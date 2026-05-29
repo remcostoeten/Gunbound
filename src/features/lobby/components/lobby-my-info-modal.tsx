@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+import { playUiSfx } from "@/lib/music-bus";
 import type { Player } from "@/features/game/spacetime/module_bindings/types";
 
 type Props = {
@@ -20,6 +22,10 @@ function xpProgress(xp: bigint, level: number): number {
 }
 
 export function LobbyMyInfoModal({ player, onClose, title = "My Info" }: Props) {
+  useEffect(function playOpenCue(): void {
+    playUiSfx("open");
+  }, []);
+
   const winRate =
     player.totalWins + player.totalLosses > 0
       ? Math.round((player.totalWins / (player.totalWins + player.totalLosses)) * 100)

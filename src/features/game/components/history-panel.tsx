@@ -12,7 +12,7 @@ export function HistoryPanel(): React.JSX.Element {
   const recentHistory = history.slice(Math.max(0, history.length - 5)).reverse();
 
   useEffect(function syncHistoryPanelDefault() {
-    const media = window.matchMedia("(max-width: 860px)");
+    const media = window.matchMedia("(max-width: 1180px), (max-height: 760px)");
     const syncOpen = (): void => setOpen(!media.matches);
     syncOpen();
     media.addEventListener("change", syncOpen);

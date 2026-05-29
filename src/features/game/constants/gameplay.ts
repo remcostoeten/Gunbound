@@ -4,6 +4,8 @@ export const defaultTargetScore = 2;
 export const defaultRoundLimit = 5;
 export const defaultSuddenDeathTurn = 12;
 export const defaultTurnDurationMode: TurnDurationMode = "timed";
+export const minAimAngle = 16;
+export const maxAimAngle = 164;
 
 export const phaseDurations: Readonly<Record<GamePhase, number>> = {
   move: 12,
