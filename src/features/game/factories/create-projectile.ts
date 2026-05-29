@@ -1,5 +1,6 @@
 import { getTrueAngleDamageScale } from "@/features/game/engine/aiming";
 import { getMuzzlePosition, getLaunchRadians } from "@/features/game/engine/physics";
+import { getProjectileBehavior } from "@/features/game/engine/projectile-behaviors";
 import { createWeaponProfile } from "@/features/game/engine/weapons";
 import type { ProjectileState } from "@/features/game/types/combat";
 import type { Mobile } from "@/features/game/types/entities";
@@ -40,6 +41,9 @@ export function createProjectile(mobile: Mobile, owner: PlayerId, power: number,
     tornadoTriggered: false,
     technique: null,
     launchDirection: velocityX >= 0 ? 1 : -1,
-    rearArc
+    rearArc,
+    behavior: getProjectileBehavior(mobile.type, mobile.weapon),
+    fuse: null,
+    hasSplit: false
   };
 }

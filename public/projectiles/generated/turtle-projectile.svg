@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="64" viewBox="0 0 512 64">
+<g transform="translate(32 32) rotate(0.0)">
+<circle r="26.6" fill="#54d184" opacity="0.13"/>
+<path d="M 18.3 0.0 L 9.2 15.9 L -9.2 15.9 L -18.3 0.0 L -9.2 -15.9 L 9.2 -15.9 Z" fill="#4fb97b" stroke="#54d184" stroke-width="1.5"/>
+<ellipse cx="3.0" cy="-1.7" rx="7.0" ry="4.7" fill="#cafad7"/>
+</g>
+<g transform="translate(96 32) rotate(0.0)">
+<circle r="26.6" fill="#54d184" opacity="0.19"/>
+<path d="M 18.3 0.0 L 9.2 15.9 L -9.2 15.9 L -18.3 0.0 L -9.2 -15.9 L 9.2 -15.9 Z" fill="#4fb97b" stroke="#54d184" stroke-width="1.5"/>
+<ellipse cx="3.0" cy="-1.7" rx="7.0" ry="4.7" fill="#cafad7"/>
+</g>
+<g transform="translate(160 32) rotate(0.0)">
+<circle r="26.6" fill="#54d184" opacity="0.22"/>
+<path d="M 18.3 0.0 L 9.2 15.9 L -9.2 15.9 L -18.3 0.0 L -9.2 -15.9 L 9.2 -15.9 Z" fill="#4fb97b" stroke="#54d184" stroke-width="1.5"/>
+<ellipse cx="3.0" cy="-1.7" rx="7.0" ry="4.7" fill="#cafad7"/>
+</g>
+<g transform="translate(224 32) rotate(0.0)">
+<circle r="26.6" fill="#54d184" opacity="0.19"/>
+<path d="M 18.3 0.0 L 9.2 15.9 L -9.2 15.9 L -18.3 0.0 L -9.2 -15.9 L 9.2 -15.9 Z" fill="#4fb97b" stroke="#54d184" stroke-width="1.5"/>
+<ellipse cx="3.0" cy="-1.7" rx="7.0" ry="4.7" fill="#cafad7"/>
+</g>
+<g transform="translate(288 32) rotate(0.0)">
+<circle r="26.6" fill="#54d184" opacity="0.13"/>
+<path d="M 18.3 0.0 L 9.2 15.9 L -9.2 15.9 L -18.3 0.0 L -9.2 -15.9 L 9.2 -15.9 Z" fill="#4fb97b" stroke="#54d184" stroke-width="1.5"/>
+<ellipse cx="3.0" cy="-1.7" rx="7.0" ry="4.7" fill="#cafad7"/>
+</g>
+<g transform="translate(352 32) rotate(0.0)">
+<circle r="26.6" fill="#54d184" opacity="0.07"/>
+<path d="M 18.3 0.0 L 9.2 15.9 L -9.2 15.9 L -18.3 0.0 L -9.2 -15.9 L 9.2 -15.9 Z" fill="#4fb97b" stroke="#54d184" stroke-width="1.5"/>
+<ellipse cx="3.0" cy="-1.7" rx="7.0" ry="4.7" fill="#cafad7"/>
+</g>
+<g transform="translate(416 32) rotate(0.0)">
+<circle r="26.6" fill="#54d184" opacity="0.04"/>
+<path d="M 18.3 0.0 L 9.2 15.9 L -9.2 15.9 L -18.3 0.0 L -9.2 -15.9 L 9.2 -15.9 Z" fill="#4fb97b" stroke="#54d184" stroke-width="1.5"/>
+<ellipse cx="3.0" cy="-1.7" rx="7.0" ry="4.7" fill="#cafad7"/>
+</g>
+<g transform="translate(480 32) rotate(0.0)">
+<circle r="26.6" fill="#54d184" opacity="0.07"/>
+<path d="M 18.3 0.0 L 9.2 15.9 L -9.2 15.9 L -18.3 0.0 L -9.2 -15.9 L 9.2 -15.9 Z" fill="#4fb97b" stroke="#54d184" stroke-width="1.5"/>
+<ellipse cx="3.0" cy="-1.7" rx="7.0" ry="4.7" fill="#cafad7"/>
+</g>
+</svg>

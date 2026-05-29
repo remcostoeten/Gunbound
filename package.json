@@ -12,6 +12,7 @@
     "build": "NODE_ENV=production next build",
     "start": "bun --bun next start",
     "prepare-mobile-asset": "python3 scripts/prepare-mobile-asset.py",
+    "generate:projectiles": "bun scripts/generate-projectile-sprite-sheets.mjs",
     "spacetime:build": "spacetime build --module-path server/spacetimedb",
     "spacetime:start": "spacetime start --listen-addr 0.0.0.0:3002",
     "spacetime:dev": "spacetime dev gunbound --server http://127.0.0.1:3002 --module-path server/spacetimedb --client-lang typescript --module-bindings-path src/features/game/spacetime/module_bindings",

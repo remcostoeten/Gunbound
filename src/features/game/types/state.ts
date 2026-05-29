@@ -49,7 +49,11 @@ export type GameState = {
   tick: number;
   seed: number;
   terrain: TerrainState | null;
+  // `projectile` is the lead shot, kept for camera/audio/effects/input gating.
+  // `projectiles` is the authoritative in-flight set (split shots, fans). The
+  // lead always mirrors `projectiles[0] ?? null`.
   projectile: ProjectileState | null;
+  projectiles: ProjectileState[];
   winner: PlayerId | null;
   round: number;
   targetScore: number;

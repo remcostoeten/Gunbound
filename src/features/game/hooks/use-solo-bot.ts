@@ -178,20 +178,23 @@ function scoreShot(
       SIMULATION_STEP_SECONDS,
     );
 
-    if (result.explosion !== null) {
+    const impact = result.explosions[0] ?? null;
+    if (impact !== null) {
       const target = getMobileCenter(human);
       const self = getMobileCenter(bot);
-      const damage = distanceDamage(result.explosion, target);
-      const selfDamage = distanceDamage(result.explosion, self);
+      const damage = distanceDamage(impact, target);
+      const selfDamage = distanceDamage(impact, self);
       const missDistance = Math.hypot(
-        result.explosion.point.x - target.x,
-        result.explosion.point.y - target.y,
+        impact.point.x - target.x,
+        impact.point.y - target.y,
       );
       score = damage * 14 - selfDamage * 18 - missDistance * 0.22;
       break;
     }
 
-    projectile = result.projectile;
+    // Track the lead projectile (or the first split child) for the rest of the
+    // predicted arc.
+    projectile = result.projectiles[0] ?? null;
   }
 
   return score;
