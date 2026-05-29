@@ -28,6 +28,8 @@ export type Mobile = {
   lastShotAngle: number | null;
   lastShotTechnique: ShotTechnique | null;
   doubleDamageTurns: number;
+  // Turns remaining where this mobile takes extra damage (Snow/Ice defense-down).
+  vulnerableTurns: number;
   verticalVelocity: number;
 };
 

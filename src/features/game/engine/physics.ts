@@ -11,10 +11,14 @@ import type {
 import type { Mobile, Player, TerrainState } from "@/features/game/types/entities";
 import type { Vec2, WeatherState } from "@/features/game/types/shared";
 
+// A single projectile can resolve into several outcomes in one tick: it may
+// keep flying (1), split into a fan of children (N), or detonate (an explosion
+// plus 0 live projectiles). Bounce/roll mini-blasts come back as bonusExplosions
+// so the lead shot can keep travelling.
 export type ProjectileStep = {
-  projectile: ProjectileState | null;
-  explosion: ExplosionState | null;
-  bonusExplosion: ExplosionState | null;
+  projectiles: ProjectileState[];
+  explosions: ExplosionState[];
+  bonusExplosions: ExplosionState[];
 };
 
 // Horizontal force applied by wind per unit of wind magnitude. Kept well below
@@ -97,47 +101,69 @@ export function stepProjectile(
     technique: detectBackshot(projectile.technique, projectile.rearArc, projectile.launchDirection, velocity.x, projectile.life + dt)
   };
 
+  const behavior = projectile.behavior;
+
+  // Air-split: a split shot fractures into a fan of children that come down in
+  // two or three directions. We fire it on the first descending tick (the top
+  // of the arc) once the shot has cleared the muzzle; a short life guard keeps
+  // flat, near-horizontal shots from bursting right at the barrel. Fires once,
+  // guarded by hasSplit.
+  if (
+    behavior.kind === "airSplit" &&
+    !projectile.hasSplit &&
+    velocity.y >= 0 &&
+    projectile.life > 0.18
+  ) {
+    return {
+      projectiles: buildAirSplitChildren(projectile, effectiveProjectile, nextPosition, velocity, dt),
+      bonusExplosions: [],
+      explosions: []
+    };
+  }
+
   const directHit = tracePlayerCollision(players, projectile.owner, previousPosition, nextPosition, projectile.radius);
   if (directHit !== null) {
     return {
-      projectile: null,
-      bonusExplosion: null,
-      explosion: buildExplosion(effectiveProjectile, {
-        x: directHit.mobile.position.x,
-        y: directHit.mobile.position.y - directHit.mobile.height * 0.55
-      })
+      projectiles: [],
+      bonusExplosions: [],
+      explosions: [
+        buildExplosion(effectiveProjectile, {
+          x: directHit.mobile.position.x,
+          y: directHit.mobile.position.y - directHit.mobile.height * 0.55
+        })
+      ]
     };
   }
 
   if (projectile.tunnelingTicks > 0) {
     if (projectile.tunnelingTicks === 1) {
       return {
-        projectile: null,
-        bonusExplosion: null,
-        explosion: buildExplosion(effectiveProjectile, nextPosition)
+        projectiles: [],
+        bonusExplosions: [],
+        explosions: [buildExplosion(effectiveProjectile, nextPosition)]
       };
     }
 
     return {
-      projectile: advanceProjectile(projectile, nextPosition, previousPosition, velocity, dt, projectile.tunnelingTicks - 1, weatherFlight.damage, weatherFlight.blastRadius, weatherFlight.forceBoosted, weatherFlight.tornadoTriggered),
-      bonusExplosion: null,
-      explosion: null
+      projectiles: [advanceProjectile(projectile, nextPosition, previousPosition, velocity, dt, projectile.tunnelingTicks - 1, weatherFlight.damage, weatherFlight.blastRadius, weatherFlight.forceBoosted, weatherFlight.tornadoTriggered)],
+      bonusExplosions: [],
+      explosions: []
     };
   }
 
   const terrainHit = traceTerrainCollision(terrain, previousPosition, nextPosition, projectile.radius);
   if (terrainHit !== null) {
-    if (projectile.mobileType === "nak" && projectile.weapon === "primary") {
+    if (behavior.kind === "drill") {
       return {
-        projectile: advanceProjectile(projectile, nextPosition, previousPosition, velocity, dt, 22, weatherFlight.damage, weatherFlight.blastRadius, weatherFlight.forceBoosted, weatherFlight.tornadoTriggered),
-        bonusExplosion: null,
-        explosion: null
+        projectiles: [advanceProjectile(projectile, nextPosition, previousPosition, velocity, dt, behavior.drillTicks ?? 22, weatherFlight.damage, weatherFlight.blastRadius, weatherFlight.forceBoosted, weatherFlight.tornadoTriggered)],
+        bonusExplosions: [],
+        explosions: []
       };
     }
 
     const canBounce =
       projectile.bouncesLeft > 0 &&
-      (projectile.weapon !== "primary" || projectile.mobileType === "frog");
+      (projectile.weapon !== "primary" || behavior.kind === "roll");
 
     if (canBounce) {
       const normal = getTerrainNormal(terrain, terrainHit);
@@ -149,68 +175,127 @@ export function stepProjectile(
       const magnitude = Math.hypot(reducedVelocity.x, reducedVelocity.y);
 
       if (magnitude > 120) {
-        const bounceExplosion: ExplosionState | null =
-          projectile.mobileType === "frog"
-            ? buildExplosion(effectiveProjectile, terrainHit, effectiveProjectile.damage * 0.35, effectiveProjectile.blastRadius * 0.55)
-            : null;
+        const bounceExplosions: ExplosionState[] =
+          behavior.kind === "roll"
+            ? [buildExplosion(effectiveProjectile, terrainHit, effectiveProjectile.damage * 0.35, effectiveProjectile.blastRadius * 0.55)]
+            : [];
 
         return {
-          projectile: {
-            active: true,
-            position: {
-              x: terrainHit.x + normal.x * (projectile.radius + 2),
-              y: terrainHit.y + normal.y * (projectile.radius + 2)
-            },
-            previousPosition: terrainHit,
-            velocity: reducedVelocity,
-            radius: projectile.radius,
-            owner: projectile.owner,
-            mobileType: projectile.mobileType,
-            weapon: projectile.weapon,
-            damage: effectiveProjectile.damage,
-            blastRadius: effectiveProjectile.blastRadius,
-            bouncesLeft: projectile.bouncesLeft - 1,
-            tunnelingTicks: 0,
-            power: projectile.power,
-            life: projectile.life + dt,
-            windScale: projectile.windScale,
-            gravityScale: projectile.gravityScale,
-            item: projectile.item,
-            forceBoosted: weatherFlight.forceBoosted,
-            tornadoTriggered: weatherFlight.tornadoTriggered,
-            technique: effectiveProjectile.technique,
-            launchDirection: projectile.launchDirection,
-            rearArc: projectile.rearArc
-          },
-          bonusExplosion: bounceExplosion,
-          explosion: null
+          projectiles: [
+            {
+              active: true,
+              position: {
+                x: terrainHit.x + normal.x * (projectile.radius + 2),
+                y: terrainHit.y + normal.y * (projectile.radius + 2)
+              },
+              previousPosition: terrainHit,
+              velocity: reducedVelocity,
+              radius: projectile.radius,
+              owner: projectile.owner,
+              mobileType: projectile.mobileType,
+              weapon: projectile.weapon,
+              damage: effectiveProjectile.damage,
+              blastRadius: effectiveProjectile.blastRadius,
+              bouncesLeft: projectile.bouncesLeft - 1,
+              tunnelingTicks: 0,
+              power: projectile.power,
+              life: projectile.life + dt,
+              windScale: projectile.windScale,
+              gravityScale: projectile.gravityScale,
+              item: projectile.item,
+              forceBoosted: weatherFlight.forceBoosted,
+              tornadoTriggered: weatherFlight.tornadoTriggered,
+              technique: effectiveProjectile.technique,
+              launchDirection: projectile.launchDirection,
+              rearArc: projectile.rearArc,
+              behavior: projectile.behavior,
+              fuse: projectile.fuse,
+              hasSplit: projectile.hasSplit
+            }
+          ],
+          bonusExplosions: bounceExplosions,
+          explosions: []
         };
       }
     }
 
     return {
-      projectile: null,
-      bonusExplosion: null,
-      explosion: buildExplosion(effectiveProjectile, terrainHit)
+      projectiles: [],
+      bonusExplosions: [],
+      explosions: [buildExplosion(effectiveProjectile, terrainHit)]
     };
   }
 
   if (nextPosition.y > terrain.height + 40 || nextPosition.x < -40 || nextPosition.x > terrain.width + 40 || projectile.life > 8) {
     return {
-      projectile: null,
-      bonusExplosion: null,
-      explosion: buildExplosion(effectiveProjectile, {
-        x: clamp(nextPosition.x, 0, terrain.width - 1),
-        y: clamp(nextPosition.y, 0, terrain.height - 1)
-      }, effectiveProjectile.damage * 0.6)
+      projectiles: [],
+      bonusExplosions: [],
+      explosions: [
+        buildExplosion(effectiveProjectile, {
+          x: clamp(nextPosition.x, 0, terrain.width - 1),
+          y: clamp(nextPosition.y, 0, terrain.height - 1)
+        }, effectiveProjectile.damage * 0.6)
+      ]
     };
   }
 
   return {
-    projectile: advanceProjectile(projectile, nextPosition, previousPosition, velocity, dt, 0, weatherFlight.damage, weatherFlight.blastRadius, weatherFlight.forceBoosted, weatherFlight.tornadoTriggered),
-    bonusExplosion: null,
-    explosion: null
+    projectiles: [advanceProjectile(projectile, nextPosition, previousPosition, velocity, dt, 0, weatherFlight.damage, weatherFlight.blastRadius, weatherFlight.forceBoosted, weatherFlight.tornadoTriggered)],
+    bonusExplosions: [],
+    explosions: []
   };
+}
+
+// Builds the fanned children for an airSplit shot. Children share the parent's
+// owner/weapon/behavior but each gets a horizontal velocity offset so they
+// scatter, reduced damage, and hasSplit set so they never split again.
+function buildAirSplitChildren(
+  projectile: ProjectileState,
+  effective: ProjectileState,
+  position: Vec2,
+  velocity: Vec2,
+  dt: number
+): ProjectileState[] {
+  const count = Math.max(2, projectile.behavior.splitCount ?? 2);
+  const spread = projectile.behavior.splitSpread ?? 70;
+  const damageMul = projectile.behavior.splitDamageMul ?? 0.6;
+  const children: ProjectileState[] = [];
+  let index = 0;
+
+  while (index < count) {
+    const t = count === 1 ? 0 : index / (count - 1) - 0.5;
+    const horizontalOffset = t * 2 * spread;
+    children.push({
+      active: true,
+      position,
+      previousPosition: position,
+      velocity: { x: velocity.x + horizontalOffset, y: velocity.y - Math.abs(t) * 40 },
+      radius: Math.max(3, projectile.radius - 1),
+      owner: projectile.owner,
+      mobileType: projectile.mobileType,
+      weapon: projectile.weapon,
+      damage: effective.damage * damageMul,
+      blastRadius: effective.blastRadius * 0.86,
+      bouncesLeft: projectile.bouncesLeft,
+      tunnelingTicks: 0,
+      power: projectile.power,
+      life: projectile.life + dt,
+      windScale: projectile.windScale,
+      gravityScale: projectile.gravityScale,
+      item: projectile.item,
+      forceBoosted: effective.forceBoosted,
+      tornadoTriggered: effective.tornadoTriggered,
+      technique: effective.technique,
+      launchDirection: projectile.launchDirection,
+      rearArc: projectile.rearArc,
+      behavior: projectile.behavior,
+      fuse: null,
+      hasSplit: true
+    });
+    index += 1;
+  }
+
+  return children;
 }
 
 function advanceProjectile(
@@ -247,7 +332,10 @@ function advanceProjectile(
     tornadoTriggered,
     technique: detectBackshot(projectile.technique, projectile.rearArc, projectile.launchDirection, velocity.x, projectile.life + dt),
     launchDirection: projectile.launchDirection,
-    rearArc: projectile.rearArc
+    rearArc: projectile.rearArc,
+    behavior: projectile.behavior,
+    fuse: projectile.fuse,
+    hasSplit: projectile.hasSplit
   };
 }
 
@@ -264,7 +352,8 @@ function buildExplosion(
     owner: projectile.owner,
     mobileType: projectile.mobileType,
     weapon: projectile.weapon,
-    item: projectile.item
+    item: projectile.item,
+    vulnerableTurns: projectile.behavior.kind === "debuff" ? projectile.behavior.vulnerableTurns : undefined
   };
 }
 
@@ -304,8 +393,18 @@ export function applyExplosionDamage(players: [Player, Player], explosion: Explo
       damage *= 2;
     }
 
+    // A target softened by a previous defense-down hit takes extra damage.
+    if (player.mobile.vulnerableTurns > 0) {
+      damage *= 1.25;
+    }
+
     const roundedDamage = Math.round(damage);
     player.mobile.hp = Math.max(0, Math.round(player.mobile.hp - damage));
+
+    // Snow/Ice shots leave a struck enemy defense-down for a few turns.
+    if (roundedDamage > 0 && explosion.vulnerableTurns !== undefined && player.id !== explosion.owner) {
+      player.mobile.vulnerableTurns = Math.max(player.mobile.vulnerableTurns, explosion.vulnerableTurns);
+    }
 
     if (roundedDamage > 0) {
       hits.push({
@@ -372,6 +471,7 @@ function cloneMobile(mobile: Mobile): Mobile {
     lastShotAngle: mobile.lastShotAngle,
     lastShotTechnique: mobile.lastShotTechnique,
     doubleDamageTurns: mobile.doubleDamageTurns,
+    vulnerableTurns: mobile.vulnerableTurns,
     verticalVelocity: mobile.verticalVelocity
   };
 }

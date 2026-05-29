@@ -144,6 +144,8 @@ export function advanceRoundTurn(
   let damagePopups: DamagePopup[] = [];
 
   nextPlayers[nextTurn - 1].mobile.weapon = "primary";
+  // The defense-down debuff wears off one turn at a time as the mobile acts.
+  nextPlayers[nextTurn - 1].mobile.vulnerableTurns = Math.max(0, nextPlayers[nextTurn - 1].mobile.vulnerableTurns - 1);
   facePlayersTowardsEachOther(nextPlayers);
 
   if (suddenDeathState.started) {
@@ -351,6 +353,7 @@ function cloneMobile(mobile: Mobile): Mobile {
     lastShotAngle: mobile.lastShotAngle,
     lastShotTechnique: mobile.lastShotTechnique,
     doubleDamageTurns: mobile.doubleDamageTurns,
+    vulnerableTurns: mobile.vulnerableTurns,
     verticalVelocity: mobile.verticalVelocity
   };
 }

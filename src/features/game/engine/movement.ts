@@ -101,6 +101,7 @@ function cloneMobile(mobile: Mobile): Mobile {
     lastShotAngle: mobile.lastShotAngle,
     lastShotTechnique: mobile.lastShotTechnique,
     doubleDamageTurns: mobile.doubleDamageTurns,
+    vulnerableTurns: mobile.vulnerableTurns,
     verticalVelocity: mobile.verticalVelocity
   };
 }

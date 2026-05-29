@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="64" viewBox="0 0 512 64">
+<g transform="translate(32 32) rotate(0.0)">
+<circle r="26.6" fill="#9bdcff" opacity="0.13"/>
+<path d="M 29.12 0 L 0 -8.32 L -23.296 0 L 0 8.32 Z" fill="#d9f0ff" stroke="#9bdcff" stroke-width="1.5"/>
+<ellipse cx="3.0" cy="-1.7" rx="7.0" ry="4.7" fill="#ffffff"/>
+</g>
+<g transform="translate(96 32) rotate(63.0)">
+<circle r="26.6" fill="#9bdcff" opacity="0.19"/>
+<path d="M 29.12 0 L 0 -8.32 L -23.296 0 L 0 8.32 Z" fill="#d9f0ff" stroke="#9bdcff" stroke-width="1.5"/>
+<ellipse cx="3.0" cy="-1.7" rx="7.0" ry="4.7" fill="#ffffff"/>
+</g>
+<g transform="translate(160 32) rotate(126.0)">
+<circle r="26.6" fill="#9bdcff" opacity="0.22"/>
+<path d="M 29.12 0 L 0 -8.32 L -23.296 0 L 0 8.32 Z" fill="#d9f0ff" stroke="#9bdcff" stroke-width="1.5"/>
+<ellipse cx="3.0" cy="-1.7" rx="7.0" ry="4.7" fill="#ffffff"/>
+</g>
+<g transform="translate(224 32) rotate(189.0)">
+<circle r="26.6" fill="#9bdcff" opacity="0.19"/>
+<path d="M 29.12 0 L 0 -8.32 L -23.296 0 L 0 8.32 Z" fill="#d9f0ff" stroke="#9bdcff" stroke-width="1.5"/>
+<ellipse cx="3.0" cy="-1.7" rx="7.0" ry="4.7" fill="#ffffff"/>
+</g>
+<g transform="translate(288 32) rotate(252.0)">
+<circle r="26.6" fill="#9bdcff" opacity="0.13"/>
+<path d="M 29.12 0 L 0 -8.32 L -23.296 0 L 0 8.32 Z" fill="#d9f0ff" stroke="#9bdcff" stroke-width="1.5"/>
+<ellipse cx="3.0" cy="-1.7" rx="7.0" ry="4.7" fill="#ffffff"/>
+</g>
+<g transform="translate(352 32) rotate(315.0)">
+<circle r="26.6" fill="#9bdcff" opacity="0.07"/>
+<path d="M 29.12 0 L 0 -8.32 L -23.296 0 L 0 8.32 Z" fill="#d9f0ff" stroke="#9bdcff" stroke-width="1.5"/>
+<ellipse cx="3.0" cy="-1.7" rx="7.0" ry="4.7" fill="#ffffff"/>
+</g>
+<g transform="translate(416 32) rotate(18.0)">
+<circle r="26.6" fill="#9bdcff" opacity="0.04"/>
+<path d="M 29.12 0 L 0 -8.32 L -23.296 0 L 0 8.32 Z" fill="#d9f0ff" stroke="#9bdcff" stroke-width="1.5"/>
+<ellipse cx="3.0" cy="-1.7" rx="7.0" ry="4.7" fill="#ffffff"/>
+</g>
+<g transform="translate(480 32) rotate(81.0)">
+<circle r="26.6" fill="#9bdcff" opacity="0.07"/>
+<path d="M 29.12 0 L 0 -8.32 L -23.296 0 L 0 8.32 Z" fill="#d9f0ff" stroke="#9bdcff" stroke-width="1.5"/>
+<ellipse cx="3.0" cy="-1.7" rx="7.0" ry="4.7" fill="#ffffff"/>
+</g>
+</svg>

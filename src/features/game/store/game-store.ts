@@ -37,6 +37,7 @@ import { carveCrater, clamp, getSurfaceY } from "@/features/game/engine/terrain"
 import { createDefaultWeather, isWeatherItemLocked } from "@/features/game/engine/weather";
 import { canSelectWeapon, getNextWeapon, getWeaponDisplayName, shouldConsumeSpecialCharge } from "@/features/game/engine/weapons";
 import { getSsAttack, type SsPattern } from "@/features/game/engine/mobile-attacks";
+import { getProjectileBehavior } from "@/features/game/engine/projectile-behaviors";
 import { appendHistory, appendMatchEventEntries, createMatchEvent as buildMatchEvent, resetHistoryEventCounter } from "@/features/game/factories/create-match-event";
 import { createPlaceholderPlayers } from "@/features/game/factories/create-player";
 import { createProjectile } from "@/features/game/factories/create-projectile";
@@ -44,7 +45,8 @@ import { createStartedMatchState } from "@/features/game/factories/create-round-
 import { createTurnAnnouncement } from "@/features/game/factories/create-turn-announcement";
 import type {
   CombatHit,
-  ExplosionState
+  ExplosionState,
+  ProjectileState
 } from "@/features/game/types/combat";
 import type {
   BonusBox,
@@ -121,6 +123,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
     seed: normalizeSeed(defaultSetup.seedText),
     terrain: null,
     projectile: null,
+    projectiles: [],
     winner: null,
     round: 1,
     targetScore: defaultTargetScore,
@@ -181,6 +184,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         phase: "move",
         shotMode: defaultShotMode,
         projectile: null,
+        projectiles: [],
         weather: createDefaultWeather(),
         charging: false,
         power: 0,
@@ -219,6 +223,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         phase: "end",
         players,
         projectile: null,
+        projectiles: [],
         power: 0,
         charging: false,
         winner,
@@ -249,6 +254,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
       let nextPhase = state.phase;
       let nextPlayers = clonePlayers(state.players);
       let nextProjectile = state.projectile;
+      let nextProjectiles = state.projectiles;
       let nextWeather = state.weather;
       let nextPower = state.power;
       let nextCharging = state.charging;
@@ -360,9 +366,29 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         }
       }
 
-      if (nextProjectile !== null && nextTerrain !== null) {
-        const step = stepProjectile(nextProjectile, nextTerrain, nextPlayers, state.wind, state.weather, dt);
-        nextProjectile = step.projectile;
+      if (nextProjectiles.length > 0 && nextTerrain !== null) {
+        // Step every in-flight projectile. A single shot can fan into several
+        // children (airSplit), so we collect the survivors plus any explosions
+        // they triggered this tick.
+        const advancedProjectiles: ProjectileState[] = [];
+        const bonusExplosions: ExplosionState[] = [];
+        const mainExplosions: ExplosionState[] = [];
+
+        for (const inFlight of nextProjectiles) {
+          const step = stepProjectile(inFlight, nextTerrain, nextPlayers, state.wind, state.weather, dt);
+          for (const survivor of step.projectiles) {
+            advancedProjectiles.push(survivor);
+          }
+          for (const bonus of step.bonusExplosions) {
+            bonusExplosions.push(bonus);
+          }
+          for (const explosion of step.explosions) {
+            mainExplosions.push(explosion);
+          }
+        }
+
+        nextProjectiles = advancedProjectiles;
+        nextProjectile = advancedProjectiles[0] ?? null;
 
         if (nextProjectile !== null) {
           const currentTechnique = nextPlayers[state.turn - 1].mobile.lastShotTechnique;
@@ -372,33 +398,37 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
           }
         }
 
-        if (step.bonusExplosion !== null) {
-          nextTerrain = carveCrater(nextTerrain, step.bonusExplosion.point, step.bonusExplosion.radius);
-          const bonusResult = applyExplosion(nextPlayers, step.bonusExplosion, state.round, state.turn);
+        // Bounce/roll mini-blasts damage and scar the ground but never end the
+        // turn — the shot is still travelling.
+        for (const bonusExplosion of bonusExplosions) {
+          nextTerrain = carveCrater(nextTerrain, bonusExplosion.point, bonusExplosion.radius);
+          const bonusResult = applyExplosion(nextPlayers, bonusExplosion, state.round, state.turn);
           nextPlayers = bonusResult.players;
           nextDamagePopups = nextDamagePopups.concat(bonusResult.damagePopups);
           nextHistory = appendHistory(nextHistory, bonusResult.history);
-          const visual = createExplosionVisual(step.bonusExplosion);
+          const visual = createExplosionVisual(bonusExplosion);
           nextExplosionVisual = visual;
           nextExplosionVisuals = nextExplosionVisuals.concat(visual);
         }
 
-        if (step.explosion !== null) {
-          const resolvedTechnique = nextProjectile?.technique ?? state.projectile?.technique ?? null;
+        if (mainExplosions.length > 0) {
+          const resolvedTechnique = nextProjectile?.technique ?? state.projectiles[0]?.technique ?? null;
           if (resolvedTechnique !== null) {
             nextPlayers[state.turn - 1].mobile.lastShotTechnique = resolvedTechnique;
           }
-          const shotDirection: -1 | 1 = state.projectile?.launchDirection ?? nextProjectile?.launchDirection ?? 1;
-          const explosions = buildExplosionPattern(step.explosion, shotDirection);
+          const shotDirection: -1 | 1 = state.projectiles[0]?.launchDirection ?? nextProjectile?.launchDirection ?? 1;
           const explosionVisuals: ExplosionVisual[] = [];
 
-          for (const explosion of explosions) {
-            nextTerrain = carveCrater(nextTerrain, explosion.point, explosion.radius);
-            const explosionResult = applyExplosion(nextPlayers, explosion, state.round, state.turn);
-            nextPlayers = markPlayersForFalling(explosionResult.players);
-            nextDamagePopups = nextDamagePopups.concat(explosionResult.damagePopups);
-            nextHistory = appendHistory(nextHistory, explosionResult.history);
-            explosionVisuals.push(createExplosionVisual(explosion));
+          for (const baseExplosion of mainExplosions) {
+            const explosions = buildExplosionPattern(baseExplosion, shotDirection);
+            for (const explosion of explosions) {
+              nextTerrain = carveCrater(nextTerrain, explosion.point, explosion.radius);
+              const explosionResult = applyExplosion(nextPlayers, explosion, state.round, state.turn);
+              nextPlayers = markPlayersForFalling(explosionResult.players);
+              nextDamagePopups = nextDamagePopups.concat(explosionResult.damagePopups);
+              nextHistory = appendHistory(nextHistory, explosionResult.history);
+              explosionVisuals.push(createExplosionVisual(explosion));
+            }
           }
 
           if (explosionVisuals.length > 0) {
@@ -406,22 +436,26 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
             nextExplosionVisuals = nextExplosionVisuals.concat(explosionVisuals);
           }
 
-          nextPower = 0;
-          nextCharging = false;
-          nextPendingButtShot = null;
-          nextWinner = getRoundWinner(nextPlayers);
-          if (nextWinner !== null) {
-            const resolution = resolveRoundWinner(nextPlayers, nextWinner, state.round, state.turn, nextHistory);
-            nextPlayers = resolution.players;
-            nextHistory = resolution.history;
-            nextMessage = resolution.message;
-          }
-          nextPhase = nextWinner === null ? "resolve" : "end";
-          nextResolveTimer = 0.7;
-          nextPhaseTimer = nextWinner === null ? getPhaseDuration("resolve") : 2.2;
-          nextPhaseDuration = nextWinner === null ? getPhaseDuration("resolve") : 2.2;
-          if (nextWinner === null) {
-            nextMessage = "Impact resolved. Passing turn.";
+          // Only hand off the turn once the last projectile of the volley is
+          // gone; split children may still be in the air.
+          if (nextProjectiles.length === 0) {
+            nextPower = 0;
+            nextCharging = false;
+            nextPendingButtShot = null;
+            nextWinner = getRoundWinner(nextPlayers);
+            if (nextWinner !== null) {
+              const resolution = resolveRoundWinner(nextPlayers, nextWinner, state.round, state.turn, nextHistory);
+              nextPlayers = resolution.players;
+              nextHistory = resolution.history;
+              nextMessage = resolution.message;
+            }
+            nextPhase = nextWinner === null ? "resolve" : "end";
+            nextResolveTimer = 0.7;
+            nextPhaseTimer = nextWinner === null ? getPhaseDuration("resolve") : 2.2;
+            nextPhaseDuration = nextWinner === null ? getPhaseDuration("resolve") : 2.2;
+            if (nextWinner === null) {
+              nextMessage = "Impact resolved. Passing turn.";
+            }
           }
         }
       }
@@ -455,6 +489,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
           const fired = forceReleaseCharge(nextPlayers, state.turn, state.turnCount, nextPower, nextTurnElapsed, activeItem);
           nextPlayers = fired.players;
           nextProjectile = fired.projectile;
+          nextProjectiles = [fired.projectile];
           nextPower = fired.power;
           nextTurnDelays = applyTurnDelay(nextTurnDelays, state.turn, fired.turnDelay);
           nextBattleItemInventories[state.turn - 1] = consumeBattleItem(nextBattleItemInventories[state.turn - 1], activeItem);
@@ -526,6 +561,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
             weather: advanced.weather,
             phase: "end",
             projectile: null,
+            projectiles: [],
             power: 0,
             charging: false,
             winner: advanced.winner,
@@ -565,6 +601,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
           weather: advanced.weather,
           phase: "move",
           projectile: null,
+          projectiles: [],
           power: 0,
           charging: false,
           winner: null,
@@ -615,6 +652,7 @@ function createGameStoreState(...args: Parameters<StateCreator<GameStoreState>>)
         weather: nextWeather,
         players: nextPlayers,
         projectile: nextProjectile,
+        projectiles: nextProjectiles,
         power: nextPower,
         charging: nextCharging,
         chargeAscending: nextChargeAscending,
@@ -1018,6 +1056,7 @@ function fireCurrentShot(
     players,
     charging: false,
     projectile,
+    projectiles: [projectile],
     power,
     turnDelays: applyTurnDelay(state.turnDelays, state.turn, turnDelay),
     battleItemInventories,
@@ -1150,6 +1189,7 @@ function cloneMobile(mobile: Mobile): Mobile {
     lastShotAngle: mobile.lastShotAngle,
     lastShotTechnique: mobile.lastShotTechnique,
     doubleDamageTurns: mobile.doubleDamageTurns,
+    vulnerableTurns: mobile.vulnerableTurns,
     verticalVelocity: mobile.verticalVelocity
   };
 }
@@ -1397,18 +1437,38 @@ function createMatchEvent(round: number, turn: 1 | 2, kind: MatchEvent["kind"], 
 type ExplosionOffset = { dx: number; dy: number; damageMul: number; radiusMul: number };
 
 function buildExplosionPattern(explosion: ExplosionState, direction: -1 | 1): ExplosionState[] {
+  const behavior = getProjectileBehavior(explosion.mobileType, explosion.weapon);
+
+  // A.Sate calls down a satellite barrage at the landing point regardless of
+  // whether it was the secondary or the super shot.
+  if (behavior.kind === "skyStrike") {
+    return buildSkyStrike(explosion, behavior.skyStrikeCount ?? 5, behavior.skyStrikeSpread ?? 46);
+  }
+
   if (explosion.weapon === "ss") {
     return buildSsExplosions(explosion, direction);
   }
 
-  if (explosion.mobileType === "mage" && explosion.weapon === "secondary") {
-    return [
-      { ...explosion, point: { x: explosion.point.x - 22, y: explosion.point.y }, damage: explosion.damage * 0.65, radius: explosion.radius * 0.8 },
-      { ...explosion, point: { x: explosion.point.x + 22, y: explosion.point.y }, damage: explosion.damage * 0.65, radius: explosion.radius * 0.8 }
-    ];
-  }
-
   return [explosion];
+}
+
+// The satellite barrage: a fan of smaller strikes raining onto the landing
+// point, plus the ground impact itself.
+function buildSkyStrike(explosion: ExplosionState, count: number, spread: number): ExplosionState[] {
+  const result: ExplosionState[] = [{ ...explosion }];
+  let index = 0;
+  while (index < count) {
+    const t = count === 1 ? 0 : index / (count - 1) - 0.5;
+    const dx = t * 2 * spread;
+    result.push({
+      ...explosion,
+      point: { x: explosion.point.x + dx, y: explosion.point.y - 8 - Math.abs(dx) * 0.18 },
+      damage: explosion.damage * 0.4,
+      radius: explosion.radius * 0.6
+    });
+    index += 1;
+  }
+  return result;
 }
 
 function buildSsExplosions(explosion: ExplosionState, direction: -1 | 1): ExplosionState[] {

@@ -10,7 +10,10 @@ export type ProjectileShapeKind =
   | "drill"
   | "droplet"
   | "pulse"
-  | "seed";
+  | "seed"
+  | "lance"
+  | "ring"
+  | "disc";
 
 export type ProjectileBodyStyle = {
   shape: ProjectileShapeKind;
@@ -75,8 +78,8 @@ const projectileStyles: Record<MobileType, ProjectileWeaponStylePair> = {
     secondary: createProjectileStyle("armor", "secondary", "shell", "#ff7a32", "#ffe09b", "#6c2f1e", "#ff6a26", 1.26, 1.34, "#ff6a26", "#ffc069")
   },
   knight: {
-    primary: createProjectileStyle("knight", "primary", "bolt", "#d9f0ff", "#ffffff", "#6897c8", "#9bdcff", 0.94, 1.62, "#aee6ff", "#ffffff"),
-    secondary: createProjectileStyle("knight", "secondary", "bolt", "#94c7ff", "#f3fbff", "#416ea5", "#6ab7ff", 1, 1.74, "#7bc4ff", "#dff5ff")
+    primary: createProjectileStyle("knight", "primary", "lance", "#d9f0ff", "#ffffff", "#6897c8", "#9bdcff", 0.94, 1.62, "#aee6ff", "#ffffff"),
+    secondary: createProjectileStyle("knight", "secondary", "lance", "#94c7ff", "#f3fbff", "#416ea5", "#6ab7ff", 1, 1.74, "#7bc4ff", "#dff5ff")
   },
   dragon: {
     primary: createProjectileStyle("dragon", "primary", "ember", "#ff6241", "#ffe08a", "#7f2528", "#ff412f", 0.96, 1.18, "#ff4d35", "#ffcf60"),
@@ -92,27 +95,27 @@ const projectileStyles: Record<MobileType, ProjectileWeaponStylePair> = {
   },
   aduko: {
     primary: createProjectileStyle("aduko", "primary", "bolt", "#ffe859", "#fffad1", "#8a761a", "#fff15a", 0.92, 1.7, "#ffef55", "#ffffff"),
-    secondary: createProjectileStyle("aduko", "secondary", "pulse", "#b15cff", "#fff0ff", "#592a8e", "#ad55ff", 1.14, 1.22, "#ba64ff", "#ffe8ff")
+    secondary: createProjectileStyle("aduko", "secondary", "bolt", "#c77bff", "#fff0ff", "#592a8e", "#ad55ff", 1.05, 1.78, "#ba64ff", "#ffe8ff")
   },
   mage: {
     primary: createProjectileStyle("mage", "primary", "orb", "#9b7cff", "#f7eaff", "#5440a6", "#9b77ff", 0.98, 1, "#a98aff", "#f5eaff"),
-    secondary: createProjectileStyle("mage", "secondary", "pulse", "#56dcff", "#ffffff", "#286995", "#45d9ff", 1.12, 1.08, "#58e3ff", "#dbfbff")
+    secondary: createProjectileStyle("mage", "secondary", "orb", "#56dcff", "#ffffff", "#286995", "#45d9ff", 1.12, 1, "#58e3ff", "#dbfbff")
   },
   nak: {
     primary: createProjectileStyle("nak", "primary", "drill", "#b98755", "#ffe0a6", "#4d3828", "#c98b45", 0.9, 1.82, "#c98b45", "#ffe0a6"),
     secondary: createProjectileStyle("nak", "secondary", "drill", "#6d4d38", "#e2b179", "#2f241d", "#9b6c3d", 1.08, 1.96, "#a06e42", "#dfb27a")
   },
   turtle: {
-    primary: createProjectileStyle("turtle", "primary", "shell", "#4fb97b", "#cafad7", "#21513e", "#54d184", 1.06, 1.18, "#62d98d", "#cafad7"),
-    secondary: createProjectileStyle("turtle", "secondary", "shell", "#2f8d68", "#b9ffd2", "#143d32", "#43c983", 1.24, 1.3, "#4ad081", "#bfffd4")
+    primary: createProjectileStyle("turtle", "primary", "disc", "#4fb97b", "#cafad7", "#21513e", "#54d184", 1.06, 1.05, "#62d98d", "#cafad7"),
+    secondary: createProjectileStyle("turtle", "secondary", "disc", "#2f8d68", "#b9ffd2", "#143d32", "#43c983", 1.24, 1.05, "#4ad081", "#bfffd4")
   },
   frog: {
     primary: createProjectileStyle("frog", "primary", "droplet", "#67df63", "#eaffb3", "#2b6e32", "#7df36e", 0.92, 1.18, "#7cec6a", "#eaffb3"),
     secondary: createProjectileStyle("frog", "secondary", "droplet", "#38cfa8", "#d8fff1", "#1f6c62", "#44ecc5", 1.02, 1.32, "#4ee8c2", "#d8fff1")
   },
   sate: {
-    primary: createProjectileStyle("sate", "primary", "pulse", "#5bc7ff", "#effbff", "#245d8f", "#55c7ff", 1, 1.08, "#68d0ff", "#e7f9ff"),
-    secondary: createProjectileStyle("sate", "secondary", "pulse", "#3157ff", "#cde6ff", "#182f8f", "#4264ff", 1.18, 1.18, "#5577ff", "#c9e3ff")
+    primary: createProjectileStyle("sate", "primary", "ring", "#5bc7ff", "#effbff", "#245d8f", "#55c7ff", 1, 1, "#68d0ff", "#e7f9ff"),
+    secondary: createProjectileStyle("sate", "secondary", "ring", "#3157ff", "#cde6ff", "#182f8f", "#4264ff", 1.18, 1, "#5577ff", "#c9e3ff")
   }
 };
 
@@ -145,6 +148,11 @@ export function getProjectileImpactStyle(mobileType: MobileType, weapon: WeaponT
   return getProjectilePresentationStyle(mobileType, weapon).impact;
 }
 
+// The collision radius is intentionally small, but a 5px dot smothered in glow
+// reads as a featureless ball no matter its shape. We scale the *visual* body up
+// so each mobile's silhouette is actually legible in flight.
+const projectileVisualScale = 2.1;
+
 export function createProjectileRenderStyle(projectile: ProjectileState): ProjectileRenderStyle {
   const style = getProjectilePresentationStyle(projectile.mobileType, projectile.weapon);
   const speed = getVectorLength(projectile.velocity);
@@ -152,7 +160,7 @@ export function createProjectileRenderStyle(projectile: ProjectileState): Projec
 
   return {
     ...style,
-    radius: projectile.radius * style.body.radiusScale * powerScale,
+    radius: projectile.radius * style.body.radiusScale * powerScale * projectileVisualScale,
     angle: getProjectileAngle(projectile),
     speed,
     powerScale,
@@ -239,11 +247,26 @@ function getRotationSpeed(shape: ProjectileShapeKind, weapon: WeaponType): numbe
     return 18 * weaponScale;
   }
 
+  if (shape === "ember") {
+    // A flame should track its travel direction, not tumble end over end.
+    return 0.8 * weaponScale;
+  }
+
   if (shape === "bolt") {
     return 3.5 * weaponScale;
   }
 
-  if (shape === "shell" || shape === "seed") {
+  if (shape === "lance") {
+    // A lance tracks its travel direction with only a slight waver.
+    return 1.4 * weaponScale;
+  }
+
+  if (shape === "ring") {
+    // Concentric sonar rings read the same at any rotation.
+    return 0;
+  }
+
+  if (shape === "shell" || shape === "seed" || shape === "disc") {
     return 8 * weaponScale;
   }
 

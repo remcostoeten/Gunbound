@@ -118,6 +118,7 @@ function cloneMobile(mobile: Player["mobile"]): Player["mobile"] {
     lastShotAngle: mobile.lastShotAngle,
     lastShotTechnique: mobile.lastShotTechnique,
     doubleDamageTurns: mobile.doubleDamageTurns,
+    vulnerableTurns: mobile.vulnerableTurns,
     verticalVelocity: mobile.verticalVelocity
   };
 }

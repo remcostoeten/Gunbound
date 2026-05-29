@@ -6,7 +6,8 @@ import { isTrueAngle } from "@/features/game/engine/aiming";
 import { createCameraRig, getCameraFrame, stepCameraRig } from "@/features/game/engine/camera";
 import { createVisualEffectsState, stepVisualEffectsState } from "@/features/game/engine/effects";
 import { createMapDecor } from "@/features/game/engine/map-decor";
-import { createProjectileRenderStyle, getProjectileImpactStyle, getProjectileTrailStyle } from "@/features/game/engine/projectile-presentation";
+import { getProjectileImpactStyle, getProjectileTrailStyle } from "@/features/game/engine/projectile-presentation";
+import { drawProjectile as drawProjectileHead } from "@/features/game/engine/draw-projectile";
 import { getShotTechniqueLabel } from "@/features/game/engine/shot-techniques";
 import { clamp } from "@/features/game/engine/terrain";
 import { getSkyPalette, getTerrainPalette } from "@/features/game/engine/terrain-theme";
@@ -282,8 +283,8 @@ export function GameCanvas(): React.JSX.Element {
     drawWindLeaves(context, visualEffects.leaves);
     drawPlayers(context, state.players, state.turn, state.input, visualTimeRef.current, spriteCacheRef.current);
 
-    if (state.projectile !== null) {
-      drawProjectile(context, state.projectile);
+    for (const projectile of state.projectiles) {
+      drawProjectile(context, projectile);
     }
 
     drawChargeSparks(context, visualEffects.sparks);
@@ -656,28 +657,7 @@ function drawAngleBadge(context: CanvasRenderingContext2D, player: Player, accen
 }
 
 function drawProjectile(context: CanvasRenderingContext2D, projectile: ProjectileState): void {
-  const style = createProjectileRenderStyle(projectile);
-  const body = style.body;
-
-  context.save();
-  context.translate(projectile.position.x, projectile.position.y);
-  context.rotate(style.angle);
-  context.shadowBlur = body.glowRadius;
-  context.shadowColor = body.glow;
-  context.fillStyle = body.fill;
-  context.strokeStyle = body.stroke;
-  context.lineWidth = body.strokeWidth;
-
-  drawProjectileBody(context, body.shape, style.radius, body.aspectRatio);
-  context.fill();
-  context.stroke();
-
-  context.shadowBlur = body.glowRadius * 0.45;
-  context.fillStyle = body.core;
-  context.beginPath();
-  context.ellipse(style.radius * 0.18, -style.radius * 0.1, style.radius * 0.42, style.radius * 0.28, 0, 0, Math.PI * 2);
-  context.fill();
-  context.restore();
+  drawProjectileHead(context, projectile);
 
   if (projectile.technique !== null) {
     drawProjectileTechniqueBadge(context, projectile);
@@ -705,51 +685,6 @@ function drawProjectileTechniqueBadge(context: CanvasRenderingContext2D, project
   context.fillStyle = "#fff8dc";
   context.fillText(label, x + width * 0.5, y + height * 0.55);
   context.restore();
-}
-
-function drawProjectileBody(context: CanvasRenderingContext2D, shape: ReturnType<typeof createProjectileRenderStyle>["body"]["shape"], radius: number, aspectRatio: number): void {
-  context.beginPath();
-
-  if (shape === "bolt") {
-    context.moveTo(radius * 1.45, 0);
-    context.lineTo(-radius * 0.2, -radius * 0.7);
-    context.lineTo(-radius * 0.55, -radius * 0.08);
-    context.lineTo(-radius * 1.35, -radius * 0.42);
-    context.lineTo(-radius * 0.25, radius * 0.7);
-    context.lineTo(radius * 0.05, radius * 0.06);
-    context.closePath();
-    return;
-  }
-
-  if (shape === "drill") {
-    context.moveTo(radius * 1.55, 0);
-    context.lineTo(-radius * 0.25, -radius * 0.72);
-    context.lineTo(-radius * 1.25, 0);
-    context.lineTo(-radius * 0.25, radius * 0.72);
-    context.closePath();
-    return;
-  }
-
-  if (shape === "droplet") {
-    context.moveTo(radius * 1.15, 0);
-    context.quadraticCurveTo(radius * 0.1, -radius * 1.05, -radius * 0.88, -radius * 0.34);
-    context.quadraticCurveTo(-radius * 1.22, radius * 0.72, radius * 0.28, radius * 0.92);
-    context.quadraticCurveTo(radius * 0.98, radius * 0.56, radius * 1.15, 0);
-    context.closePath();
-    return;
-  }
-
-  if (shape === "seed") {
-    context.ellipse(0, 0, radius * aspectRatio, radius * 0.72, -0.18, 0, Math.PI * 2);
-    return;
-  }
-
-  if (shape === "shell") {
-    context.roundRect(-radius * aspectRatio * 0.75, -radius * 0.72, radius * aspectRatio * 1.5, radius * 1.44, radius * 0.45);
-    return;
-  }
-
-  context.ellipse(0, 0, radius * aspectRatio, radius, 0, 0, Math.PI * 2);
 }
 
 function getProjectileStyle(mobileType: MobileType, isSecondary: boolean): { outer: string; inner: string; glow: string; trail: string } {
