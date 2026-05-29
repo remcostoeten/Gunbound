@@ -60,23 +60,28 @@ export async function setBrowserFullscreen(value: boolean): Promise<void> {
     return;
   }
 
-  settings = {
-    ...settings,
-    browserFullscreen: value,
-  };
-  persistDisplaySettings();
-  notifyDisplaySettings();
+  let nextValue = value;
 
   if (typeof window !== "undefined") {
     try {
       if (value) {
         await document.documentElement.requestFullscreen();
       } else {
-        await document.exitFullscreen();
+        if (document.fullscreenElement !== null) {
+          await document.exitFullscreen();
+        }
       }
     } catch {
     }
+    nextValue = document.fullscreenElement !== null;
   }
+
+  settings = {
+    ...settings,
+    browserFullscreen: nextValue,
+  };
+  persistDisplaySettings();
+  notifyDisplaySettings();
 }
 
 export function getLobbyEmptyStateAnimated(): boolean {
