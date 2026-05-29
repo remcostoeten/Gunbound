@@ -149,7 +149,7 @@ function hydrateDisplaySettings(): void {
     const parsed = JSON.parse(raw) as Partial<DisplaySettings>;
     settings = {
       battleImmersive: parsed.battleImmersive ?? DEFAULT_SETTINGS.battleImmersive,
-      browserFullscreen: false,
+      browserFullscreen: parsed.browserFullscreen ?? DEFAULT_SETTINGS.browserFullscreen,
       lobbyEmptyStateAnimated: parsed.lobbyEmptyStateAnimated ?? DEFAULT_SETTINGS.lobbyEmptyStateAnimated,
       lobbyChatHeightPx: clampLobbyChatHeight(
         parsed.lobbyChatHeightPx ?? DEFAULT_SETTINGS.lobbyChatHeightPx,
