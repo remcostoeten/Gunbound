@@ -105,16 +105,14 @@ function bindInput(): CleanupHandler {
 
     if (event.code === "KeyA") {
       event.preventDefault();
-      if (store.phase === "fire" || store.projectile !== null) return;
-      if (dispatchBattleInputCommand({ kind: "move", direction: -1 })) return;
+    if (event.code === "KeyA") {
+      event.preventDefault();
       store.setMoveKey(-1, false);
       return;
     }
 
     if (event.code === "KeyD") {
       event.preventDefault();
-      if (store.phase === "fire" || store.projectile !== null) return;
-      if (dispatchBattleInputCommand({ kind: "move", direction: 1 })) return;
       store.setMoveKey(1, false);
       return;
     }
